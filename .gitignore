@@ -1,0 +1,32 @@
+# Compiled python modules.
+*.pyc
+
+# Setuptools distribution folder.
+build/
+/dist/
+
+# Python egg metadata, regenerated from source files by setuptools.
+/*.egg-info
+/*.egg
+
+# Dot files
+.python3
+
+# Produced by install script
+onnx/
+nccl_2.1.15-1+cuda8.0_x86_64/
+pytorch/
+
+# Produced by example scripts
+checkpoints/
+data/
+decoder.pb
+encoder.pb
+model/
+
+# CMake compilation
+CMakeCache.txt
+CMakeFiles
+Makefile
+cmake_install.cmake
+translation_decoder
