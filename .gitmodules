@@ -1,0 +1,3 @@
+[submodule "fairseq-py"]
+	path = fairseq-py
+	url = https://github.com/facebookresearch/fairseq-py.git
