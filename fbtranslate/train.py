@@ -14,10 +14,10 @@ from fairseq import criterions, data, distributed_utils, models, options, \
 from fairseq.meters import AverageMeter, StopwatchMeter, TimeMeter
 from fairseq.trainer import Trainer
 
-from language_technology.neural_mt.fbtranslate import average_checkpoints
-from language_technology.neural_mt.fbtranslate import data as fbtranslate_data
-from language_technology.neural_mt.fbtranslate import generate
-from language_technology.neural_mt.fbtranslate import rnn  # noqa
+from fbtranslate import average_checkpoints
+from fbtranslate import data as fbtranslate_data
+from fbtranslate import generate
+from fbtranslate import rnn  # noqa
 
 
 def get_parser_with_args():

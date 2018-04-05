@@ -5,8 +5,7 @@ import os
 from fairseq import data, indexed_dataset
 from typing import NamedTuple, Optional, Tuple
 
-from language_technology.neural_mt.fbtranslate import dictionary as \
-    fbtranslate_dictionary
+from fbtranslate import dictionary as fbtranslate_dictionary
 
 
 class CorpusConfig(NamedTuple):

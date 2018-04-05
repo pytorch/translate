@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 
 from fairseq import dictionary
-
-import language_technology.neural_mt.vocab.types as vocab_types
+from fbtranslate import vocab_constants
 
 
 class Dictionary(dictionary.Dictionary):
@@ -13,7 +12,7 @@ class Dictionary(dictionary.Dictionary):
         pad='<pad>',
         eos='</s>',
         unk='<unk>',
-        max_special_tokens=vocab_types.MAX_SPECIAL_TOKENS,
+        max_special_tokens=vocab_constants.MAX_SPECIAL_TOKENS,
     ):
         self.unk_word, self.pad_word, self.eos_word = unk, pad, eos
         self.symbols = []
@@ -22,16 +21,16 @@ class Dictionary(dictionary.Dictionary):
         self.profanity_indices = set()
 
         self.pad_index = self.add_symbol(pad)
-        assert self.pad_index == vocab_types.PAD_ID
+        assert self.pad_index == vocab_constants.PAD_ID
 
-        # Adds a junk symbol for vocab_types' GO_ID
+        # Adds a junk symbol for vocab_constants' GO_ID
         self.add_symbol('<reserved>')
 
         self.eos_index = self.add_symbol(eos)
-        assert self.eos_index == vocab_types.EOS_ID
+        assert self.eos_index == vocab_constants.EOS_ID
 
         self.unk_index = self.add_symbol(unk)
-        assert self.unk_index == vocab_types.UNK_ID
+        assert self.unk_index == vocab_constants.UNK_ID
 
         # Adds junk symbols to pad up to the number of special tokens.
         num_reserved = max_special_tokens - len(self.symbols)
