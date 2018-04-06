@@ -4,6 +4,10 @@ def readme():
     with open('README.md') as f:
         return f.read()
 
+def requirements():
+    with open('requirements.txt') as f:
+        return f.read()
+
 setup(
     name='fbtranslate',
     version='0.1',
@@ -13,5 +17,5 @@ setup(
     url='https://github.com/facebookincubator/fbtranslate',
     license='BSD',
     packages=find_packages(),
-    install_requires=['fairseq-py'],
+    install_requires=requirements().strip().split('\n'),
 )
