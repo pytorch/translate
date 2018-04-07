@@ -4,9 +4,9 @@ import torch
 import unittest
 
 from fairseq import models
-from language_technology.neural_mt.fbtranslate import beam_decode
-from language_technology.neural_mt.fbtranslate import rnn  # noqa
-from language_technology.neural_mt.fbtranslate.test import utils as test_utils
+from fbtranslate import beam_decode
+from fbtranslate import rnn  # noqa
+from fbtranslate.test import utils as test_utils
 
 
 class TestBeamDecode(unittest.TestCase):

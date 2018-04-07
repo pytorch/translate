@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from fairseq.modules import ConvTBC
-from language_technology.neural_mt.fbtranslate import rnn  # noqa
+from fbtranslate import rnn  # noqa
 from torch.autograd import Variable
 
 

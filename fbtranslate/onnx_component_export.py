@@ -4,8 +4,8 @@ import argparse
 import numpy as np
 import torch
 
-from language_technology.neural_mt.fbtranslate import rnn  # noqa
-from language_technology.neural_mt.fbtranslate.ensemble_export import (
+from fbtranslate import rnn  # noqa
+from fbtranslate.ensemble_export import (
     DecoderStepEnsemble,
     EncoderEnsemble,
 )

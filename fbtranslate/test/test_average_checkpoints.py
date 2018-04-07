@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# Test command:
-#   buck test language_technology/neural_mt/fbtranslate/test:test_average_checkpoints
 
 import collections
 import numpy as np
@@ -9,8 +7,7 @@ import tempfile
 import torch
 import unittest
 
-from language_technology.neural_mt.fbtranslate.average_checkpoints \
-    import average_checkpoints
+from fbtranslate.average_checkpoints import average_checkpoints
 
 
 class AverageCheckpointsTest(unittest.TestCase):

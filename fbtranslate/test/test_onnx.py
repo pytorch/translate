@@ -9,14 +9,14 @@ import torch
 import unittest
 
 from fairseq import models
-from language_technology.neural_mt.fbtranslate import rnn  # noqa
-from language_technology.neural_mt.fbtranslate.ensemble_export import (
+from fbtranslate import rnn  # noqa
+from fbtranslate.ensemble_export import (
     CombinedDecoderEnsemble,
     CombinedEncoderEnsemble,
     DecoderStepEnsemble,
     EncoderEnsemble,
 )
-from language_technology.neural_mt.fbtranslate.test import utils as test_utils
+from fbtranslate.test import utils as test_utils
 
 from caffe2.python.onnx import backend as caffe2_backend
 

@@ -3,8 +3,8 @@
 import numpy as np
 import unittest
 
-from language_technology.neural_mt.fbtranslate import vocab_reduction
-from language_technology.neural_mt.fbtranslate.test import utils as test_utils
+from fbtranslate import vocab_reduction
+from fbtranslate.test import utils as test_utils
 from fblearner.flow.core import types
 import fblearner.flow.projects.langtech.translation.common.\
     test_util as test_util_caffe2
