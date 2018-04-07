@@ -1,7 +1,4 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
+#!/usr/bin/env python3
 
 import random
 import string
@@ -50,14 +47,10 @@ class VocabTest(testutil.BaseFacebookTestCase):
                 actual_words,
                 msg=(
                     'The invariant didn\'t hold:\n'
-                    'denumberize({token_ids}) = {denum_token_ids},\n'
-                    'numberize(denumberize([{token_ids}]) = {num_token_ids},\n'
-                    'but it\'s not equal to original {token_ids}'.format(
-                        token_ids=expected_words,
-                        denum_token_ids=(
-                            vocab_processor.denumberize(expected_words)[0]
-                        ),
-                        num_token_ids=actual_words,
-                    )
+                    f'denumberize({expected_words}) = '
+                    f'{vocab_processor.denumberize(expected_words)[0]},\n'
+                    f'numberize(denumberize([{expected_words}]) = '
+                    f'{actual_words},\n but it\'s not equal to original'
+                    f'{expected_words}'
                 )
             )

@@ -7,7 +7,6 @@ from fairseq import bleu, data, indexed_dataset, options, progress_bar, \
     tokenizer, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
 from fbtranslate import beam_decode
-from fbtranslate import data as fbtranslate_data
 from fbtranslate import dictionary as \
     fbtranslate_dictionary
 from fbtranslate import rnn  # noqa
@@ -15,18 +14,21 @@ from fbtranslate import vocab_reduction
 
 
 def generate_score(args, dataset, dataset_split, extra_model_args=None):
-    use_cuda = torch.cuda.is_available() and not args.cpu
-
-    # Load ensemble
-    if not args.quiet:
-        print('| loading model(s) from {}'.format(', '.join(args.path)))
-
     models, _ = utils.load_ensemble_for_inference(
         args.path,
         dataset.src_dict,
         dataset.dst_dict,
         model_arg_overrides=extra_model_args,
     )
+    return _generate_score(models, args, dataset, dataset_split, extra_model_args)
+
+
+def _generate_score(models, args, dataset, dataset_split, extra_model_args=None):
+    use_cuda = torch.cuda.is_available() and not args.cpu
+
+    # Load ensemble
+    if not args.quiet:
+        print('| loading model(s) from {}'.format(', '.join(args.path)))
 
     # Optimize ensemble for generation
     for model in models:
@@ -36,9 +38,14 @@ def generate_score(args, dataset, dataset_split, extra_model_args=None):
 
     # Initialize generator
     translator = beam_decode.SequenceGenerator(
-        models, beam_size=args.beam, stop_early=(not args.no_early_stop),
-        normalize_scores=(not args.unnormalized), len_penalty=args.lenpen,
-        unk_penalty=args.unkpen)
+        models,
+        beam_size=args.beam,
+        stop_early=(not args.no_early_stop),
+        normalize_scores=(not args.unnormalized),
+        len_penalty=args.lenpen,
+        unk_penalty=args.unkpen,
+        word_reward=args.word_reward,
+    )
     if use_cuda:
         translator.cuda()
     # Load alignment dictionary for unknown word replacement
@@ -166,6 +173,17 @@ def main():
         default=False,
         help='Apppend EOS to source sentences (instead of just target).',
     )
+    group.add_argument(
+        '--word-reward',
+        type=float,
+        default=0.0,
+        help=(
+            'Value to add to (log-prob) score for each token except EOS. '
+            'IMPORTANT NOTE: higher values of --lenpen and --word-reward '
+            'both encourage longer translations, while higher values of '
+            '--unkpen penalize UNKs more.'
+        ),
+    )
 
     model_specific_group = parser.add_argument_group(
         'Model-specific configuration',
@@ -209,15 +227,22 @@ def main():
         )
         dataset.splits[args.gen_subset] = data.LanguagePairDataset(
             src=indexed_dataset.IndexedRawTextDataset(
-                args.source_text_file, src_dict
+                path=args.source_text_file,
+                dictionary=src_dict,
+                append_eos=args.append_eos_to_source,
             ),
             dst=indexed_dataset.IndexedRawTextDataset(
-                args.target_text_file, dst_dict
+                path=args.target_text_file,
+                dictionary=dst_dict,
+                append_eos=True,
             ),
             pad_idx=dataset.src_dict.pad(),
             eos_idx=dataset.src_dict.eos(),
         )
     elif args.replace_unk is None:
+        # These functions using fairseq's data module are kept mainly for
+        # backward compatibility, as most of our data going forward will
+        # probably not follow fairseq's format expectations.
         dataset = data.load_dataset(
             args.data,
             [args.gen_subset],
@@ -225,12 +250,14 @@ def main():
             args.target_lang,
         )
     else:
-        dataset = fbtranslate_data.load_raw_text_dataset(
+        # This is intentionally using the fairseq version of
+        # load_raw_text_dataset instead of the fbtranslate version. Again,
+        # mainly for backward compatibility.
+        dataset = data.load_raw_text_dataset(
             args.data,
             [args.gen_subset],
             args.source_lang,
             args.target_lang,
-            append_eos_to_source=args.append_eos_to_source,
         )
     if args.source_lang is None or args.target_lang is None:
         # record inferred languages in args

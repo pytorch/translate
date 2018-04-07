@@ -1,7 +1,4 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
+#!/usr/bin/env python3
 
 import tempfile
 
@@ -110,15 +107,15 @@ class WordVocabProcessTest(testutil.BaseFacebookTestCase):
         self.assertEqual(
             output_file.readlines(),
             [
-                '{} {} {}\n'.format(
-                    constants.MAX_SPECIAL_TOKENS,
-                    constants.MAX_SPECIAL_TOKENS + 1,
-                    constants.UNK_ID,
+                (
+                    f'{constants.MAX_SPECIAL_TOKENS} '
+                    f'{constants.MAX_SPECIAL_TOKENS + 1} '
+                    f'{constants.UNK_ID}\n'
                 ),
-                '{} {} {}\n'.format(
-                    constants.UNK_ID,
-                    constants.MAX_SPECIAL_TOKENS + 1,
-                    constants.MAX_SPECIAL_TOKENS,
+                (
+                    f'{constants.UNK_ID} '
+                    f'{constants.MAX_SPECIAL_TOKENS + 1} '
+                    f'{constants.MAX_SPECIAL_TOKENS}\n'
                 ),
             ],
         )

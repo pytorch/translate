@@ -1,7 +1,4 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
+#!/usr/bin/env python3
 
 import tempfile
 
@@ -40,7 +37,7 @@ class TokenizeFileTest(testutil.BaseFacebookTestCase):
         self.assertEqual(
             output_file.readlines(),
             [
-                'a b {}\n'.format(constants.UNK_TOKEN),
-                '{} b a\n'.format(constants.UNK_TOKEN),
+                f'a b {constants.UNK_TOKEN}\n',
+                f'{constants.UNK_TOKEN} b a\n',
             ],
         )

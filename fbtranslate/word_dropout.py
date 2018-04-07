@@ -5,19 +5,19 @@ import torch.nn as nn
 
 logger = logging.getLogger(__name__)
 
-WORD_DROPOUT_FREQ_DEFAULT = 1
-WORD_DROPOUT_SMOOTHING_ALPHA_DEFAULT = 1.0
+WORD_DROPOUT_SMOOTHING_ALPHA_DEFAULT = 1
 
 
 def add_args(parser):
     parser.add_argument(
         '--word_dropout_freq_threshold',
+        default=None,
         type=int,
         metavar='N',
         help=('Frequency threshold under which word dropout is performed.')
     )
 
-    parser.add_argument(
+    parser.add_argument(  # set alpha to 1 for no smoothing
         '--word_dropout_smoothing_alpha',
         type=int,
         metavar='N',
@@ -34,17 +34,18 @@ def set_arg_defaults(args):
     word_dropout_freq_threshold = getattr(
         args,
         'word_dropout_freq_threshold',
-        WORD_DROPOUT_FREQ_DEFAULT,
     )
-    word_dropout_smoothing_alpha = getattr(
-        args,
-        'word_dropout_smoothing_alpha',
-        WORD_DROPOUT_SMOOTHING_ALPHA_DEFAULT,
-    )
-    args.word_dropout_params = {
-        'word_dropout_freq_threshold': word_dropout_freq_threshold,
-        'word_dropout_smoothing_alpha': word_dropout_smoothing_alpha,
-    }
+    if word_dropout_freq_threshold is not None:
+        word_dropout_smoothing_alpha = getattr(
+            args,
+            'word_dropout_smoothing_alpha',
+            WORD_DROPOUT_SMOOTHING_ALPHA_DEFAULT,
+        )
+        args.word_dropout_params = {
+            'word_dropout_freq_threshold': word_dropout_freq_threshold,
+            'word_dropout_smoothing_alpha': word_dropout_smoothing_alpha,
+        }
+
     # For less redundant logging when we print out the args Namespace,
     # delete the bottom-level args, since we'll just be dealing with
     # args.word_dropout_params from now on

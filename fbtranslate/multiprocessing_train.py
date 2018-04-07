@@ -13,7 +13,6 @@ import signal
 import torch
 
 from fairseq import distributed_utils
-
 from fbtranslate import train
 from fbtranslate.train import main as single_process_main
 
