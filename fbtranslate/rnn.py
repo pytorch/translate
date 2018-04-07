@@ -20,10 +20,10 @@ from fairseq.models import (
     register_model,
     register_model_architecture,
 )
-from language_technology.neural_mt.fbtranslate import rnn_cell  # noqa
+from fbtranslate import rnn_cell  # noqa
 
-from language_technology.neural_mt.fbtranslate import vocab_reduction
-from language_technology.neural_mt.fbtranslate import word_dropout
+from fbtranslate import vocab_reduction
+from fbtranslate import word_dropout
 
 def torch_find(index, query, vocab_size):
     """
