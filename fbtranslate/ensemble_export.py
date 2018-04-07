@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from fairseq import utils
-from language_technology.neural_mt.fbtranslate import dictionary, rnn  # noqa
+from fbtranslate import dictionary, rnn  # noqa
 
 from caffe2.caffe2.fb.predictor import predictor_exporter
 from caffe2.python import core, dyndep, workspace

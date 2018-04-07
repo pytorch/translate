@@ -2,8 +2,8 @@
 
 import unittest
 
-from language_technology.neural_mt.fbtranslate import word_dropout
-from language_technology.neural_mt.fbtranslate.test import utils as test_utils
+from fbtranslate import word_dropout
+from fbtranslate.test import utils as test_utils
 
 
 class TestWordDropout(unittest.TestCase):

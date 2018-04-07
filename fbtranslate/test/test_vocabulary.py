@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from collections import OrderedDict
-from language_technology.neural_mt.fbtranslate.vocabulary import Vocabulary
+from fbtranslate.vocabulary import Vocabulary
 
 
 class VocabularyTest(unittest.TestCase):

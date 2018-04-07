@@ -10,7 +10,7 @@ from caffe2.python.models.seq2seq.seq2seq_model_helper import Seq2SeqModelHelper
 
 import torch
 from torch import autograd
-from language_technology.neural_mt.fbtranslate.rnn import AttentionLayer
+from fbtranslate.rnn import AttentionLayer
 
 logger = logging.getLogger(__name__)
 

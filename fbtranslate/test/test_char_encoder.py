@@ -7,8 +7,8 @@ import unittest
 
 
 import torch
-from language_technology.neural_mt.fbtranslate.char_encoder import CharEmbModel
-from language_technology.neural_mt.fbtranslate.dictionary import CharDictionary
+from fbtranslate.char_encoder import CharEmbModel
+from fbtranslate.dictionary import CharDictionary
 from torch.autograd import Variable
 
 logger = logging.getLogger(__name__)

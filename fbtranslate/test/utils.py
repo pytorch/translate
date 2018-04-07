@@ -10,8 +10,7 @@ import fblearner.flow.projects.langtech.translation.neural_mt.\
     seq2seq_model_caffe2 as seq2seq_model_caffe2
 import fblearner.flow.projects.langtech.translation.neural_mt.\
     types as neural_mt_types
-from language_technology.neural_mt.fbtranslate import dictionary as \
-    fbtranslate_dictionary
+from fbtranslate import dictionary as fbtranslate_dictionary
 
 from fairseq import data, utils
 
