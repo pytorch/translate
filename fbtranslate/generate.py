@@ -6,12 +6,12 @@ import torch
 from fairseq import bleu, data, indexed_dataset, options, progress_bar, \
     tokenizer, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
-from language_technology.neural_mt.fbtranslate import beam_decode
-from language_technology.neural_mt.fbtranslate import data as fbtranslate_data
-from language_technology.neural_mt.fbtranslate import dictionary as \
+from fbtranslate import beam_decode
+from fbtranslate import data as fbtranslate_data
+from fbtranslate import dictionary as \
     fbtranslate_dictionary
-from language_technology.neural_mt.fbtranslate import rnn  # noqa
-from language_technology.neural_mt.fbtranslate import vocab_reduction
+from fbtranslate import rnn  # noqa
+from fbtranslate import vocab_reduction
 
 
 def generate_score(args, dataset, dataset_split, extra_model_args=None):

@@ -14,8 +14,8 @@ import torch
 
 from fairseq import distributed_utils
 
-import language_technology.neural_mt.fbtranslate.train as train
-from language_technology.neural_mt.fbtranslate.train import main as single_process_main
+from fbtranslate import train
+from fbtranslate.train import main as single_process_main
 
 
 def main(args):

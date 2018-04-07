@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import setup, find_packages, Extension
 
 def readme():
     with open('README.md') as f:
@@ -7,6 +7,15 @@ def readme():
 def requirements():
     with open('requirements.txt') as f:
         return f.read()
+
+bleu = Extension(
+    'fairseq.libbleu',
+    sources=[
+        'fairseq/fairseq/clib/libbleu/libbleu.cpp',
+        'fairseq/fairseq/clib/libbleu/module.cpp',
+    ],
+    extra_compile_args=['-std=c++11'],
+)
 
 setup(
     name='fbtranslate',
@@ -17,5 +26,6 @@ setup(
     url='https://github.com/facebookincubator/fbtranslate',
     license='BSD',
     packages=find_packages(),
+    ext_modules=[bleu],
     install_requires=['fairseq'],
 )
