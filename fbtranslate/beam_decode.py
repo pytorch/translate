@@ -13,9 +13,20 @@ from fairseq.models import FairseqIncrementalDecoder
 
 
 class SequenceGenerator(torch.nn.Module):
-    def __init__(self, models, beam_size=1, minlen=1, maxlen=None,
-                 stop_early=True, normalize_scores=True, len_penalty=1,
-                 unk_penalty=0, profanity_penalty=0, retain_dropout=False):
+    def __init__(
+        self,
+        models,
+        beam_size=1,
+        minlen=1,
+        maxlen=None,
+        stop_early=True,
+        normalize_scores=True,
+        len_penalty=1,
+        unk_penalty=0,
+        profanity_penalty=0,
+        retain_dropout=False,
+        word_reward=0,
+    ):
         """Generates translations of a given source sentence.
 
         Args:
@@ -25,6 +36,9 @@ class SequenceGenerator(torch.nn.Module):
                 hypotheses, even though longer hypotheses might have better
                 normalized scores.
             normalize_scores: Normalize scores by the length of the output.
+            word_reward: add this value to score each token except EOS
+                (an alternative method to len_penalty for encouraging longer
+                output)
         """
         self.models = models
         self.pad = models[0].dst_dict.pad()
@@ -45,6 +59,7 @@ class SequenceGenerator(torch.nn.Module):
         self.profanity_penalty = profanity_penalty
         self.profanity_indices = models[0].dst_dict.profanity_indices_list()
         self.retain_dropout = retain_dropout
+        self.word_reward = word_reward
 
     def cuda(self):
         for model in self.models:
@@ -75,7 +90,7 @@ class SequenceGenerator(torch.nn.Module):
                     input['src_tokens'],
                     input['src_lengths'],
                     beam_size=beam_size,
-                    maxlen=int(maxlen_a*srclen + maxlen_b),
+                    maxlen=int(maxlen_a * srclen + maxlen_b),
                     prefix_tokens=s['target'][:, :prefix_size] if prefix_size > 0 else None,
                 )
             if timer is not None:
@@ -186,22 +201,27 @@ class SequenceGenerator(torch.nn.Module):
 
             # clone relevant token and attention tensors
             tokens_clone = tokens.index_select(0, bbsz_idx)
-            tokens_clone = tokens_clone[:, 1:step+2]  # skip the first index, which is EOS
+            tokens_clone = tokens_clone[:, 1:step + 2]  # skip the first index, which is EOS
             tokens_clone[:, step] = self.eos
-            attn_clone = attn.index_select(0, bbsz_idx)[:, :, 1:step+2]
+            attn_clone = attn.index_select(0, bbsz_idx)[:, :, 1:step + 2]
 
             # compute scores per token position
-            pos_scores = scores.index_select(0, bbsz_idx)[:, :step+1]
+            pos_scores = scores.index_select(0, bbsz_idx)[:, :step + 1]
             pos_scores[:, step] = eos_scores
             # convert from cumulative to per-position scores
             pos_scores[:, 1:] = pos_scores[:, 1:] - pos_scores[:, :-1]
 
             # normalize sentence-level scores
             if self.normalize_scores:
-                eos_scores /= (step+1)**self.len_penalty
+                eos_scores /= (step + 1) ** self.len_penalty
 
             sents_seen = set()
-            for i, (idx, score) in enumerate(zip(bbsz_idx.tolist(), eos_scores.tolist())):
+            for i, (idx, score) in enumerate(
+                zip(
+                    bbsz_idx.tolist(),
+                    eos_scores.tolist(),
+                ),
+            ):
                 sent = idx // beam_size
                 sents_seen.add(sent)
 
@@ -224,7 +244,10 @@ class SequenceGenerator(torch.nn.Module):
                         finalized[sent][worst_idx] = get_hypo()
 
                     # find new worst finalized hypo for this sentence
-                    idx, s = min(enumerate(finalized[sent]), key=lambda r: r[1]['score'])
+                    idx, s = min(
+                        enumerate(finalized[sent]),
+                        key=lambda r: r[1]['score'],
+                    )
                     worst_finalized[sent] = {
                         'score': s['score'],
                         'idx': idx,
@@ -248,8 +271,13 @@ class SequenceGenerator(torch.nn.Module):
                         model.decoder.reorder_incremental_state(
                             incremental_states[model], reorder_state)
 
-            probs, avg_attn_scores, possible_translation_tokens = self._decode(
-                tokens[:, :step+1], encoder_outs, incremental_states)
+            decode_output = self._decode(
+                tokens[:, :step + 1], encoder_outs, incremental_states)
+            if len(decode_output) == 3:
+                probs, avg_attn_scores, possible_translation_tokens = decode_output
+            else:
+                probs, avg_attn_scores = decode_output
+                possible_translation_tokens = None
             if step == 0:
                 # at the first step all hypotheses are equally likely, so use
                 # only the first beam
@@ -258,14 +286,17 @@ class SequenceGenerator(torch.nn.Module):
                 scores_buf = scores_buf.type_as(probs)
             else:
                 # make probs contain cumulative scores for each hypothesis
-                probs.add_(scores[:, step-1].view(-1, 1))
+                probs.add_(scores[:, step - 1].view(-1, 1))
             probs[:, self.pad] = -math.inf  # never select pad
             probs[:, self.unk] -= self.unk_penalty  # apply unk penalty
             # apply penalty to offensive words
             probs[:, self.profanity_indices] -= self.profanity_penalty
 
+            probs += self.word_reward
+            probs[:, self.eos] -= self.word_reward
+
             # Record attention scores
-            attn[:, :, step+1].copy_(avg_attn_scores)
+            attn[:, :, step + 1].copy_(avg_attn_scores)
 
             cand_scores = buffer('cand_scores', type_of=scores)
             cand_indices = buffer('cand_indices')
@@ -355,7 +386,7 @@ class SequenceGenerator(torch.nn.Module):
             # After, the min values per row are the top candidate active hypos
             active_mask = buffer('active_mask')
             torch.add(
-                eos_mask.type_as(cand_offsets)*cand_size,
+                eos_mask.type_as(cand_offsets) * cand_size,
                 cand_offsets[:eos_mask.size(1)],
                 out=active_mask,
             )
@@ -388,12 +419,12 @@ class SequenceGenerator(torch.nn.Module):
 
             # copy tokens and scores for active hypotheses
             torch.index_select(
-                tokens[:, :step+1], dim=0, index=active_bbsz_idx,
-                out=tokens_buf[:, :step+1],
+                tokens[:, :step + 1], dim=0, index=active_bbsz_idx,
+                out=tokens_buf[:, :step + 1],
             )
             torch.gather(
                 cand_indices, dim=1, index=active_hypos,
-                out=tokens_buf.view(bsz, beam_size, -1)[:, :, step+1],
+                out=tokens_buf.view(bsz, beam_size, -1)[:, :, step + 1],
             )
             if step > 0:
                 torch.index_select(
@@ -407,8 +438,8 @@ class SequenceGenerator(torch.nn.Module):
 
             # copy attention for active hypotheses
             torch.index_select(
-                attn[:, :, :step+2], dim=0, index=active_bbsz_idx,
-                out=attn_buf[:, :, :step+2],
+                attn[:, :, :step + 2], dim=0, index=active_bbsz_idx,
+                out=attn_buf[:, :, :step + 2],
             )
 
             # swap buffers
@@ -427,7 +458,11 @@ class SequenceGenerator(torch.nn.Module):
 
         # sort by score descending
         for sent in range(bsz):
-            finalized[sent] = sorted(finalized[sent], key=lambda r: r['score'], reverse=True)
+            finalized[sent] = sorted(
+                finalized[sent],
+                key=lambda r: r['score'],
+                reverse=True,
+            )
 
         return finalized
 
@@ -439,10 +474,19 @@ class SequenceGenerator(torch.nn.Module):
         avg_attn = None
         for model, encoder_out in zip(self.models, encoder_outs):
             with utils.maybe_no_grad():
-                decoder_out = list(model.decoder(tokens, encoder_out, incremental_states[model]))
+                decoder_out = list(
+                    model.decoder(
+                        tokens,
+                        encoder_out,
+                        incremental_states[model],
+                    ),
+                )
                 decoder_out[0] = decoder_out[0][:, -1, :]
                 attn = decoder_out[1]
-                possible_translation_tokens = decoder_out[2]
+                if len(decoder_out) == 3:
+                    possible_translation_tokens = decoder_out[2]
+                else:
+                    possible_translation_tokens = None
             probs = model.get_normalized_probs(decoder_out, log_probs=False).data
             if avg_probs is None:
                 avg_probs = probs

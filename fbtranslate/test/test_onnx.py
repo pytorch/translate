@@ -73,15 +73,15 @@ class TestONNX(unittest.TestCase):
                 output_attention_weights_beam_list = attention_t
                 dce = tokens_t
 
-                timestep = 0LL
+                timestep = 0
 
-                while timestep < 20LL:
+                while timestep < 20:
                     log_probs, attn = decoder(output_token_beam_list,
                         encoder_outs, final_hidden, final_cells, src_lengths,
                         src_tokens)
 
                     best_scores_per_hypo, best_tokens_per_hypo = topk(
-                        log_probs, k=6, dim=-1, largest=True, sorted=True)
+                        log_probs, k=6, dim=-1, largest=1, sorted=1)
 
                     output_scores = best_scores_per_hypo + \
                         squeeze(scores_t, dim=0)
@@ -101,9 +101,9 @@ class TestONNX(unittest.TestCase):
 
                     scores_t, best_indices = topk(
                         output_scores_flattened_slice, k=6, dim=-1,
-                        largest=True, sorted=True)
+                        largest=1, sorted=1)
 
-                    hypo_t_int64 = best_indices / 6LL
+                    hypo_t_int64 = best_indices / 6
 
                     attention_t = index_select(
                         attention_t, squeeze(hypo_t_int64, dim=0), dim=0)

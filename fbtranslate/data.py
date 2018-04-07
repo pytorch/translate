@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
+import argparse
 import os
+import time
 
-from fairseq import data, indexed_dataset
+from fairseq import data, distributed_utils, indexed_dataset
 from typing import NamedTuple, Optional, Tuple
 
 from fbtranslate import dictionary as fbtranslate_dictionary
@@ -56,54 +58,85 @@ def infer_file_paths(
     return train_corpus, eval_corpus
 
 
-def _get_dictionary(corpus: CorpusConfig, save_dir: str, tokens_with_penalty=None):
-    vocab_file = corpus.vocab_file
-    if not vocab_file:
-        vocab_file = os.path.join(save_dir, f'dictionary-{corpus.dialect}.txt')
+def _get_dictionary(
+    corpus: CorpusConfig,
+    save_dir: str,
+    args: Optional[argparse.Namespace]=None,
+    tokens_with_penalty=None,
+):
+    if corpus.vocab_file and os.path.isfile(corpus.vocab_file):
+        d = fbtranslate_dictionary.Dictionary.load(corpus.vocab_file)
+        print(
+            f'Using specified vocab file {corpus.vocab_file}. '
+            'Ignoring any specified max vocab size.'
+        )
+        return d
 
-    if os.path.isfile(vocab_file):
-        try:
-            d = fbtranslate_dictionary.Dictionary.load(vocab_file)
-            print(
-                f'Re-using existing vocab file {vocab_file}. '
-                'Ignoring any specified max vocab size.'
-            )
-            return d
-        except Exception as e:
-            print(
-                f'Failed to re-use existing vocab file {vocab_file} '
-                f'due to exception {e}. Overwriting the file with new vocab.'
-            )
+    vocab_file = os.path.join(save_dir, f'dictionary-{corpus.dialect}.txt')
+    signal_file = vocab_file + '.ready_signal'
+
+    # The workers will just wait until the master creates the vocab file, then
+    # load it.
+    if args is not None and not distributed_utils.is_master(args):
+        start_time = time.time()
+        while not os.path.isfile(signal_file):
+            # Times out in an hour.
+            if time.time() - start_time > 60 * 60:
+                raise TimeoutError(
+                    f'Worker {args.distributed_rank} timed out waiting for '
+                    f'master to create ready signal file at {signal_file}.'
+                )
+            time.sleep(60)  # Checks every minute
+        d = fbtranslate_dictionary.Dictionary.load(vocab_file)
+        return d
+
+    # If the master already sees a signal file, that means there's an
+    # existing dictionary file from a previous run.
+    if os.path.isfile(signal_file):
+        d = fbtranslate_dictionary.Dictionary.load(vocab_file)
+        print(
+            f'Re-using existing vocab file {vocab_file}. '
+            'Ignoring any specified max vocab size.'
+        )
+        return d
+
+    # Otherwise, the master needs to generate a new vocab file and then
+    # create the signal file to let the workers know it's safe to start
+    # loading the dictionary.
     else:
-        print(f'Generating new vocab to be saved at {vocab_file}.')
-
-    d = fbtranslate_dictionary.Dictionary()
-    with open(corpus.data_file, 'r') as f:
-        for line in f:
-            tokens = line.split()
-            for t in tokens:
-                token_index = d.add_symbol(t)
-
-    # Set indices to receive penalty
-    if tokens_with_penalty:
-        # Assume input tokens are unique
-        bad_words_list = []
-        with open(tokens_with_penalty, 'r', encoding='utf-8') as f:
+        d = fbtranslate_dictionary.Dictionary()
+        with open(corpus.data_file, 'r') as f:
             for line in f:
-                tokens = line.strip().split()
-                if len(tokens) == 1:
-                    bad_words_list.append(tokens[0])
+                tokens = line.split()
+                for t in tokens:
+                    token_index = d.add_symbol(t)
 
-        for token, token_index in d.indices.items():
-            if token in bad_words_list:
-                d.profanity_indices.add(token_index)
+        # Set indices to receive penalty
+        if tokens_with_penalty:
+            # Assume input tokens are unique
+            bad_words_list = []
+            with open(tokens_with_penalty, 'r', encoding='utf-8') as f:
+                for line in f:
+                    tokens = line.strip().split()
+                    if len(tokens) == 1:
+                        bad_words_list.append(tokens[0])
 
-    d.finalize()
-    # Save and re-load the dictionary to enforce max vocab size, since the
-    # pruning is only done when saving the vocab file.
-    d.save(vocab_file, threshold=0, nwords=corpus.max_vocab_size)
-    d = fbtranslate_dictionary.Dictionary.load(vocab_file)
-    return d
+            for token, token_index in d.indices.items():
+                if token in bad_words_list:
+                    d.profanity_indices.add(token_index)
+
+        d.finalize()
+        d.save(vocab_file, threshold=0, nwords=corpus.max_vocab_size)
+        print(f'Generated new vocab file saved at {vocab_file}.')
+        # Mode x is exclusive creation, failing if the file already exists.
+        # Signals to the workers that it's safe to start loading the
+        # vocab file.
+        open(signal_file, 'x').close()
+
+        # Re-load the saved dictionary to enforce max vocab size, since
+        # the pruning is only done when saving the vocab file.
+        d = fbtranslate_dictionary.Dictionary.load(vocab_file)
+        return d
 
 
 def load_raw_text_dataset(
@@ -112,6 +145,7 @@ def load_raw_text_dataset(
     train_split: str,
     eval_split: str,
     save_dir: str,
+    args: Optional[argparse.Namespace]=None,
     penalized_target_tokens_file=None,
     append_eos_to_source=False,
     reverse_source=False,
@@ -120,10 +154,12 @@ def load_raw_text_dataset(
     source_dict = _get_dictionary(
         corpus=train_corpus.source,
         save_dir=save_dir,
+        args=args,
     )
     target_dict = _get_dictionary(
         corpus=train_corpus.target,
         save_dir=save_dir,
+        args=args,
         tokens_with_penalty=penalized_target_tokens_file,
     )
 

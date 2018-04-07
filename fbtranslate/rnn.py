@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import numpy as np
 import torch
 from torch.autograd import Variable
 import torch.nn as nn
@@ -21,7 +22,6 @@ from fairseq.models import (
     register_model_architecture,
 )
 from fbtranslate import rnn_cell  # noqa
-
 from fbtranslate import vocab_reduction
 from fbtranslate import word_dropout
 
@@ -95,6 +95,15 @@ class RNNModel(FairseqModel):
             help=(
                 'whether use mean encoder hidden states as decoder initial '
                 'states or not'
+            ),
+        )
+        parser.add_argument(
+            '--add-encoder-outputs-as-decoder-input',
+            default=False,
+            action='store_true',
+            help=(
+                'whether use max encoder hidden states as constant decoder '
+                'input'
             ),
         )
         parser.add_argument(
@@ -187,6 +196,7 @@ class RNNModel(FairseqModel):
         vocab_reduction.add_args(parser)
         # Args for word dropout
         word_dropout.add_args(parser)
+
     @classmethod
     def build_model(cls, args, src_dict, dst_dict):
         """Build a new model instance."""
@@ -207,6 +217,9 @@ class RNNModel(FairseqModel):
             residual_level=args.residual_level,
             bidirectional=bool(args.encoder_bidirectional),
             word_dropout_params=args.word_dropout_params,
+            add_encoder_output_as_decoder_input=(
+                args.add_encoder_output_as_decoder_input
+            ),
         )
         decoder = RNNDecoder(
             src_dict=src_dict,
@@ -224,6 +237,9 @@ class RNNModel(FairseqModel):
             dropout_out=args.decoder_dropout_out,
             residual_level=args.residual_level,
             averaging_encoder=args.averaging_encoder,
+            add_encoder_output_as_decoder_input=(
+                args.add_encoder_output_as_decoder_input
+            ),
         )
         return cls(encoder, decoder)
 
@@ -253,7 +269,6 @@ class LSTMSequenceEncoder(FairseqEncoder):
     def __init__(
         self,
         dictionary,
-        word_dropout_params=None,
         embed_dim=512,
         freeze_embed=False,
         cell_type='lstm',
@@ -263,6 +278,8 @@ class LSTMSequenceEncoder(FairseqEncoder):
         dropout_out=0.1,
         residual_level=None,
         bidirectional=False,
+        word_dropout_params=None,
+        add_encoder_output_as_decoder_input=False,
     ):
         assert cell_type == 'lstm', 'sequence-lstm requires cell_type="lstm"'
 
@@ -273,6 +290,9 @@ class LSTMSequenceEncoder(FairseqEncoder):
         self.residual_level = residual_level
         self.hidden_dim = hidden_dim
         self.bidirectional = bidirectional
+        self.add_encoder_output_as_decoder_input = (
+            add_encoder_output_as_decoder_input
+        )
         num_embeddings = len(dictionary)
         self.padding_idx = dictionary.pad()
         self.embed_tokens = Embedding(
@@ -296,9 +316,14 @@ class LSTMSequenceEncoder(FairseqEncoder):
 
         self.num_layers = len(self.layers)
         self.word_dropout_module = None
-        if word_dropout_params:
-            self.word_dropout_module = \
-            word_dropout.WordDropout(dictionary, word_dropout_params)
+        if (
+            word_dropout_params and
+            word_dropout_params['word_dropout_freq_threshold'] is not None and
+            word_dropout_params['word_dropout_freq_threshold'] > 0
+        ):
+            self.word_dropout_module = (
+                word_dropout.WordDropout(dictionary, word_dropout_params)
+            )
 
     def forward(self, src_tokens, src_lengths):
         if LanguagePairDataset.LEFT_PAD_SOURCE:
@@ -309,7 +334,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
                 self.padding_idx,
                 left_to_right=True,
             )
-        if self.word_dropout_module:
+        if self.word_dropout_module is not None:
             src_tokens.data = self.word_dropout_module(src_tokens.data)
         bsz, seqlen = src_tokens.size()
 
@@ -375,8 +400,13 @@ class LSTMSequenceEncoder(FairseqEncoder):
             final_cells,
             dim=0,
         ).view(self.num_layers, *final_cells[0].size())
+
         #  [max_seqlen, batch_size, hidden_dim]
-        unpacked_output, _ = pad_packed_sequence(packed_input)
+        padding_value = -np.inf if self.add_encoder_output_as_decoder_input else 0
+        unpacked_output, _ = pad_packed_sequence(
+            packed_input,
+            padding_value=padding_value,
+        )
 
         return (
             unpacked_output,
@@ -550,6 +580,7 @@ class RNNEncoder(FairseqEncoder):
         dropout_out=0.1,
         residual_level=None,
         bidirectional=False,
+        add_encoder_output_as_decoder_input=False,
     ):
         super().__init__(dictionary)
         self.dictionary = dictionary
@@ -558,6 +589,9 @@ class RNNEncoder(FairseqEncoder):
         self.residual_level = residual_level
         self.hidden_dim = hidden_dim
         self.bidirectional = bidirectional
+        self.add_encoder_output_as_decoder_input = (
+            add_encoder_output_as_decoder_input
+        )
         num_embeddings = len(dictionary)
         self.padding_idx = dictionary.pad()
         self.embed_tokens = Embedding(
@@ -580,9 +614,14 @@ class RNNEncoder(FairseqEncoder):
 
         self.num_layers = len(self.layers)
         self.word_dropout_module = None
-        if word_dropout_params:
-            self.word_dropout_module = \
-            word_dropout.WordDropout(dictionary, word_dropout_params)
+        if (
+            word_dropout_params and
+            word_dropout_params['word_dropout_freq_threshold'] is not None and
+            word_dropout_params['word_dropout_freq_threshold'] > 0
+        ):
+            self.word_dropout_module = (
+                word_dropout.WordDropout(dictionary, word_dropout_params)
+            )
 
     def forward(self, src_tokens, src_lengths):
         if LanguagePairDataset.LEFT_PAD_SOURCE:
@@ -593,7 +632,7 @@ class RNNEncoder(FairseqEncoder):
                 self.padding_idx,
                 left_to_right=True,
             )
-        if self.word_dropout_module:
+        if self.word_dropout_module is not None:
             src_tokens.data = self.word_dropout_module(src_tokens.data)
         bsz, seqlen = src_tokens.size()
 
@@ -652,10 +691,14 @@ class RNNEncoder(FairseqEncoder):
             final_cells,
             dim=0,
         ).view(self.num_layers, *final_cells[0].size())
+
         #  [max_seqlen, batch_size, hidden_dim]
+        padding_value = -np.inf if self.add_encoder_output_as_decoder_input else 0
         unpacked_output, _ = pad_packed_sequence(
             PackedSequence(packed_input, batch_sizes),
+            padding_value=padding_value,
         )
+
         return (
             unpacked_output,
             final_hiddens,
@@ -787,10 +830,12 @@ class RNNDecoder(FairseqIncrementalDecoder):
         attention_type='dot',
         residual_level=None,
         averaging_encoder=False,
+        add_encoder_output_as_decoder_input=False,
     ):
         super().__init__(dst_dict)
         self.encoder_hidden_dim = encoder_hidden_dim
         self.embed_dim = embed_dim
+        self.add_encoder_output_as_decoder_input = add_encoder_output_as_decoder_input
         self.hidden_dim = hidden_dim
         self.out_embed_dim = out_embed_dim
         self.dropout_in = dropout_in
@@ -816,12 +861,17 @@ class RNNDecoder(FairseqIncrementalDecoder):
         elif cell_type == 'layer_norm_lstm':
             cell_class = rnn_cell.LayerNormLSTMCell
 
-        self.layers = nn.ModuleList([
-            cell_class(
-                encoder_hidden_dim + embed_dim if layer == 0 else hidden_dim,
-                hidden_dim,
-            ) for layer in range(num_layers)
-        ])
+        layers = []
+        for layer in range(num_layers):
+            if layer == 0:
+                cell_input_dim = encoder_hidden_dim + embed_dim
+                if self.add_encoder_output_as_decoder_input:
+                    cell_input_dim += encoder_hidden_dim
+            else:
+                cell_input_dim = hidden_dim
+            layers.append(
+                cell_class(input_dim=cell_input_dim, hidden_dim=hidden_dim))
+        self.layers = nn.ModuleList(layers)
 
         self.attention = AttentionLayer(
             decoder_hidden_state_dim=hidden_dim,
@@ -884,8 +934,14 @@ class RNNDecoder(FairseqIncrementalDecoder):
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
 
-        # initialize previous states
-        # (or get from cache during incremental generation)
+        if self.add_encoder_output_as_decoder_input:
+            # [1, batch_size, hidden_size]
+            encoder_outs_maxpool, _ = torch.max(encoder_outs, dim=0, keepdim=True)
+            encoder_outs_maxpool = encoder_outs_maxpool.repeat(seqlen, 1, 1)
+            # T x B x (C + encoder_hidden_dim)
+            x = torch.cat((x, encoder_outs_maxpool), dim=2)
+
+        # initialize previous states (or get from cache during incremental generation)
         cached_state = utils.get_incremental_state(
             self,
             incremental_state,
@@ -1086,6 +1142,11 @@ def base_architecture(args):
     vocab_reduction.set_arg_defaults(args)
     word_dropout.set_arg_defaults(args)
     args.sequence_lstm = getattr(args, 'sequence_lstm', False)
+    args.add_encoder_output_as_decoder_input = getattr(
+        args,
+        'add_encoder_output_as_decoder_input',
+        False,
+    )
 
 
 @register_model_architecture('rnn', 'rnn_big_test')
