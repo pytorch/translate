@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
 import torch
 
 from fairseq import bleu, data, options, progress_bar, \
@@ -72,6 +73,7 @@ def _generate_score(models, args, dataset, dataset_split, extra_model_args=None)
         if args.shard_id < 0 or args.shard_id >= args.num_shards:
             raise ValueError('--shard-id must be between 0 and num_shards')
         itr = data.sharded_iterator(itr, args.num_shards, args.shard_id)
+
     num_sentences = 0
     with progress_bar.build_progress_bar(args, itr) as t:
         wps_meter = TimeMeter()
@@ -144,7 +146,6 @@ def add_args(parser):
         default=False,
         help=(
             'Apppend EOS to source sentences (instead of just target). '
-            'Note that this always in effect when using binarized data.'
         ),
     )
     group.add_argument(
@@ -217,7 +218,29 @@ def main():
     generate(args)
 
 
+def assert_test_corpus_and_vocab_files_specified(args):
+    assert not args.data, (
+        'Specifying a data directory is disabled in FBTranslate since the '
+        'fairseq data class is not supported. Please specify '
+        '--train-source-text-file, --train-target-text-file, '
+        '--eval-source-text-file, and  --eval-target-text-file instead.'
+    )
+    assert args.source_vocab_file and os.path.isfile(
+        args.source_vocab_file,
+    ), 'Please specify a valid file for --source-vocab-file'
+    assert args.target_vocab_file and os.path.isfile(
+        args.target_vocab_file,
+    ), 'Please specify a valid file for --target-vocab_file'
+    assert args.source_text_file and os.path.isfile(
+        args.source_text_file,
+    ), 'Please specify a valid file for --source-text-file'
+    assert args.target_text_file and os.path.isfile(
+        args.target_text_file,
+    ), 'Please specify a valid file for --target-text-file'
+
+
 def generate(args):
+    assert_test_corpus_and_vocab_files_specified(args)
     assert args.path is not None, '--path required for generation!'
     vocab_reduction.set_arg_defaults(args)
 
@@ -231,61 +254,33 @@ def generate(args):
     if args.target_lang is None:
         args.target_lang = 'tgt'
 
-    if (
-        args.source_vocab_file and
-        args.target_vocab_file and
-        args.source_text_file and
-        args.target_text_file and
-        args.source_lang and
-        args.target_lang
-    ):
-        src_dict = fbtranslate_dictionary.Dictionary.load(
-            args.source_vocab_file,
-        )
-        dst_dict = fbtranslate_dictionary.Dictionary.load(
-            args.target_vocab_file,
-        )
-        dataset = data.LanguageDatasets(
-            src=args.source_lang,
-            dst=args.target_lang,
-            src_dict=src_dict,
-            dst_dict=dst_dict,
-        )
-        dataset.splits[args.gen_subset] = fbtranslate_data.make_language_pair_dataset(
-            source_file=args.source_text_file,
-            target_file=args.target_text_file,
-            source_dict=src_dict,
-            target_dict=dst_dict,
-            args=args,
-        )
-    elif args.replace_unk is None:
-        # These functions using fairseq's data module are kept mainly for
-        # backward compatibility, as most of our data going forward will
-        # probably not follow fairseq's format expectations.
-        dataset = data.load_dataset(
-            args.data,
-            [args.gen_subset],
-            args.source_lang,
-            args.target_lang,
-        )
-    else:
-        # This is intentionally using the fairseq version of
-        # load_raw_text_dataset instead of the fbtranslate version. Again,
-        # mainly for backward compatibility.
-        dataset = data.load_raw_text_dataset(
-            args.data,
-            [args.gen_subset],
-            args.source_lang,
-            args.target_lang,
-        )
+    src_dict = fbtranslate_dictionary.Dictionary.load(
+        args.source_vocab_file,
+    )
+    dst_dict = fbtranslate_dictionary.Dictionary.load(
+        args.target_vocab_file,
+    )
+    dataset = data.LanguageDatasets(
+        src=args.source_lang,
+        dst=args.target_lang,
+        src_dict=src_dict,
+        dst_dict=dst_dict,
+    )
+    dataset.splits[args.gen_subset] = fbtranslate_data.make_language_pair_dataset(
+        source_file=args.source_text_file,
+        target_file=args.target_text_file,
+        source_dict=src_dict,
+        target_dict=dst_dict,
+        args=args,
+    )
+
     if args.source_lang is None or args.target_lang is None:
         # record inferred languages in args
         args.source_lang, args.target_lang = dataset.src, dataset.dst
 
     print('| [{}] dictionary: {} types'.format(dataset.src, len(dataset.src_dict)))
     print('| [{}] dictionary: {} types'.format(dataset.dst, len(dataset.dst_dict)))
-    print('| {} {} {} examples'.format(
-        args.data,
+    print('| {} {} examples'.format(
         args.gen_subset,
         len(dataset.splits[args.gen_subset])),
     )
