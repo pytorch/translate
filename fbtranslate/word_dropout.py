@@ -34,6 +34,7 @@ def set_arg_defaults(args):
     word_dropout_freq_threshold = getattr(
         args,
         'word_dropout_freq_threshold',
+        None,
     )
     if word_dropout_freq_threshold is not None:
         word_dropout_smoothing_alpha = getattr(

@@ -85,6 +85,109 @@ class CombinedDecoderEnsemble(nn.Module):
         return tuple(outputs)
 
 
+def onnx_export_ensemble(
+    module,
+    output_path,
+    input_tuple,
+    input_names,
+    output_names,
+):
+    # include parameters as inputs of exported graph
+    for name, _ in module.named_parameters():
+        input_names.append(name)
+
+    with open(output_path, 'w+b') as netdef_file:
+        torch.onnx._export(
+            module,
+            input_tuple,
+            netdef_file,
+            verbose=False,
+            input_names=input_names,
+            output_names=output_names,
+        )
+
+
+def load_models_from_checkpoints(
+    checkpoint_filenames,
+    src_dict_filename,
+    dst_dict_filename,
+):
+    src_dict = dictionary.Dictionary.load(src_dict_filename)
+    dst_dict = dictionary.Dictionary.load(dst_dict_filename)
+    models = []
+    for filename in checkpoint_filenames:
+        checkpoint_data = torch.load(filename, map_location='cpu')
+
+        model = rnn.RNNModel.build_model(
+            checkpoint_data['args'],
+            src_dict,
+            dst_dict,
+        )
+        model.load_state_dict(checkpoint_data['model'])
+        models.append(model)
+
+    return models
+
+
+def save_caffe2_rep_to_db(
+    caffe2_backend_rep,
+    output_path,
+    input_names,
+    output_names,
+    num_workers,
+):
+    # netdef external_input includes internally produced blobs
+    actual_external_inputs = set()
+    produced = set()
+    for operator in caffe2_backend_rep.predict_net.op:
+        for blob in operator.input:
+            if blob not in produced:
+                actual_external_inputs.add(blob)
+        for blob in operator.output:
+            produced.add(blob)
+    for blob in output_names:
+        if blob not in produced:
+            actual_external_inputs.add(blob)
+
+    param_names = [
+        blob for blob in actual_external_inputs
+        if blob not in input_names
+    ]
+
+    init_net = core.Net(caffe2_backend_rep.init_net)
+    predict_net = core.Net(caffe2_backend_rep.predict_net)
+
+    # predictor_exporter requires disjoint params, inputs and outputs
+    for i, param in enumerate(param_names):
+        if param in output_names:
+            saved_name = param + '_PARAM'
+            init_net.Copy(param, saved_name)
+            predict_net.Copy(saved_name, param)
+            param_names[i] = saved_name
+
+    output_shapes = {}
+    for blob in output_names:
+        output_shapes[blob] = (0,)
+
+    with caffe2_backend_rep.workspace:
+        workspace.RunNetOnce(init_net)
+        predictor_export_meta = predictor_exporter.PredictorExportMeta(
+            predict_net=predict_net,
+            parameters=param_names,
+            inputs=input_names,
+            outputs=output_names,
+            shapes=output_shapes,
+            net_type='dag',
+            num_workers=num_workers,
+        )
+        predictor_exporter.save_to_db(
+            db_type='log_file_db',
+            db_destination=output_path,
+            predictor_export_meta=predictor_export_meta,
+        )
+    logger.info('Caffe2 predictor net saved as: {}'.format(output_path))
+
+
 class EncoderEnsemble(nn.Module):
 
     def __init__(
@@ -148,30 +251,19 @@ class EncoderEnsemble(nn.Module):
         # PyTorch indexing requires int64 while support for tracing
         # pack_padded_sequence() requires int32.
         length = 5
-        src_tokens = torch.autograd.Variable(
-            torch.LongTensor(np.ones((length, 1), dtype='int64')),
-        )
-        src_lengths = torch.autograd.Variable(
-            torch.IntTensor(np.array([length], dtype='int32')),
-        )
+        src_tokens = torch.LongTensor(np.ones((length, 1), dtype='int64'))
+        src_lengths = torch.IntTensor(np.array([length], dtype='int32'))
 
         # generate output names
         self.forward(src_tokens, src_lengths)
 
-        input_names = ['encoder_inputs', 'encoder_lengths']
-        for name, _ in self.named_parameters():
-            input_names.append(name)
-
-        netdef_file = open(output_path, 'w+b')
-        torch.onnx._export(
-            self,
-            (src_tokens, src_lengths),
-            netdef_file,
-            verbose=False,
-            input_names=input_names,
+        onnx_export_ensemble(
+            module=self,
+            output_path=output_path,
+            input_tuple=(src_tokens, src_lengths),
+            input_names=['encoder_inputs', 'encoder_lengths'],
             output_names=self.output_names,
         )
-        netdef_file.close()
 
     def save_to_db(self, output_path):
         """
@@ -185,59 +277,13 @@ class EncoderEnsemble(nn.Module):
             onnx_model = onnx.load(f)
         onnx_encoder = caffe2_backend.prepare(onnx_model)
 
-        input_names = ['encoder_inputs', 'encoder_lengths']
-        output_names = self.output_names
-
-        # netdef external_input includes internally produced blobs
-        actual_external_inputs = set()
-        produced = set()
-        for operator in onnx_encoder.predict_net.op:
-            for blob in operator.input:
-                if blob not in produced:
-                    actual_external_inputs.add(blob)
-            for blob in operator.output:
-                produced.add(blob)
-        for blob in output_names:
-            if blob not in produced:
-                actual_external_inputs.add(blob)
-
-        param_names = [
-            blob for blob in actual_external_inputs
-            if blob not in input_names
-        ]
-
-        init_net = core.Net(onnx_encoder.init_net)
-        predict_net = core.Net(onnx_encoder.predict_net)
-
-        # predictor_exporter requires disjoint params, inputs and outputs
-        for i, param in enumerate(param_names):
-            if param in output_names:
-                saved_name = param + '_PARAM'
-                init_net.Copy(param, saved_name)
-                predict_net.Copy(saved_name, param)
-                param_names[i] = saved_name
-
-        output_shapes = {}
-        for blob in self.output_names:
-            output_shapes[blob] = (0,)
-
-        with onnx_encoder.workspace:
-            workspace.RunNetOnce(init_net)
-            predictor_export_meta = predictor_exporter.PredictorExportMeta(
-                predict_net=predict_net,
-                parameters=param_names,
-                inputs=input_names,
-                outputs=output_names,
-                shapes=output_shapes,
-                net_type='dag',
-                num_workers=2 * len(self.models),
-            )
-            predictor_exporter.save_to_db(
-                db_type='log_file_db',
-                db_destination=output_path,
-                predictor_export_meta=predictor_export_meta,
-            )
-        logger.info('Encoder predictor net saved as: {}'.format(output_path))
+        save_caffe2_rep_to_db(
+            caffe2_backend_rep=onnx_encoder,
+            output_path=output_path,
+            input_names=['encoder_inputs', 'encoder_lengths'],
+            output_names=self.output_names,
+            num_workers=2 * len(self.models),
+        )
 
     @staticmethod
     def build_from_checkpoints(
@@ -245,20 +291,11 @@ class EncoderEnsemble(nn.Module):
         src_dict_filename,
         dst_dict_filename,
     ):
-        src_dict = dictionary.Dictionary.load(src_dict_filename)
-        dst_dict = dictionary.Dictionary.load(dst_dict_filename)
-        models = []
-        for filename in checkpoint_filenames:
-            checkpoint_data = torch.load(filename, map_location='cpu')
-
-            model = rnn.RNNModel.build_model(
-                checkpoint_data['args'],
-                src_dict,
-                dst_dict,
-            )
-            model.load_state_dict(checkpoint_data['model'])
-            models.append(model)
-
+        models = load_models_from_checkpoints(
+            checkpoint_filenames,
+            src_dict_filename,
+            dst_dict_filename,
+        )
         return EncoderEnsemble(models)
 
 
@@ -320,14 +357,10 @@ class DecoderStepEnsemble(nn.Module):
 
             # no batching, we only care about care about "max" length
             src_length_int = encoder_output.size()[0]
-            src_length = torch.autograd.Variable(
-                torch.LongTensor(np.array([src_length_int])),
-            )
+            src_length = torch.LongTensor(np.array([src_length_int]))
 
             # notional, not actually used for decoder computation
-            src_tokens = torch.autograd.Variable(
-                torch.LongTensor(np.array([[0] * src_length_int])),
-            )
+            src_tokens = torch.LongTensor(np.array([[0] * src_length_int]))
 
             encoder_out = (
                 encoder_output,
@@ -434,31 +467,23 @@ class DecoderStepEnsemble(nn.Module):
 
     def onnx_export(self, output_path, encoder_ensemble_outputs):
         # single EOS
-        input_token = torch.autograd.Variable(
-            torch.LongTensor(np.array([[self.models[0].dst_dict.eos()]])),
+        input_token = torch.LongTensor(
+            np.array([[self.models[0].dst_dict.eos()]]),
         )
-        timestep = torch.autograd.Variable(torch.LongTensor(np.array([[0]])))
+        timestep = torch.LongTensor(np.array([[0]]))
 
         # generate input and output names
         self.forward(input_token, timestep, *encoder_ensemble_outputs)
 
-        input_names = self.input_names
-        for name, _ in self.named_parameters():
-            input_names.append(name)
-        output_names = self.output_names
-
-        inputs = tuple([input_token, timestep] + list(encoder_ensemble_outputs))
-
-        netdef_file = open(output_path, 'w+b')
-        torch.onnx._export(
-            self,
-            inputs,
-            netdef_file,
-            verbose=False,
-            input_names=input_names,
-            output_names=output_names,
+        onnx_export_ensemble(
+            module=self,
+            output_path=output_path,
+            input_tuple=tuple(
+                [input_token, timestep] + list(encoder_ensemble_outputs),
+            ),
+            input_names=self.input_names,
+            output_names=self.output_names,
         )
-        netdef_file.close()
 
     @staticmethod
     def build_from_checkpoints(
@@ -469,20 +494,11 @@ class DecoderStepEnsemble(nn.Module):
         word_penalty=0,
         unk_penalty=0,
     ):
-        src_dict = dictionary.Dictionary.load(src_dict_filename)
-        dst_dict = dictionary.Dictionary.load(dst_dict_filename)
-        models = []
-        for filename in checkpoint_filenames:
-            checkpoint_data = torch.load(filename, map_location='cpu')
-
-            model = rnn.RNNModel.build_model(
-                checkpoint_data['args'],
-                src_dict,
-                dst_dict,
-            )
-            model.load_state_dict(checkpoint_data['model'])
-            models.append(model)
-
+        models = load_models_from_checkpoints(
+            checkpoint_filenames,
+            src_dict_filename,
+            dst_dict_filename,
+        )
         return DecoderStepEnsemble(
             models,
             beam_size=beam_size,
@@ -504,58 +520,10 @@ class DecoderStepEnsemble(nn.Module):
             onnx_model = onnx.load(f)
         onnx_decoder_step = caffe2_backend.prepare(onnx_model)
 
-        input_names = self.input_names
-        output_names = self.output_names
-
-        # netdef external_input includes internally produced blobs
-        actual_external_inputs = set()
-        produced = set()
-        for operator in onnx_decoder_step.predict_net.op:
-            for blob in operator.input:
-                if blob not in produced:
-                    actual_external_inputs.add(blob)
-            for blob in operator.output:
-                produced.add(blob)
-        for blob in output_names:
-            if blob not in produced:
-                actual_external_inputs.add(blob)
-
-        param_names = [
-            blob for blob in actual_external_inputs
-            if blob not in input_names
-        ]
-
-        init_net = core.Net(onnx_decoder_step.init_net)
-        predict_net = core.Net(onnx_decoder_step.predict_net)
-
-        # predictor_exporter requires disjoint params, inputs and outputs
-        for i, param in enumerate(param_names):
-            if param in output_names:
-                saved_name = param + '_PARAM'
-                init_net.Copy(param, saved_name)
-                predict_net.Copy(saved_name, param)
-                param_names[i] = saved_name
-
-        output_shapes = {}
-        for blob in self.output_names:
-            output_shapes[blob] = (0,)
-
-        with onnx_decoder_step.workspace:
-            workspace.RunNetOnce(onnx_decoder_step.init_net)
-            predictor_export_meta = predictor_exporter.PredictorExportMeta(
-                predict_net=predict_net,
-                parameters=param_names,
-                inputs=input_names,
-                outputs=output_names,
-                shapes=output_shapes,
-                net_type='dag',
-                num_workers=2 * len(self.models),
-            )
-            predictor_exporter.save_to_db(
-                db_type='log_file_db',
-                db_destination=output_path,
-                predictor_export_meta=predictor_export_meta,
-            )
-        logger.info(
-            'Decoder step predictor net saved as: {}'.format(output_path),
+        save_caffe2_rep_to_db(
+            caffe2_backend_rep=onnx_decoder_step,
+            output_path=output_path,
+            input_names=self.input_names,
+            output_names=self.output_names,
+            num_workers=2 * len(self.models),
         )

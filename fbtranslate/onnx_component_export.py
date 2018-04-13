@@ -96,13 +96,11 @@ def main():
         # (source length 5 is arbitrary)
         src_dict = encoder_ensemble.models[0].src_dict
         token_list = [src_dict.unk()] * 4 + [src_dict.eos()]
-        src_tokens = torch.autograd.Variable(
-            torch.LongTensor(
-                np.array(token_list, dtype='int64').reshape(-1, 1),
-            ),
+        src_tokens = torch.LongTensor(
+            np.array(token_list, dtype='int64').reshape(-1, 1),
         )
-        src_lengths = torch.autograd.Variable(
-            torch.IntTensor(np.array([len(token_list)], dtype='int32')),
+        src_lengths = torch.IntTensor(
+            np.array([len(token_list)], dtype='int32'),
         )
         pytorch_encoder_outputs = encoder_ensemble(src_tokens, src_lengths)
 

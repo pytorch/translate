@@ -15,9 +15,34 @@ import torch
 from fairseq import distributed_utils
 from fbtranslate import train
 from fbtranslate.train import main as single_process_main
+from fbtranslate import data as fbtranslate_data
 
 
 def main(args):
+    # Build vocab from the training corpus. We do this outside of train clones
+    # to prevent the clones from having to wait on the master clone building the
+    # vocab.
+    if args.source_lang is None:
+        args.source_lang = 'src'
+    if args.target_lang is None:
+        args.target_lang = 'tgt'
+
+    args.source_vocab_file = fbtranslate_data.build_vocab_if_nonexistent(
+        vocab_file=args.source_vocab_file,
+        corpus_file=args.train_source_text_file,
+        dialect=args.source_lang,
+        save_dir=args.save_dir,
+        max_vocab_size=args.target_max_vocab_size,
+    )
+    args.target_vocab_file = fbtranslate_data.build_vocab_if_nonexistent(
+        vocab_file=args.target_vocab_file,
+        corpus_file=args.train_target_text_file,
+        dialect=args.target_lang,
+        save_dir=args.save_dir,
+        max_vocab_size=args.target_max_vocab_size,
+        tokens_with_penalty=args.penalized_target_tokens_file,
+    )
+
     # Set distributed training parameters for a single node.
     args.distributed_world_size = torch.cuda.device_count()
     args.distributed_init_method = 'tcp://localhost:{port}'.format(

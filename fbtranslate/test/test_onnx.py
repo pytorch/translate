@@ -141,11 +141,9 @@ class TestONNX(unittest.TestCase):
         samples, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
         sample = next(samples)
         # TODO batched beam search
-        src_tokens = torch.autograd.Variable(
-            sample['net_input']['src_tokens'])[0]
+        src_tokens = sample['net_input']['src_tokens'][0]
         src_tokens = torch.unsqueeze(src_tokens, dim=0)
-        src_lengths = torch.autograd.Variable(
-            sample['net_input']['src_lengths'])[0]
+        src_lengths = sample['net_input']['src_lengths'][0]
         src_lengths = torch.unsqueeze(src_lengths, dim=0)
 
         bs = TestONNX.BeamSearch(test_args, src_dict, tgt_dict)
@@ -176,12 +174,8 @@ class TestONNX(unittest.TestCase):
         # PyTorch indexing requires int64 while support for tracing
         # pack_padded_sequence() requires int32.
         sample = next(samples)
-        src_tokens = torch.autograd.Variable(
-            sample['net_input']['src_tokens'][0:1],
-        ).t()
-        src_lengths = torch.autograd.Variable(
-            sample['net_input']['src_lengths'][0:1],
-        ).int()
+        src_tokens = sample['net_input']['src_tokens'][0:1].t()
+        src_lengths = sample['net_input']['src_lengths'][0:1].int()
 
         pytorch_encoder_outputs = encoder_ensemble(src_tokens, src_lengths)
 
@@ -238,13 +232,11 @@ class TestONNX(unittest.TestCase):
 
         src_dict = encoder_ensemble.models[0].src_dict
         token_list = [src_dict.unk()] * 4 + [src_dict.eos()]
-        src_tokens = torch.autograd.Variable(
-            torch.LongTensor(
-                np.array(token_list, dtype='int64').reshape(-1, 1),
-            ),
+        src_tokens = torch.LongTensor(
+            np.array(token_list, dtype='int64').reshape(-1, 1),
         )
-        src_lengths = torch.autograd.Variable(
-            torch.IntTensor(np.array([len(token_list)], dtype='int32')),
+        src_lengths = torch.IntTensor(
+            np.array([len(token_list)], dtype='int32'),
         )
 
         pytorch_encoder_outputs = encoder_ensemble(src_tokens, src_lengths)
@@ -294,12 +286,8 @@ class TestONNX(unittest.TestCase):
         # PyTorch indexing requires int64 while support for tracing
         # pack_padded_sequence() requires int32.
         sample = next(samples)
-        src_tokens = torch.autograd.Variable(
-            sample['net_input']['src_tokens'][0:1],
-        ).t()
-        src_lengths = torch.autograd.Variable(
-            sample['net_input']['src_lengths'][0:1],
-        ).int()
+        src_tokens = sample['net_input']['src_tokens'][0:1].t()
+        src_lengths = sample['net_input']['src_lengths'][0:1].int()
 
         pytorch_encoder_outputs = encoder_ensemble(src_tokens, src_lengths)
 
@@ -316,10 +304,10 @@ class TestONNX(unittest.TestCase):
         )
 
         # single EOS
-        input_token = torch.autograd.Variable(
-            torch.LongTensor(np.array([[model_list[0].dst_dict.eos()]])),
+        input_token = torch.LongTensor(
+            np.array([[model_list[0].dst_dict.eos()]]),
         )
-        timestep = torch.autograd.Variable(torch.LongTensor(np.array([[0]])))
+        timestep = torch.LongTensor(np.array([[0]]))
 
         pytorch_decoder_outputs = decoder_step_ensemble(
             input_token,

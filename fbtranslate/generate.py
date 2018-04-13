@@ -3,10 +3,11 @@
 import argparse
 import torch
 
-from fairseq import bleu, data, indexed_dataset, options, progress_bar, \
+from fairseq import bleu, data, options, progress_bar, \
     tokenizer, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
 from fbtranslate import beam_decode
+from fbtranslate import data as fbtranslate_data
 from fbtranslate import dictionary as \
     fbtranslate_dictionary
 from fbtranslate import rnn  # noqa
@@ -135,10 +136,41 @@ def _generate_score(models, args, dataset, dataset_split, extra_model_args=None)
     return scorer, num_sentences, gen_timer
 
 
-def main():
+def add_args(parser):
+    group = parser.add_argument_group('Generation')
+    group.add_argument(
+        '--append-eos-to-source',
+        action='store_true',
+        default=False,
+        help=(
+            'Apppend EOS to source sentences (instead of just target). '
+            'Note that this always in effect when using binarized data.'
+        ),
+    )
+    group.add_argument(
+        '--reverse-source',
+        action='store_true',
+        default=False,
+        help='Feed source sentence to model in reverse order.',
+    )
+    group.add_argument(
+        '--word-reward',
+        type=float,
+        default=0.0,
+        help=(
+            'Value to add to (log-prob) score for each token except EOS. '
+            'IMPORTANT NOTE: higher values of --lenpen and --word-reward '
+            'both encourage longer translations, while higher values of '
+            '--unkpen penalize UNKs more.'
+        ),
+    )
+
+
+def get_parser_with_args():
     parser = options.get_parser('Generation')
     options.add_dataset_args(parser, gen=True)
     options.add_generation_args(parser)
+    add_args(parser)
 
     group = parser.add_argument_group('Generation')
     group.add_argument(
@@ -167,23 +199,6 @@ def main():
         help='Path to raw text file containing examples in target dialect. '
         'This overrides what would be loaded from the data dir.',
     )
-    group.add_argument(
-        '--append-eos-to-source',
-        action='store_true',
-        default=False,
-        help='Apppend EOS to source sentences (instead of just target).',
-    )
-    group.add_argument(
-        '--word-reward',
-        type=float,
-        default=0.0,
-        help=(
-            'Value to add to (log-prob) score for each token except EOS. '
-            'IMPORTANT NOTE: higher values of --lenpen and --word-reward '
-            'both encourage longer translations, while higher values of '
-            '--unkpen penalize UNKs more.'
-        ),
-    )
 
     model_specific_group = parser.add_argument_group(
         'Model-specific configuration',
@@ -193,8 +208,16 @@ def main():
     )
     # Add any model-specific args here to override model args during inference
     vocab_reduction.add_args(model_specific_group)
+    return parser
 
+
+def main():
+    parser = get_parser_with_args()
     args = parser.parse_args()
+    generate(args)
+
+
+def generate(args):
     assert args.path is not None, '--path required for generation!'
     vocab_reduction.set_arg_defaults(args)
 
@@ -203,8 +226,11 @@ def main():
     extra_model_args = {
         'vocab_reduction_params': args.vocab_reduction_params,
     }
+    if args.source_lang is None:
+        args.source_lang = 'src'
+    if args.target_lang is None:
+        args.target_lang = 'tgt'
 
-    # Load dataset
     if (
         args.source_vocab_file and
         args.target_vocab_file and
@@ -225,19 +251,12 @@ def main():
             src_dict=src_dict,
             dst_dict=dst_dict,
         )
-        dataset.splits[args.gen_subset] = data.LanguagePairDataset(
-            src=indexed_dataset.IndexedRawTextDataset(
-                path=args.source_text_file,
-                dictionary=src_dict,
-                append_eos=args.append_eos_to_source,
-            ),
-            dst=indexed_dataset.IndexedRawTextDataset(
-                path=args.target_text_file,
-                dictionary=dst_dict,
-                append_eos=True,
-            ),
-            pad_idx=dataset.src_dict.pad(),
-            eos_idx=dataset.src_dict.eos(),
+        dataset.splits[args.gen_subset] = fbtranslate_data.make_language_pair_dataset(
+            source_file=args.source_text_file,
+            target_file=args.target_text_file,
+            source_dict=src_dict,
+            target_dict=dst_dict,
+            args=args,
         )
     elif args.replace_unk is None:
         # These functions using fairseq's data module are kept mainly for
@@ -281,7 +300,7 @@ def main():
         num_sentences, gen_timer.n, gen_timer.sum, 1. / gen_timer.avg))
     print('| Generate {} with beam={}: {}'.format(
         args.gen_subset, args.beam, scorer.result_string()))
-
+    return scorer.score()
 
 if __name__ == '__main__':
     main()

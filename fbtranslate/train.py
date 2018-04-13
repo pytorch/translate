@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import collections
 import itertools
@@ -10,7 +12,7 @@ import torch
 
 from typing import Any, Dict, Optional, Tuple
 
-from fairseq import criterions, data, distributed_utils, models, options, \
+from fairseq import criterions, distributed_utils, models, options, \
     progress_bar
 from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
@@ -161,6 +163,9 @@ def get_parser_with_args():
     )
 
     # Adds args for generating intermediate BLEU eval while training.
+    # generate.add_args() adds args used by both train.py and the standalone
+    # generate binary, while the flags defined here are used only by train.py.
+    generate.add_args(parser)
     group = parser.add_argument_group('Generation')
     group.add_argument(
         '--generate-bleu-eval-per-epoch',
@@ -190,36 +195,8 @@ def get_parser_with_args():
         type=int,
         default=-1,
         help=(
-            'Average parameter values after each step, beginning after the '
-            'specified number of epochs. '
-            'IMPORTANT NOTE: incompatible with '
-            '--generate-bleu-eval-avg-checkpoints > 1'
-        ),
-    )
-    group.add_argument(
-        '--append-eos-to-source',
-        action='store_true',
-        default=False,
-        help=(
-            'Apppend EOS to source sentences (instead of just target). '
-            'Note that this always in effect when using binarized data.'
-        ),
-    )
-    group.add_argument(
-        '--reverse-source',
-        action='store_true',
-        default=False,
-        help='Feed source sentence to model in reverse order.',
-    )
-    group.add_argument(
-        '--word-reward',
-        type=float,
-        default=0.0,
-        help=(
-            'Value to add to (log-prob) score for each token except EOS. '
-            'IMPORTANT NOTE: higher values of --lenpen and --word-reward '
-            'both encourage longer translations, while higher values of '
-            '--unkpen penalize UNKs more.'
+            'Average parameter values after each step since previous '
+            'checkpoint, beginning after the specified number of epochs. '
         ),
     )
 
@@ -232,22 +209,7 @@ def parse_args_and_arch(parser):
     # calculating BLEU score.
     args.quiet = True
 
-    if not(
-        bool(args.train_source_text_file) ==
-        bool(args.train_target_text_file) ==
-        bool(args.eval_source_text_file) ==
-        bool(args.eval_target_text_file)
-    ):
-        raise ValueError(
-            'If any of --train-source-text-file, --train-target-text-file, '
-            '--eval-source-text-file, or --eval-target-text-file is specified, '
-            'all must be specified.'
-        )
-    if args.train_source_text_file and args.data:
-        print(
-            'Using text data files from command line flags instead of '
-            'data from the directory {}'.format(args.data)
-        )
+    assert_corpora_files_specified(args)
 
     print(args)
     return args
@@ -280,6 +242,27 @@ def load_existing_checkpoint(save_dir, restore_file, trainer):
     return extra_state
 
 
+def assert_corpora_files_specified(args):
+    assert not args.data, (
+        'Specifying a data directory is disabled in FBTranslate since the '
+        'fairseq data class is not supported. Please specify '
+        '--train-source-text-file, --train-target-text-file, '
+        '--eval-source-text-file, and  --eval-target-text-file instead.'
+    )
+    assert args.train_source_text_file and os.path.isfile(
+        args.train_source_text_file,
+    ), 'Please specify a valid file for --train-source-text-file'
+    assert args.train_target_text_file and os.path.isfile(
+        args.train_target_text_file,
+    ), 'Please specify a valid file for --train-target-text-file'
+    assert args.eval_source_text_file and os.path.isfile(
+        args.eval_source_text_file,
+    ), 'Please specify a valid file for --eval-source-text-file'
+    assert args.eval_target_text_file and os.path.isfile(
+        args.eval_target_text_file,
+    ), 'Please specify a valid file for --eval-target-text-file'
+
+
 def setup_training(args):
     """Parse args, load dataset, and load model trainer."""
     if not torch.cuda.is_available():
@@ -289,81 +272,45 @@ def setup_training(args):
 
     # Load dataset
     splits = [args.train_subset, args.valid_subset]
-    if (data.has_binary_files(args.data, splits) and
-        not (args.train_source_text_file and
-             args.train_target_text_file and
-             args.eval_source_text_file and
-             args.eval_target_text_file)):
-        if args.log_verbose:
-            print('Starting to load binary data files.', flush=True)
-        dataset = data.load_dataset(
-            args.data,
-            splits,
-            args.source_lang,
-            args.target_lang,
-        )
-    else:
-        if args.source_lang is None:
-            args.source_lang = 'src'
-        if args.target_lang is None:
-            args.target_lang = 'tgt'
 
-        if (args.train_source_text_file and
-                args.train_target_text_file and
-                args.eval_source_text_file and
-                args.eval_target_text_file):
-            train_corpus = fbtranslate_data.ParallelCorpusConfig(
-                source=fbtranslate_data.CorpusConfig(
-                    dialect=args.source_lang,
-                    data_file=args.train_source_text_file,
-                    vocab_file=args.source_vocab_file,
-                    max_vocab_size=args.source_max_vocab_size,
-                ),
-                target=fbtranslate_data.CorpusConfig(
-                    dialect=args.target_lang,
-                    data_file=args.train_target_text_file,
-                    vocab_file=args.target_vocab_file,
-                    max_vocab_size=args.target_max_vocab_size,
-                ),
-            )
-            eval_corpus = fbtranslate_data.ParallelCorpusConfig(
-                source=fbtranslate_data.CorpusConfig(
-                    dialect=args.source_lang,
-                    data_file=args.eval_source_text_file,
-                    # Vocab configs aren't relevant for the eval corpus.
-                    vocab_file=None,
-                    max_vocab_size=-1,
-                ),
-                target=fbtranslate_data.CorpusConfig(
-                    dialect=args.target_lang,
-                    data_file=args.eval_target_text_file,
-                    # Vocab configs aren't relevant for the eval corpus.
-                    vocab_file=None,
-                    max_vocab_size=-1,
-                ),
-            )
-        else:
-            train_corpus, eval_corpus = fbtranslate_data.infer_file_paths(
-                data_dir=args.data,
-                source_lang=args.source_lang,
-                target_lang=args.target_lang,
-                train_split=args.train_subset,
-                eval_split=args.valid_subset,
-            )
+    if args.source_lang is None:
+        args.source_lang = 'src'
+    if args.target_lang is None:
+        args.target_lang = 'tgt'
 
-        if args.log_verbose:
-            print('Starting to load raw text files.', flush=True)
-        dataset = fbtranslate_data.load_raw_text_dataset(
-            train_corpus=train_corpus,
-            eval_corpus=eval_corpus,
-            train_split=args.train_subset,
-            eval_split=args.valid_subset,
-            save_dir=args.save_dir,
-            args=args,
-            penalized_target_tokens_file=args.penalized_target_tokens_file,
-            append_eos_to_source=args.append_eos_to_source,
-            reverse_source=args.reverse_source,
-        )
+    assert_corpora_files_specified(args)
+    train_corpus = fbtranslate_data.ParallelCorpusConfig(
+        source=fbtranslate_data.CorpusConfig(
+            dialect=args.source_lang,
+            data_file=args.train_source_text_file,
+        ),
+        target=fbtranslate_data.CorpusConfig(
+            dialect=args.target_lang,
+            data_file=args.train_target_text_file,
+        ),
+    )
+    eval_corpus = fbtranslate_data.ParallelCorpusConfig(
+        source=fbtranslate_data.CorpusConfig(
+            dialect=args.source_lang,
+            data_file=args.eval_source_text_file,
+        ),
+        target=fbtranslate_data.CorpusConfig(
+            dialect=args.target_lang,
+            data_file=args.eval_target_text_file,
+        ),
+    )
+
+    if args.log_verbose:
+        print('Starting to load raw text files.', flush=True)
+    dataset = fbtranslate_data.load_raw_text_dataset(
+        train_corpus=train_corpus,
+        eval_corpus=eval_corpus,
+        train_split=args.train_subset,
+        eval_split=args.valid_subset,
+        save_dir=args.save_dir,
+        args=args,
+        penalized_target_tokens_file=args.penalized_target_tokens_file,
+    )
     if args.log_verbose:
         print('Finished loading dataset', flush=True)
     if args.source_lang is None or args.target_lang is None:
@@ -384,8 +331,7 @@ def setup_training(args):
     )
     for split in splits:
         print(
-            '| {} {} {} examples'.format(
-                args.data,
+            '| {} {} examples'.format(
                 split,
                 len(dataset.splits[split]),
             )
@@ -489,12 +435,10 @@ def train(
                     extra_state['param_totals'] = {}
                     for name, value in model_param_dict.items():
                         extra_state['param_totals'][name] = value.clone()
+                    extra_state['param_accum_count'] = 1
                 else:
                     for name, value in model_param_dict.items():
                         extra_state['param_totals'][name] += value
-                if 'param_accum_count' not in extra_state:
-                    extra_state['param_accum_count'] = 1
-                else:
                     extra_state['param_accum_count'] += 1
 
             if i == starting_offset:
@@ -756,6 +700,9 @@ def save_checkpoint_maybe_continuous(filename, trainer, extra_state):
     for param_name, param_value in extra_state['param_totals'].items():
         state['model'][param_name] = param_value / param_accum_count
     torch.save(state, filename)
+
+    # begin averaging anew after saving checkpoint
+    extra_state.pop('param_totals')
 
 
 def save_checkpoint(trainer, args, extra_state):

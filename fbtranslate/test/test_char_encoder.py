@@ -9,7 +9,6 @@ import unittest
 import torch
 from fbtranslate.char_encoder import CharEmbModel
 from fbtranslate.dictionary import CharDictionary
-from torch.autograd import Variable
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +26,7 @@ class TestCharEncoder(unittest.TestCase):
         sent_1 = [[6, 8, 8, 5, 9, 7, 10], [12, 4, 7, 5], [6, 5]]
         sent_2 = [[8, 5, 9], [10, 6, 12, 4], [5, 7, 6, 5]]
 
-        src_tokens = Variable(torch.LongTensor([
+        src_tokens = torch.LongTensor([
             sent_1[0]
             + [word_delim_index]
             + sent_1[1]
@@ -39,7 +38,7 @@ class TestCharEncoder(unittest.TestCase):
             + sent_2[1]
             + [word_delim_index]
             + sent_2[2],
-        ]))
+        ])
         char_batch = np.array([
             [bow_index]
             + sent_1[0]

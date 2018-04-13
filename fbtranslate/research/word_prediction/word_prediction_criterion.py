@@ -1,7 +1,6 @@
 import math
 import torch
 import torch.nn.functional as F
-from torch.autograd import Variable
 
 from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq import utils
@@ -35,7 +34,7 @@ class WordPredictionCriterion(FairseqCriterion):
         # prevent domination of padding idx
         non_padding_mask = torch.ones(prediction_lprobs.size(1)).cuda()
         non_padding_mask[model.encoder.padding_idx] = 0
-        prediction_lprobs = prediction_lprobs * Variable(non_padding_mask.unsqueeze(0))
+        prediction_lprobs = prediction_lprobs * non_padding_mask.unsqueeze(0)
 
         prediction_target = model.get_target_words(sample)
         assert prediction_lprobs.size(0) == prediction_target.size(0)

@@ -2,7 +2,6 @@
 
 import numpy as np
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import (
@@ -247,11 +246,11 @@ class RNNModel(FairseqModel):
         targets = sample['target'].view(-1)
         possible_translation_tokens = net_output[-1]
         if possible_translation_tokens is not None:
-            targets = Variable(torch_find(
+            targets = torch_find(
                 possible_translation_tokens.data,
                 targets.data,
                 len(self.dst_dict),
-            ))
+            )
         return targets
 
 
@@ -362,11 +361,11 @@ class LSTMSequenceEncoder(FairseqEncoder):
         final_hiddens, final_cells = [], []
         for i, rnn_layer in enumerate(self.layers):
             if self.bidirectional and i == 0:
-                h0 = Variable(x.data.new(2, bsz, self.hidden_dim // 2).zero_())
-                c0 = Variable(x.data.new(2, bsz, self.hidden_dim // 2).zero_())
+                h0 = x.data.new(2, bsz, self.hidden_dim // 2).zero_()
+                c0 = x.data.new(2, bsz, self.hidden_dim // 2).zero_()
             else:
-                h0 = Variable(x.data.new(1, bsz, self.hidden_dim).zero_())
-                c0 = Variable(x.data.new(1, bsz, self.hidden_dim).zero_())
+                h0 = x.data.new(1, bsz, self.hidden_dim).zero_()
+                c0 = x.data.new(1, bsz, self.hidden_dim).zero_()
 
             # apply LSTM along entire sequence
             current_output, (h_last, c_last) = rnn_layer(
@@ -655,8 +654,8 @@ class RNNEncoder(FairseqEncoder):
                 rnn_layer.is_bidirectional else self.hidden_dim
             if self.cell_type in ['lstm', 'milstm', 'layer_norm_lstm']:
                 prev_hidden = (
-                    Variable(x.data.new(bsz, current_hidden_size).zero_()),
-                    Variable(x.data.new(bsz, current_hidden_size).zero_()),
+                    x.data.new(bsz, current_hidden_size).zero_(),
+                    x.data.new(bsz, current_hidden_size).zero_(),
                 )
             else:
                 raise Exception('{} not implemented'.format(self.cell_type))
@@ -785,12 +784,9 @@ class AttentionLayer(nn.Module):
                 batch_size,
                 max_srclen,
             )
-            src_mask = Variable(
-                (src_indices < src_lengths.data).double().type_as(
-                    source_hids.data,
-                ),
-                requires_grad=False,
-            )
+            src_mask = (src_indices < src_lengths.data).double().type_as(
+                source_hids.data,
+            ).detach()
             masked_attn_scores = attn_scores * src_mask
             score_denom = torch.sum(
                 masked_attn_scores,
@@ -1074,8 +1070,6 @@ class RNNDecoder(FairseqIncrementalDecoder):
                 return [reorder_state(state_i) for state_i in state]
             return state.index_select(0, new_order)
 
-        if not isinstance(new_order, Variable):
-            new_order = Variable(new_order)
         new_state = tuple(map(reorder_state, cached_state))
         utils.set_incremental_state(self, incremental_state, 'cached_state', new_state)
 
