@@ -5,7 +5,6 @@ import numpy as np
 import logging
 
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
 
 logger = logging.getLogger(__name__)

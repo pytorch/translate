@@ -2,10 +2,9 @@
 
 import argparse
 import os
-import time
 
-from fairseq import data, distributed_utils, indexed_dataset
-from typing import NamedTuple, Optional, Tuple
+from fairseq import data, indexed_dataset
+from typing import NamedTuple, Optional
 
 from fbtranslate import dictionary as fbtranslate_dictionary
 
@@ -13,9 +12,6 @@ from fbtranslate import dictionary as fbtranslate_dictionary
 class CorpusConfig(NamedTuple):
     dialect: str
     data_file: str
-    vocab_file: Optional[str]
-    # max_vocab_size < 0 means no max vocab size.
-    max_vocab_size: int
 
 
 class ParallelCorpusConfig(NamedTuple):
@@ -23,120 +19,37 @@ class ParallelCorpusConfig(NamedTuple):
     target: CorpusConfig
 
 
-def _gen_corpus_config(data_dir, source_lang, target_lang, split):
-    return ParallelCorpusConfig(
-        source=CorpusConfig(
-            dialect=source_lang,
-            data_file=os.path.join(data_dir, f'{split}.{source_lang}'),
-            vocab_file=None,
-            max_vocab_size=-1,
+def make_language_pair_dataset(
+    source_file: str,
+    target_file: str,
+    source_dict: fbtranslate_dictionary.Dictionary,
+    target_dict: fbtranslate_dictionary.Dictionary,
+    args: Optional[argparse.Namespace] = None,
+) -> data.LanguagePairDataset:
+    return data.LanguagePairDataset(
+        src=indexed_dataset.IndexedRawTextDataset(
+            path=source_file,
+            dictionary=source_dict,
+            append_eos=args.append_eos_to_source if args is not None else True,
+            reverse_order=args.reverse_source if args is not None else False,
         ),
-        target=CorpusConfig(
-            dialect=target_lang,
-            data_file=os.path.join(data_dir, f'{split}.{target_lang}'),
-            vocab_file=None,
-            max_vocab_size=-1,
+        dst=indexed_dataset.IndexedRawTextDataset(
+            path=target_file,
+            dictionary=target_dict,
+            # We always append EOS to the target sentence since we still want
+            # the model to output an indication the sentence has finished, even
+            # if we don't append the EOS symbol to the source sentence
+            # (to prevent the model from misaligning UNKs or other words
+            # to the frequently occurring EOS).
+            append_eos=True,
+            # We don't reverse the order of the target sentence, since
+            # even if the source sentence is fed to the model backwards,
+            # we still want the model to start outputting from the first word.
+            reverse_order=False,
         ),
+        pad_idx=source_dict.pad(),
+        eos_idx=source_dict.eos(),
     )
-
-
-def infer_file_paths(
-    data_dir: str,
-    source_lang: str,
-    target_lang: str,
-    train_split: str,
-    eval_split: str,
-) -> Tuple[ParallelCorpusConfig, ParallelCorpusConfig]:
-    train_corpus, eval_corpus = [
-        _gen_corpus_config(
-            data_dir=data_dir,
-            source_lang=source_lang,
-            target_lang=target_lang,
-            split=split,
-        ) for split in [train_split, eval_split]
-    ]
-    return train_corpus, eval_corpus
-
-
-def _get_dictionary(
-    corpus: CorpusConfig,
-    save_dir: str,
-    args: Optional[argparse.Namespace]=None,
-    tokens_with_penalty=None,
-):
-    if corpus.vocab_file and os.path.isfile(corpus.vocab_file):
-        d = fbtranslate_dictionary.Dictionary.load(corpus.vocab_file)
-        print(
-            f'Using specified vocab file {corpus.vocab_file}. '
-            'Ignoring any specified max vocab size.'
-        )
-        return d
-
-    vocab_file = os.path.join(save_dir, f'dictionary-{corpus.dialect}.txt')
-    signal_file = vocab_file + '.ready_signal'
-
-    # The workers will just wait until the master creates the vocab file, then
-    # load it.
-    if args is not None and not distributed_utils.is_master(args):
-        start_time = time.time()
-        while not os.path.isfile(signal_file):
-            # Times out in an hour.
-            if time.time() - start_time > 60 * 60:
-                raise TimeoutError(
-                    f'Worker {args.distributed_rank} timed out waiting for '
-                    f'master to create ready signal file at {signal_file}.'
-                )
-            time.sleep(60)  # Checks every minute
-        d = fbtranslate_dictionary.Dictionary.load(vocab_file)
-        return d
-
-    # If the master already sees a signal file, that means there's an
-    # existing dictionary file from a previous run.
-    if os.path.isfile(signal_file):
-        d = fbtranslate_dictionary.Dictionary.load(vocab_file)
-        print(
-            f'Re-using existing vocab file {vocab_file}. '
-            'Ignoring any specified max vocab size.'
-        )
-        return d
-
-    # Otherwise, the master needs to generate a new vocab file and then
-    # create the signal file to let the workers know it's safe to start
-    # loading the dictionary.
-    else:
-        d = fbtranslate_dictionary.Dictionary()
-        with open(corpus.data_file, 'r') as f:
-            for line in f:
-                tokens = line.split()
-                for t in tokens:
-                    token_index = d.add_symbol(t)
-
-        # Set indices to receive penalty
-        if tokens_with_penalty:
-            # Assume input tokens are unique
-            bad_words_list = []
-            with open(tokens_with_penalty, 'r', encoding='utf-8') as f:
-                for line in f:
-                    tokens = line.strip().split()
-                    if len(tokens) == 1:
-                        bad_words_list.append(tokens[0])
-
-            for token, token_index in d.indices.items():
-                if token in bad_words_list:
-                    d.profanity_indices.add(token_index)
-
-        d.finalize()
-        d.save(vocab_file, threshold=0, nwords=corpus.max_vocab_size)
-        print(f'Generated new vocab file saved at {vocab_file}.')
-        # Mode x is exclusive creation, failing if the file already exists.
-        # Signals to the workers that it's safe to start loading the
-        # vocab file.
-        open(signal_file, 'x').close()
-
-        # Re-load the saved dictionary to enforce max vocab size, since
-        # the pruning is only done when saving the vocab file.
-        d = fbtranslate_dictionary.Dictionary.load(vocab_file)
-        return d
 
 
 def load_raw_text_dataset(
@@ -145,23 +58,11 @@ def load_raw_text_dataset(
     train_split: str,
     eval_split: str,
     save_dir: str,
-    args: Optional[argparse.Namespace]=None,
+    args: argparse.Namespace,
     penalized_target_tokens_file=None,
-    append_eos_to_source=False,
-    reverse_source=False,
 ) -> data.LanguageDatasets:
-    # TODO: Replace this with our new VocabProcessor once it's ready
-    source_dict = _get_dictionary(
-        corpus=train_corpus.source,
-        save_dir=save_dir,
-        args=args,
-    )
-    target_dict = _get_dictionary(
-        corpus=train_corpus.target,
-        save_dir=save_dir,
-        args=args,
-        tokens_with_penalty=penalized_target_tokens_file,
-    )
+    source_dict = fbtranslate_dictionary.Dictionary.load(args.source_vocab_file)
+    target_dict = fbtranslate_dictionary.Dictionary.load(args.target_vocab_file)
 
     dataset = data.LanguageDatasets(
         src=train_corpus.source.dialect,
@@ -195,21 +96,73 @@ def load_raw_text_dataset(
                 )
             )
 
-        dataset.splits[split] = data.LanguagePairDataset(
-            src=indexed_dataset.IndexedRawTextDataset(
-                path=corpus.source.data_file,
-                dictionary=source_dict,
-                append_eos=append_eos_to_source,
-                reverse_order=reverse_source,
-            ),
-            dst=indexed_dataset.IndexedRawTextDataset(
-                path=corpus.target.data_file,
-                dictionary=target_dict,
-                append_eos=True,
-                reverse_order=False,
-            ),
-            pad_idx=dataset.src_dict.pad(),
-            eos_idx=dataset.src_dict.eos(),
+        dataset.splits[split] = make_language_pair_dataset(
+            source_file=corpus.source.data_file,
+            target_file=corpus.target.data_file,
+            source_dict=source_dict,
+            target_dict=target_dict,
+            args=args,
         )
-
     return dataset
+
+
+def build_vocab_from_corpus(
+    corpus_file: str,
+    dialect: str,
+    save_dir: str,
+    max_vocab_size: int,
+    tokens_with_penalty: Optional[str] = None,
+):
+    vocab_file = os.path.join(save_dir, f'dictionary-{dialect}.txt')
+    d = fbtranslate_dictionary.Dictionary()
+    with open(corpus_file, 'r') as f:
+        for line in f:
+            tokens = line.split()
+            for t in tokens:
+                token_index = d.add_symbol(t)
+
+    # Set indices to receive penalty
+    if tokens_with_penalty:
+        # Assume input tokens are unique
+        bad_words_list = []
+        with open(tokens_with_penalty, 'r', encoding='utf-8') as f:
+            for line in f:
+                tokens = line.strip().split()
+                if len(tokens) == 1:
+                    bad_words_list.append(tokens[0])
+
+        for token, token_index in d.indices.items():
+            if token in bad_words_list:
+                d.profanity_indices.add(token_index)
+
+    d.finalize()
+    d.save(vocab_file, threshold=0, nwords=max_vocab_size)
+    print(f'Generated new vocab file saved at {vocab_file}.')
+    if max_vocab_size < 0:
+        print('No maximum vocab sized enforced.')
+    else:
+        print(f'Maximum vocab size {max_vocab_size}')
+
+    return vocab_file
+
+
+def build_vocab_if_nonexistent(
+    vocab_file: str,
+    corpus_file: str,
+    dialect: str,
+    save_dir: str,
+    max_vocab_size: int,
+    tokens_with_penalty: str = None,
+):
+    if vocab_file and os.path.isfile(vocab_file):
+        return vocab_file
+    # Vocab file is either unspecified or does not exist
+    if vocab_file and not os.path.isfile(vocab_file):
+        print(f'Vocab file {vocab_file} does not exist.')
+    return build_vocab_from_corpus(
+        corpus_file=corpus_file,
+        dialect=dialect,
+        save_dir=save_dir,
+        max_vocab_size=max_vocab_size,
+        tokens_with_penalty=tokens_with_penalty,
+    )

@@ -1,5 +1,3 @@
-from torch.autograd import Variable
-
 from fairseq.models import (
     register_model,
     register_model_architecture,
@@ -226,11 +224,11 @@ class RNNWordPredictionModel(FairseqWordPredictionModel):
         targets = sample['target'].view(-1)
         possible_translation_tokens = net_output[-1]
         if possible_translation_tokens is not None:
-            targets = Variable(torch_find(
+            targets = torch_find(
                 possible_translation_tokens.data,
                 targets.data,
                 len(self.dst_dict),
-            ))
+            )
         return targets
 
 

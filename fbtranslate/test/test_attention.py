@@ -9,7 +9,6 @@ from caffe2.python.core import workspace
 from caffe2.python.models.seq2seq.seq2seq_model_helper import Seq2SeqModelHelper
 
 import torch
-from torch import autograd
 from fbtranslate.rnn import AttentionLayer
 
 logger = logging.getLogger(__name__)
@@ -29,10 +28,10 @@ class TestAttentionLayer(unittest.TestCase):
         d_source_hids = [src_sentence_length, batch_size, encoder_output_dim]
         d_input = [batch_size, decoder_hidden_state_dim]
         input = np.random.rand(*d_input).astype(np.float32)
-        input_var = autograd.Variable(torch.FloatTensor(input))
+        input_var = torch.FloatTensor(input)
 
         source_hids = np.random.rand(*d_source_hids).astype(np.float32)
-        source_hids_var = autograd.Variable(torch.FloatTensor(source_hids))
+        source_hids_var = torch.FloatTensor(source_hids)
 
         attention = AttentionLayer(
             decoder_hidden_state_dim,
@@ -42,9 +41,7 @@ class TestAttentionLayer(unittest.TestCase):
         out, attn_scores = attention(
             input_var,
             source_hids_var,
-            autograd.Variable(
-                torch.LongTensor([src_sentence_length] * batch_size),
-            ),
+            torch.LongTensor([src_sentence_length] * batch_size),
         )
         out_ref, attn_scores_ref = numpy_reference_fn(
             input,

@@ -7,7 +7,6 @@ import torch.nn.functional as F
 
 from fairseq.modules import ConvTBC
 from fbtranslate import rnn  # noqa
-from torch.autograd import Variable
 
 
 class HighwayLayer(nn.Module):
@@ -151,7 +150,7 @@ class CharEmbModel(nn.Module):
             )
             for word in pure_words])
 
-        return Variable(torch.LongTensor(words_batch))
+        return torch.LongTensor(words_batch)
 
     def forward(self, src_tokens, src_lengths, left_padded=True):
         # src_char_tokens are the desired batch, but could be batch of words
