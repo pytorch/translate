@@ -21,6 +21,6 @@ setup(
         'fairseq',
     ],
     dependency_links=[
-        "git+https://github.com/facebookresearch/fairseq-py.git@d3795d6cd1c66ac05dc0f4861ce69ab4680bff3d#egg=fairseq-0.4.0"
+        "git+https://github.com/facebookresearch/fairseq-py.git#egg=fairseq"
     ],
 )
