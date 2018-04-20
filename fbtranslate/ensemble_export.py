@@ -8,6 +8,7 @@ import tempfile
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.onnx.operators
 
 from fairseq import utils
 from fbtranslate import dictionary, rnn  # noqa
@@ -169,7 +170,8 @@ def save_caffe2_rep_to_db(
     for blob in output_names:
         output_shapes[blob] = (0,)
 
-    with caffe2_backend_rep.workspace:
+    # Required because of https://github.com/pytorch/pytorch/pull/6456/files
+    with caffe2_backend_rep.workspace._ctx:
         workspace.RunNetOnce(init_net)
         predictor_export_meta = predictor_exporter.PredictorExportMeta(
             predict_net=predict_net,
@@ -304,7 +306,7 @@ class DecoderStepEnsemble(nn.Module):
     def __init__(
         self,
         models,
-        beam_size=1,
+        beam_size,
         word_penalty=0,
         unk_penalty=0,
     ):
@@ -320,8 +322,7 @@ class DecoderStepEnsemble(nn.Module):
 
         dst_dict = models[0].dst_dict
         vocab_size = len(dst_dict.indices)
-        self.word_rewards = torch.FloatTensor(vocab_size).zero_()
-        self.word_rewards[:] = word_penalty
+        self.word_rewards = torch.FloatTensor(vocab_size).fill_(word_penalty)
         self.word_rewards[dst_dict.eos()] = 0
         self.word_rewards[dst_dict.unk()] = word_penalty + unk_penalty
 
@@ -500,6 +501,296 @@ class DecoderStepEnsemble(nn.Module):
             dst_dict_filename,
         )
         return DecoderStepEnsemble(
+            models,
+            beam_size=beam_size,
+            word_penalty=word_penalty,
+            unk_penalty=unk_penalty,
+        )
+
+    def save_to_db(self, output_path, encoder_ensemble_outputs):
+        """
+        Save encapsulated decoder step export file.
+        Example encoder_ensemble_outputs (PyTorch tensors) from corresponding
+        encoder are necessary to run through network once.
+        """
+        tmp_dir = tempfile.mkdtemp()
+        tmp_file = os.path.join(tmp_dir, 'decoder_step.pb')
+        self.onnx_export(tmp_file, encoder_ensemble_outputs)
+
+        with open(tmp_file, 'r+b') as f:
+            onnx_model = onnx.load(f)
+        onnx_decoder_step = caffe2_backend.prepare(onnx_model)
+
+        save_caffe2_rep_to_db(
+            caffe2_backend_rep=onnx_decoder_step,
+            output_path=output_path,
+            input_names=self.input_names,
+            output_names=self.output_names,
+            num_workers=2 * len(self.models),
+        )
+
+
+class DecoderBatchedStepEnsemble(nn.Module):
+
+    def __init__(
+        self,
+        models,
+        beam_size,
+        word_penalty=0,
+        unk_penalty=0,
+    ):
+        super().__init__()
+        self.models = models
+        for i, model in enumerate(self.models):
+            model.decoder.attention.src_length_masking = False
+            self._modules['model_{}'.format(i)] = model
+
+        self.beam_size = beam_size
+        self.word_penalty = word_penalty
+        self.unk_penalty = unk_penalty
+
+        dst_dict = models[0].dst_dict
+        vocab_size = len(dst_dict.indices)
+        self.word_rewards = torch.FloatTensor(vocab_size).fill_(word_penalty)
+        self.word_rewards[dst_dict.eos()] = 0
+        self.word_rewards[dst_dict.unk()] = word_penalty + unk_penalty
+
+    def forward(self, input_tokens, prev_scores, timestep, *inputs):
+        """
+        Decoder step inputs correspond one-to-one to encoder outputs.
+        HOWEVER: after the first step, encoder outputs (i.e, the first
+        len(self.models) elements of inputs) must be tiled k (beam size)
+        times on the batch dimension (axis 1).
+        """
+        log_probs_per_model = []
+        attn_weights_per_model = []
+        state_outputs = []
+
+        # from flat to (batch x 1)
+        input_tokens = input_tokens.unsqueeze(1)
+
+        next_state_input = len(self.models)
+
+        # size of "batch" dimension of input as tensor
+        batch_size = torch.onnx.operators.shape_as_tensor(input_tokens)[0]
+
+        # underlying assumption is each model has same vocab_reduction_module
+        vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
+        if vocab_reduction_module is not None:
+            possible_translation_tokens = inputs[len(self.models)]
+            next_state_input += 1
+        else:
+            possible_translation_tokens = None
+
+        for i, model in enumerate(self.models):
+            encoder_output = inputs[i]
+            prev_hiddens = []
+            prev_cells = []
+
+            for _ in range(len(model.decoder.layers)):
+                prev_hiddens.append(inputs[next_state_input])
+                prev_cells.append(inputs[next_state_input + 1])
+                next_state_input += 2
+
+            # ensure previous attention context has batch dimension
+            input_feed_shape = torch.cat(
+                (
+                    batch_size.view(1),
+                    torch.LongTensor([-1]),
+                ),
+            )
+            prev_input_feed = torch.onnx.operators.reshape_from_tensor_shape(
+                inputs[next_state_input],
+                input_feed_shape,
+            )
+            next_state_input += 1
+
+            # no batching, we only care about care about "max" length
+            src_length_int = encoder_output.size()[0]
+            src_length = torch.LongTensor(np.array([src_length_int]))
+
+            # notional, not actually used for decoder computation
+            src_tokens = torch.LongTensor(np.array([[0] * src_length_int]))
+
+            encoder_out = (
+                encoder_output,
+                prev_hiddens,
+                prev_cells,
+                src_length,
+                src_tokens,
+            )
+
+            # store cached states, use evaluation mode
+            model.decoder._is_incremental_eval = True
+            model.eval()
+
+            # placeholder
+            incremental_state = {}
+
+            # cache previous state inputs
+            utils.set_incremental_state(
+                model.decoder,
+                incremental_state,
+                'cached_state',
+                (prev_hiddens, prev_cells, prev_input_feed),
+            )
+
+            decoder_output = model.decoder(
+                input_tokens,
+                encoder_out,
+                incremental_state=incremental_state,
+                possible_translation_tokens=possible_translation_tokens,
+            )
+            logits, attn_scores, _ = decoder_output
+
+            log_probs = F.log_softmax(logits, dim=2)
+
+            log_probs_per_model.append(log_probs)
+            attn_weights_per_model.append(attn_scores)
+
+            (
+                next_hiddens,
+                next_cells,
+                next_input_feed,
+            ) = utils.get_incremental_state(
+                model.decoder,
+                incremental_state,
+                'cached_state',
+            )
+
+            for h, c in zip(next_hiddens, next_cells):
+                state_outputs.extend([h, c])
+            state_outputs.append(next_input_feed)
+
+        average_log_probs = torch.mean(
+            torch.cat(log_probs_per_model, dim=1),
+            dim=1,
+            keepdim=True,
+        )
+
+        average_attn_weights = torch.mean(
+            torch.cat(attn_weights_per_model, dim=1),
+            dim=1,
+            keepdim=True,
+        )
+
+        best_scores_k_by_k, best_tokens_k_by_k = torch.topk(
+            average_log_probs.squeeze(1),
+            k=self.beam_size,
+        )
+
+        prev_scores_k_by_k = prev_scores.view(-1, 1).expand(-1, self.beam_size)
+        total_scores_k_by_k = best_scores_k_by_k + prev_scores_k_by_k
+
+        # flatten to take top k over all (beam x beam) hypos
+        total_scores_flat = total_scores_k_by_k.view(-1)
+        best_tokens_flat = best_tokens_k_by_k.view(-1)
+
+        best_scores, best_indices = torch.topk(
+            total_scores_flat,
+            k=self.beam_size,
+        )
+
+        best_tokens = best_tokens_flat.index_select(
+            dim=0,
+            index=best_indices,
+        ).view(-1)
+
+        # integer division to determine which input produced each successor
+        prev_hypos = best_indices / self.beam_size
+
+        attention_weights = average_attn_weights.index_select(
+            dim=0,
+            index=prev_hypos,
+        )
+
+        if possible_translation_tokens is not None:
+            best_tokens = possible_translation_tokens.index_select(
+                dim=0,
+                index=best_tokens,
+            )
+
+        word_rewards_for_best_tokens = self.word_rewards.index_select(
+            0,
+            best_tokens,
+        )
+        best_scores += word_rewards_for_best_tokens
+
+        self.input_names = ['prev_tokens', 'prev_scores', 'timestep']
+        for i in range(len(self.models)):
+            self.input_names.append('fixed_input_{}'.format(i))
+
+        if possible_translation_tokens is not None:
+            self.input_names.append('possible_translation_tokens')
+
+        # 'attention_weights_average' output shape: (src_length x beam_size)
+        attention_weights = attention_weights.squeeze(1)
+
+        outputs = [
+            best_tokens,
+            best_scores,
+            prev_hypos,
+            attention_weights,
+        ]
+        self.output_names = [
+            'best_tokens_indices',
+            'best_scores',
+            'prev_hypos_indices',
+            'attention_weights_average',
+        ]
+        for i, state in enumerate(state_outputs):
+            next_state = state.index_select(
+                dim=0,
+                index=prev_hypos,
+            )
+            outputs.append(next_state)
+            self.output_names.append('state_output_{}'.format(i))
+            self.input_names.append('state_input_{}'.format(i))
+
+        return tuple(outputs)
+
+    def onnx_export(self, output_path, encoder_ensemble_outputs):
+        # single EOS (as flat array)
+        input_token = torch.LongTensor(
+            np.array([self.models[0].dst_dict.eos()])
+        )
+        prev_scores = torch.FloatTensor(np.array([0.0]))
+        timestep = torch.LongTensor(np.array([0]))
+
+        # generate input and output names
+        self.forward(
+            input_token,
+            prev_scores,
+            timestep,
+            *encoder_ensemble_outputs
+        )
+
+        onnx_export_ensemble(
+            module=self,
+            output_path=output_path,
+            input_tuple=tuple(
+                [input_token, prev_scores, timestep] +
+                list(encoder_ensemble_outputs),
+            ),
+            input_names=self.input_names,
+            output_names=self.output_names,
+        )
+
+    @staticmethod
+    def build_from_checkpoints(
+        checkpoint_filenames,
+        src_dict_filename,
+        dst_dict_filename,
+        beam_size,
+        word_penalty=0,
+        unk_penalty=0,
+    ):
+        models = load_models_from_checkpoints(
+            checkpoint_filenames,
+            src_dict_filename,
+            dst_dict_filename,
+        )
+        return DecoderBatchedStepEnsemble(
             models,
             beam_size=beam_size,
             word_penalty=word_penalty,

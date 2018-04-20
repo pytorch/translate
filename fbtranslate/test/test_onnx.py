@@ -13,6 +13,7 @@ from fbtranslate import rnn  # noqa
 from fbtranslate.ensemble_export import (
     CombinedDecoderEnsemble,
     CombinedEncoderEnsemble,
+    DecoderBatchedStepEnsemble,
     DecoderStepEnsemble,
     EncoderEnsemble,
 )
@@ -360,3 +361,122 @@ class TestONNX(unittest.TestCase):
         }
 
         self._test_full_ensemble_export(test_args)
+
+    def _test_batched_beam_decoder_step(self, test_args):
+        beam_size = 5
+        samples, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+
+        num_models = 3
+        model_list = []
+        for _ in range(num_models):
+            model_list.append(models.build_model(test_args, src_dict, tgt_dict))
+        encoder_ensemble = EncoderEnsemble(model_list)
+
+        # test equivalence
+        # The discrepancy in types here is a temporary expedient.
+        # PyTorch indexing requires int64 while support for tracing
+        # pack_padded_sequence() requires int32.
+        sample = next(samples)
+        src_tokens = sample['net_input']['src_tokens'][0:1].t()
+        src_lengths = sample['net_input']['src_lengths'][0:1].int()
+
+        pytorch_encoder_outputs = encoder_ensemble(src_tokens, src_lengths)
+
+        decoder_step_ensemble = DecoderBatchedStepEnsemble(
+            model_list,
+            beam_size=beam_size,
+        )
+
+        tmp_dir = tempfile.mkdtemp()
+        decoder_step_pb_path = os.path.join(tmp_dir, 'decoder_step.pb')
+        decoder_step_ensemble.onnx_export(
+            decoder_step_pb_path,
+            pytorch_encoder_outputs,
+        )
+
+        # single EOS in flat array
+        input_tokens = torch.LongTensor(
+            np.array([model_list[0].dst_dict.eos()]),
+        )
+        prev_scores = torch.FloatTensor(np.array([0.0]))
+        timestep = torch.LongTensor(np.array([0]))
+
+        pytorch_first_step_outputs = decoder_step_ensemble(
+            input_tokens,
+            prev_scores,
+            timestep,
+            *pytorch_encoder_outputs
+        )
+
+        # next step inputs (input_tokesn shape: [beam_size])
+        next_input_tokens = torch.LongTensor(
+            np.array([i for i in range(4, 9)]),
+        )
+
+        next_prev_scores = pytorch_first_step_outputs[1]
+        next_timestep = timestep + 1
+        next_states = pytorch_first_step_outputs[4:]
+
+        step_inputs = []
+
+        # encoder outputs need to be replicated for each input hypothesis
+        for encoder_rep in pytorch_encoder_outputs[:len(model_list)]:
+            step_inputs.append(encoder_rep.repeat(1, beam_size, 1))
+
+        if model_list[0].decoder.vocab_reduction_module is not None:
+            step_inputs.append(pytorch_encoder_outputs[len(model_list)])
+
+        step_inputs.extend(list(next_states))
+
+        pytorch_next_step_outputs = decoder_step_ensemble(
+            next_input_tokens,
+            next_prev_scores,
+            next_timestep,
+            *step_inputs
+        )
+
+        with open(decoder_step_pb_path, 'r+b') as f:
+            onnx_model = onnx.load(f)
+        onnx_decoder = caffe2_backend.prepare(onnx_model)
+
+        decoder_inputs_numpy = [
+            next_input_tokens.numpy(),
+            next_prev_scores.detach().numpy(),
+            next_timestep.detach().numpy(),
+        ]
+        for tensor in step_inputs:
+            decoder_inputs_numpy.append(tensor.detach().numpy())
+
+        caffe2_next_step_outputs = onnx_decoder.run(
+            tuple(decoder_inputs_numpy),
+        )
+
+        for i in range(len(pytorch_next_step_outputs)):
+            caffe2_out_value = caffe2_next_step_outputs[i]
+            pytorch_out_value = pytorch_next_step_outputs[i].data.numpy()
+            np.testing.assert_allclose(
+                caffe2_out_value,
+                pytorch_out_value,
+                rtol=1e-4,
+                atol=1e-6,
+            )
+
+    def test_batched_beam_decoder_default(self):
+        test_args = test_utils.ModelParamsDict(
+            encoder_bidirectional=True,
+            sequence_lstm=True,
+        )
+        self._test_batched_beam_decoder_step(test_args)
+
+    def test_batched_beam_decoder_vocab_reduction(self):
+        test_args = test_utils.ModelParamsDict(
+            encoder_bidirectional=True,
+            sequence_lstm=True,
+        )
+        lexical_dictionaries = test_utils.create_lexical_dictionaries()
+        test_args.vocab_reduction_params = {
+            'lexical_dictionaries': lexical_dictionaries,
+            'num_top_words': 5,
+            'max_translation_candidates_per_word': 1,
+        }
+        self._test_batched_beam_decoder_step(test_args)

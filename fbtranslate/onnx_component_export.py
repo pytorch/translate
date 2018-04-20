@@ -6,6 +6,7 @@ import torch
 
 from fbtranslate import rnn  # noqa
 from fbtranslate.ensemble_export import (
+    DecoderBatchedStepEnsemble,
     DecoderStepEnsemble,
     EncoderEnsemble,
 )
@@ -61,6 +62,11 @@ def main():
         default=0.0,
         help='Value to add for each word UNK token',
     )
+    parser.add_argument(
+        '--batched_beam',
+        action='store_true',
+        help='Decoder step has entire beam as input/output',
+    )
 
     args = parser.parse_args()
 
@@ -83,7 +89,11 @@ def main():
         encoder_ensemble.save_to_db(args.encoder_output_file)
 
     if args.decoder_output_file != '':
-        decoder_step_ensemble = DecoderStepEnsemble.build_from_checkpoints(
+        if args.batched_beam:
+            decoder_step_class = DecoderBatchedStepEnsemble
+        else:
+            decoder_step_class = DecoderStepEnsemble
+        decoder_step_ensemble = decoder_step_class.build_from_checkpoints(
             checkpoint_filenames=checkpoint_filenames,
             src_dict_filename=args.src_dict,
             dst_dict_filename=args.dst_dict,

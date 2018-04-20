@@ -11,6 +11,7 @@ import unittest
 from fairseq import models
 from fbtranslate import rnn  # noqa
 from fbtranslate.ensemble_export import (
+    DecoderBatchedStepEnsemble,
     DecoderStepEnsemble,
     EncoderEnsemble,
 )
@@ -162,7 +163,12 @@ class ExtendedTestONNX(unittest.TestCase):
             pytorch_encoder_outputs,
         )
 
-    def _test_full_ensemble(self, encoder_ensemble, decoder_step_ensemble):
+    def _test_full_ensemble(
+        self,
+        encoder_ensemble,
+        decoder_step_ensemble,
+        batched_beam=False,
+    ):
         tmp_dir = tempfile.mkdtemp()
         encoder_filename = os.path.join(tmp_dir, 'encoder.pb')
         encoder_ensemble.onnx_export(encoder_filename)
@@ -190,17 +196,33 @@ class ExtendedTestONNX(unittest.TestCase):
         )
         timestep = torch.LongTensor(np.array([[0]]))
 
-        pytorch_decoder_outputs = decoder_step_ensemble(
-            input_token,
-            timestep,
-            *pytorch_encoder_outputs
-        )
+        if batched_beam:
+            prev_scores = torch.FloatTensor(np.array([0.0]))
+            pytorch_decoder_outputs = decoder_step_ensemble(
+                input_token.view(-1),
+                prev_scores,
+                timestep.view(-1),
+                *pytorch_encoder_outputs
+            )
+        else:
+            pytorch_decoder_outputs = decoder_step_ensemble(
+                input_token,
+                timestep,
+                *pytorch_encoder_outputs
+            )
 
         with open(decoder_step_filename, 'r+b') as f:
             onnx_model = onnx.load(f)
         onnx_decoder = caffe2_backend.prepare(onnx_model)
 
-        decoder_inputs_numpy = [input_token.numpy(), timestep.numpy()]
+        if batched_beam:
+            decoder_inputs_numpy = [
+                input_token.numpy(),
+                prev_scores.numpy(),
+                timestep.numpy(),
+            ]
+        else:
+            decoder_inputs_numpy = [input_token.numpy(), timestep.numpy()]
         for tensor in pytorch_encoder_outputs:
             decoder_inputs_numpy.append(tensor.detach().numpy())
 
@@ -293,3 +315,34 @@ class ExtendedTestONNX(unittest.TestCase):
         )
 
         self._test_full_ensemble(encoder_ensemble, decoder_step_ensemble)
+
+    def test_batched_beam_from_checkpoints_vr(self):
+        check_dir = (
+            '/mnt/gfsdataswarm-global/namespaces/search/language-technology-mt/'
+            'nnmt_tmp/tl_XX-en_XX-pytorch-256-dim-vocab-reduction'
+        )
+        checkpoints = [
+            'averaged_checkpoint_best_3.pt',
+            'averaged_checkpoint_best_4.pt',
+            'averaged_checkpoint_best_5.pt',
+        ]
+        checkpoint_filenames = [os.path.join(check_dir, f) for f in checkpoints]
+
+        encoder_ensemble = EncoderEnsemble.build_from_checkpoints(
+            checkpoint_filenames,
+            os.path.join(check_dir, 'dictionary-tl.txt'),
+            os.path.join(check_dir, 'dictionary-en.txt'),
+        )
+
+        decoder_step_ensemble = DecoderBatchedStepEnsemble.build_from_checkpoints(
+            checkpoint_filenames,
+            os.path.join(check_dir, 'dictionary-tl.txt'),
+            os.path.join(check_dir, 'dictionary-en.txt'),
+            beam_size=5,
+        )
+
+        self._test_full_ensemble(
+            encoder_ensemble,
+            decoder_step_ensemble,
+            batched_beam=True,
+        )
