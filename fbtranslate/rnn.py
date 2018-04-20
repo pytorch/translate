@@ -9,6 +9,7 @@ from torch.nn.utils.rnn import (
     PackedSequence,
     pad_packed_sequence,
 )
+import torch.onnx.operators
 
 
 from fairseq import utils
@@ -23,6 +24,7 @@ from fairseq.models import (
 from fbtranslate import rnn_cell  # noqa
 from fbtranslate import vocab_reduction
 from fbtranslate import word_dropout
+
 
 def torch_find(index, query, vocab_size):
     """
@@ -767,18 +769,19 @@ class AttentionLayer(nn.Module):
         # compute attention
         attn_scores = (source_hids * decoder_state.unsqueeze(0)).sum(dim=2)
         attn_scores = F.softmax(attn_scores.t(), dim=-1)  # bsz x srclen
-        # Since input of varying lengths, need to make sure the attn_scores
-        # for each sentence sum up to one
-        max_srclen = source_hids.size()[0]
-        assert max_srclen == src_lengths.data.max()
-        batch_size = attn_scores.size()[0]
-        src_indices = torch.arange(
-            0,
-            max_srclen,
-        ).unsqueeze(0).type_as(src_lengths.data)
-        src_indices = src_indices.expand(batch_size, max_srclen)
 
         if self.src_length_masking:
+            # Since input of varying lengths, need to make sure the attn_scores
+            # for each sentence sum up to one
+            max_srclen = source_hids.size()[0]
+            assert max_srclen == src_lengths.data.max()
+            batch_size = attn_scores.size()[0]
+            src_indices = torch.arange(
+                0,
+                max_srclen,
+            ).unsqueeze(0).type_as(src_lengths.data)
+            src_indices = src_indices.expand(batch_size, max_srclen)
+
             # expand from shape (batch_size,) to (batch_size, max_srclen)
             src_lengths = src_lengths.unsqueeze(dim=1).expand(
                 batch_size,
@@ -994,8 +997,8 @@ class RNNDecoder(FairseqIncrementalDecoder):
             # input feeding
             input_feed = out
 
-            # save final output
-            outs.append(combined_output_and_context)
+            # save final output (1 x B x C)
+            outs.append(combined_output_and_context.unsqueeze(0))
 
         attn_scores = torch.cat(attn_scores_per_step, dim=1)
 
@@ -1007,12 +1010,7 @@ class RNNDecoder(FairseqIncrementalDecoder):
             (prev_hiddens, prev_cells, input_feed),
         )
 
-        # collect outputs across time steps
-        x = torch.cat(outs, dim=0).view(
-            seqlen,
-            bsz,
-            self.combined_output_and_context_dim,
-        )
+        x = torch.cat(outs, dim=0)
 
         # T x B x C -> B x T x C
         x = x.transpose(1, 0)
@@ -1045,13 +1043,31 @@ class RNNDecoder(FairseqIncrementalDecoder):
                 index=possible_translation_tokens,
             )
 
-        if x.size()[0] == 1 and x.size()[1] == 1:
-            # ONNX tracing without internal transpose
-            logits = output_projection_w.matmul(
-                x.view(-1),
-            ).view(1, 1, -1) + output_projection_b
-        else:
-            logits = F.linear(x, output_projection_w, output_projection_b)
+        # avoiding transpose of projection weights during ONNX tracing
+        batch_time_hidden = torch.onnx.operators.shape_as_tensor(x)
+        x_flat_shape = torch.cat(
+            (
+                torch.LongTensor([-1]),
+                batch_time_hidden[2].view(1),
+
+            ),
+        )
+        x_flat = torch.onnx.operators.reshape_from_tensor_shape(
+            x,
+            x_flat_shape,
+        )
+
+        projection_flat = torch.matmul(output_projection_w, x_flat.t()).t()
+        logits_shape = torch.cat(
+            (
+                batch_time_hidden[:2],
+                torch.LongTensor([-1]),
+            ),
+        )
+        logits = torch.onnx.operators.reshape_from_tensor_shape(
+            projection_flat,
+            logits_shape,
+        ) + output_projection_b
 
         return logits, attn_scores, possible_translation_tokens
 

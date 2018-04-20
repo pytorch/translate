@@ -12,20 +12,18 @@ from fbtranslate import data as fbtranslate_data
 from fbtranslate import dictionary as \
     fbtranslate_dictionary
 from fbtranslate import rnn  # noqa
-from fbtranslate import vocab_reduction
 
 
-def generate_score(args, dataset, dataset_split, extra_model_args=None):
+def generate_score(args, dataset, dataset_split):
     models, _ = utils.load_ensemble_for_inference(
         args.path,
         dataset.src_dict,
         dataset.dst_dict,
-        model_arg_overrides=extra_model_args,
     )
-    return _generate_score(models, args, dataset, dataset_split, extra_model_args)
+    return _generate_score(models, args, dataset, dataset_split)
 
 
-def _generate_score(models, args, dataset, dataset_split, extra_model_args=None):
+def _generate_score(models, args, dataset, dataset_split):
     use_cuda = torch.cuda.is_available() and not args.cpu
 
     # Load ensemble
@@ -201,14 +199,6 @@ def get_parser_with_args():
         'This overrides what would be loaded from the data dir.',
     )
 
-    model_specific_group = parser.add_argument_group(
-        'Model-specific configuration',
-        # Only include attributes which are explicitly given as command-line
-        # arguments or which have default values.
-        argument_default=argparse.SUPPRESS,
-    )
-    # Add any model-specific args here to override model args during inference
-    vocab_reduction.add_args(model_specific_group)
     return parser
 
 
@@ -242,13 +232,9 @@ def assert_test_corpus_and_vocab_files_specified(args):
 def generate(args):
     assert_test_corpus_and_vocab_files_specified(args)
     assert args.path is not None, '--path required for generation!'
-    vocab_reduction.set_arg_defaults(args)
 
     print(args)
 
-    extra_model_args = {
-        'vocab_reduction_params': args.vocab_reduction_params,
-    }
     if args.source_lang is None:
         args.source_lang = 'src'
     if args.target_lang is None:
@@ -289,13 +275,13 @@ def generate(args):
         args=args,
         dataset=dataset,
         dataset_split=args.gen_subset,
-        extra_model_args=extra_model_args,
     )
     print('| Translated {} sentences ({} tokens) in {:.1f}s ({:.2f} tokens/s)'.format(
         num_sentences, gen_timer.n, gen_timer.sum, 1. / gen_timer.avg))
     print('| Generate {} with beam={}: {}'.format(
         args.gen_subset, args.beam, scorer.result_string()))
     return scorer.score()
+
 
 if __name__ == '__main__':
     main()
