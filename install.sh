@@ -12,5 +12,5 @@ conda uninstall -y pytorch pytorch-nightly
 conda install -y pytorch-nightly -c pytorch
 
 . ~/miniconda/bin/activate
-yes | pip uninstall fbtranslate
+yes | pip uninstall translate
 python3 setup.py build develop
