@@ -1,4 +1,4 @@
-# fbtranslate
+# translate
 
 ## Installation instructions
 
@@ -22,8 +22,8 @@ conda install -y pytorch-nightly -c pytorch
 ### Install FBTranslate
 ```bash
 . ~/miniconda/bin/activate
-yes | pip uninstall fbtranslate
-git clone --recursive https://github.com/facebookincubator/fbtranslate.git
-cd fbtranslate
+yes | pip uninstall translate
+git clone --recursive https://github.com/facebookincubator/translate.git
+cd translate
 python3 setup.py build develop
 ```
