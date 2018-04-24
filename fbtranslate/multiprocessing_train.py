@@ -13,9 +13,9 @@ import signal
 import torch
 
 from fairseq import distributed_utils
-from fbtranslate import train
-from fbtranslate.train import main as single_process_main
-from fbtranslate import data as fbtranslate_data
+from translate import train
+from translate.train import main as single_process_main
+from translate import data as translate_data
 
 
 def main(args):
@@ -27,14 +27,14 @@ def main(args):
     if args.target_lang is None:
         args.target_lang = 'tgt'
 
-    args.source_vocab_file = fbtranslate_data.build_vocab_if_nonexistent(
+    args.source_vocab_file = translate_data.build_vocab_if_nonexistent(
         vocab_file=args.source_vocab_file,
         corpus_file=args.train_source_text_file,
         dialect=args.source_lang,
         save_dir=args.save_dir,
         max_vocab_size=args.target_max_vocab_size,
     )
-    args.target_vocab_file = fbtranslate_data.build_vocab_if_nonexistent(
+    args.target_vocab_file = translate_data.build_vocab_if_nonexistent(
         vocab_file=args.target_vocab_file,
         corpus_file=args.train_target_text_file,
         dialect=args.target_lang,

@@ -10,12 +10,12 @@ namespace pytorch {
 namespace translate {
 
 // TODO: Consider using Cython to keep these in sync with Python.
-// These should be kept in sync with fbtranslate/dictionary.py
+// These should be kept in sync with translate/dictionary.py
 constexpr char kPadSymbol[] = "<pad>";
 constexpr char kEosSymbol[] = "</s>";
 constexpr char kUnkSymbol[] = "<unk>";
 constexpr char kReservedSymbol[] = "<reserved>";
-// These should be kept in sync with fbtranslate/vocab_constants.py
+// These should be kept in sync with translate/vocab_constants.py
 constexpr int kMaxSpecialTokens = 100;
 constexpr int kPadId = 0;
 constexpr int kGoId = 1;

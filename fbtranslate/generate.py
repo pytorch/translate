@@ -7,11 +7,11 @@ import torch
 from fairseq import bleu, data, options, progress_bar, \
     tokenizer, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
-from fbtranslate import beam_decode
-from fbtranslate import data as fbtranslate_data
-from fbtranslate import dictionary as \
-    fbtranslate_dictionary
-from fbtranslate import rnn  # noqa
+from translate import beam_decode
+from translate import data as translate_data
+from translate import dictionary as \
+    translate_dictionary
+from translate import rnn  # noqa
 
 
 def generate_score(args, dataset, dataset_split):
@@ -240,10 +240,10 @@ def generate(args):
     if args.target_lang is None:
         args.target_lang = 'tgt'
 
-    src_dict = fbtranslate_dictionary.Dictionary.load(
+    src_dict = translate_dictionary.Dictionary.load(
         args.source_vocab_file,
     )
-    dst_dict = fbtranslate_dictionary.Dictionary.load(
+    dst_dict = translate_dictionary.Dictionary.load(
         args.target_vocab_file,
     )
     dataset = data.LanguageDatasets(
@@ -252,7 +252,7 @@ def generate(args):
         src_dict=src_dict,
         dst_dict=dst_dict,
     )
-    dataset.splits[args.gen_subset] = fbtranslate_data.make_language_pair_dataset(
+    dataset.splits[args.gen_subset] = translate_data.make_language_pair_dataset(
         source_file=args.source_text_file,
         target_file=args.target_text_file,
         source_dict=src_dict,

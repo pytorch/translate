@@ -1,4 +1,4 @@
-#include "language_technology/neural_mt/fbtranslate/Dictionary.h"
+#include "language_technology/neural_mt/translate/Dictionary.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>

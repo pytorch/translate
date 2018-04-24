@@ -21,9 +21,9 @@ from fairseq.models import (
     register_model,
     register_model_architecture,
 )
-from fbtranslate import rnn_cell  # noqa
-from fbtranslate import vocab_reduction
-from fbtranslate import word_dropout
+from translate import rnn_cell  # noqa
+from translate import vocab_reduction
+from translate import word_dropout
 
 
 def torch_find(index, query, vocab_size):

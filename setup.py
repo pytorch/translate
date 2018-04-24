@@ -9,12 +9,12 @@ def requirements():
         return f.read()
 
 setup(
-    name='fbtranslate',
+    name='translate',
     version='0.1',
     author='Facebook AI',
     description=('Facebook Translation System'),
     long_description=readme(),
-    url='https://github.com/facebookincubator/fbtranslate',
+    url='https://github.com/facebookincubator/translate',
     license='BSD',
     packages=find_packages(),
     install_requires=[

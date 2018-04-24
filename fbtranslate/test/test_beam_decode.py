@@ -4,9 +4,9 @@ import torch
 import unittest
 
 from fairseq import models
-from fbtranslate import beam_decode
-from fbtranslate import rnn  # noqa
-from fbtranslate.test import utils as test_utils
+from translate import beam_decode
+from translate import rnn  # noqa
+from translate.test import utils as test_utils
 
 
 class TestBeamDecode(unittest.TestCase):
