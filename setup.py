@@ -23,4 +23,5 @@ setup(
     dependency_links=[
         "git+https://github.com/facebookresearch/fairseq-py.git#egg=fairseq"
     ],
+    test_suite='tests',
 )
