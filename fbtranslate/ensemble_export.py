@@ -22,70 +22,6 @@ dyndep.InitOpsLibrary("@/caffe2/caffe2/contrib/aten:aten_op")
 logger = logging.getLogger(__name__)
 
 
-class CombinedEncoderEnsemble(nn.Module):
-
-    def __init__(
-        self,
-        models,
-    ):
-        super().__init__()
-        self.models = models
-        for i, model in enumerate(self.models):
-            self._modules['model_{}'.format(i)] = model
-
-    def forward(self, src_tokens, src_lengths):
-        outputs = []
-        for model in self.models:
-            o = list(model.encoder(src_tokens, src_lengths))
-            for i in range(len(o)):
-                o[i] = torch.unsqueeze(o[i], dim=0)
-            outputs.append(tuple(o))
-
-        outputs = [x for x in zip(*outputs)]
-        for i in range(len(outputs)):
-            outputs[i] = torch.cat(outputs[i], dim=0)
-
-        return tuple(outputs)
-
-
-class CombinedDecoderEnsemble(nn.Module):
-
-    def __init__(
-        self,
-        models,
-    ):
-        super().__init__()
-        self.models = models
-        for i, model in enumerate(self.models):
-            self._modules['model_{}'.format(i)] = model
-
-    def forward(self, input_tokens, encoder_outs, final_hidden, final_cell,
-                src_lengths, src_tokens, incremental_states):
-        outputs = []
-        for i, model in enumerate(self.models):
-            per_model_inputs = (encoder_outs[i], final_hidden[i], final_cell[i],
-                src_lengths[i], src_tokens[i])
-            o = list(model.decoder(input_tokens, per_model_inputs,
-                incremental_states[i]))
-            if o[2] is None:
-                del o[2]
-            logits = o[0].view(-1, o[0].size(-1))
-            o[0] = F.softmax(logits, dim=-1).view_as(o[0])
-            for j in range(len(o)):
-                o[j] = o[j].unsqueeze(dim=0)
-            outputs.append(o)
-
-        outputs = [x for x in zip(*outputs)]
-        # Average across models in ensemble
-        for i in range(len(outputs)):
-            outputs[i] = torch.cat(outputs[i], dim=0)
-            outputs[i] = torch.mean(outputs[i], dim=0)
-            if i == 0:
-                outputs[i] = torch.log(outputs[i])
-
-        return tuple(outputs)
-
-
 def onnx_export_ensemble(
     module,
     output_path,
@@ -459,6 +395,14 @@ class DecoderStepEnsemble(nn.Module):
             'best_scores',
             'attention_weights_average',
         ]
+        for i in range(len(self.models)):
+            self.output_names.append('fixed_input_{}'.format(i))
+            outputs.append(inputs[i])
+
+        if possible_translation_tokens is not None:
+            self.output_names.append('possible_translation_tokens')
+            outputs.append(possible_translation_tokens)
+
         for i, state in enumerate(state_outputs):
             outputs.append(state)
             self.output_names.append('state_output_{}'.format(i))
@@ -538,6 +482,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
         beam_size,
         word_penalty=0,
         unk_penalty=0,
+        tile_internal=False,
     ):
         super().__init__()
         self.models = models
@@ -554,6 +499,8 @@ class DecoderBatchedStepEnsemble(nn.Module):
         self.word_rewards = torch.FloatTensor(vocab_size).fill_(word_penalty)
         self.word_rewards[dst_dict.eos()] = 0
         self.word_rewards[dst_dict.unk()] = word_penalty + unk_penalty
+
+        self.tile_internal = tile_internal
 
     def forward(self, input_tokens, prev_scores, timestep, *inputs):
         """
@@ -738,6 +685,17 @@ class DecoderBatchedStepEnsemble(nn.Module):
             'prev_hypos_indices',
             'attention_weights_average',
         ]
+        for i in range(len(self.models)):
+            self.output_names.append('fixed_input_{}'.format(i))
+            if timestep == 0 and self.tile_internal:
+                outputs.append(inputs[i].repeat(1, self.beam_size, 1))
+            else:
+                outputs.append(inputs[i])
+
+        if possible_translation_tokens is not None:
+            self.output_names.append('possible_translation_tokens')
+            outputs.append(possible_translation_tokens)
+
         for i, state in enumerate(state_outputs):
             next_state = state.index_select(
                 dim=0,
@@ -813,6 +771,147 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
         save_caffe2_rep_to_db(
             caffe2_backend_rep=onnx_decoder_step,
+            output_path=output_path,
+            input_names=self.input_names,
+            output_names=self.output_names,
+            num_workers=2 * len(self.models),
+        )
+
+
+class BeamSearch(torch.jit.ScriptModule):
+
+    def __init__(self, model_list, src_tokens, src_lengths, beam_size=1,
+                 word_penalty=0, unk_penalty=0):
+        super().__init__()
+        self.models = model_list
+        self.beam_size = beam_size
+        self.word_penalty = word_penalty
+        self.unk_penalty = unk_penalty
+
+        encoder_ens = EncoderEnsemble(models)
+        example_encoder_outs = encoder_ens(src_tokens, src_lengths)
+        self.encoder_ens = torch.jit.trace(src_tokens, src_lengths)(
+            encoder_ens)
+        decoder_ens = \
+            DecoderBatchedStepEnsemble(models, beam_size, word_penalty,
+                                       unk_penalty, tile_internal=False)
+        decoder_ens_tile = \
+            DecoderBatchedStepEnsemble(models, beam_size, word_penalty,
+                                       unk_penalty, tile_internal=True)
+        prev_token = torch.LongTensor([0])
+        prev_scores = torch.FloatTensor([0.0])
+        ts = torch.LongTensor([0])
+        _, _, _, _, *tiled_states = \
+            decoder_ens_tile(prev_token, prev_scores, ts, *example_encoder_outs)
+        self.decoder_ens_tile = torch.jit.trace(
+            prev_token, prev_scores, ts, *example_encoder_outs)(
+                decoder_ens_tile)
+        self.decoder_ens = torch.jit.trace(
+            prev_token.repeat(6), prev_scores.repeat(6), ts,
+            *tiled_states)(decoder_ens)
+
+        self.input_names = ['src_tokens', 'src_lengths', 'prev_token',
+                            'prev_scores', 'attn_weights', 'prev_hypos_indices',
+                            'num_steps']
+        self.output_names = ['all_tokens', 'all_scores', 'all_weights',
+                             'all_prev_indices']
+
+    @torch.jit.script_method
+    def forward(self, src_tokens, src_lengths, prev_token, prev_scores,
+                attn_weights, prev_hypos_indices, num_steps):
+        enc_states = self.encoder_ens(src_tokens, src_lengths)
+
+        all_tokens = prev_token.repeat(repeats=[6]).unsqueeze(dim=0)
+        all_scores = prev_scores.repeat(repeats=[6]).unsqueeze(dim=0)
+        all_weights = attn_weights.unsqueeze(dim=0).repeat(repeats=[6, 1]).unsqueeze(dim=0)
+        all_prev_indices = prev_hypos_indices.unsqueeze(dim=0)
+
+        prev_token, prev_scores, prev_hypos_indices, attn_weights, *states = \
+            self.decoder_ens_tile(prev_token, prev_scores, 0, *enc_states)
+
+        all_tokens = torch.cat((all_tokens, prev_token.unsqueeze(dim=0)), dim=0)
+        all_scores = torch.cat((all_scores, prev_scores.unsqueeze(dim=0)), dim=0)
+        all_weights = torch.cat((all_weights, attn_weights.unsqueeze(dim=0)), dim=0)
+        all_prev_indices = torch.cat((all_prev_indices, prev_hypos_indices.unsqueeze(dim=0)), dim=0)
+
+        for i in range(num_steps - 1):
+            prev_token, prev_scores, prev_hypos_indices, attn_weights, *states = \
+                self.decoder_ens(prev_token, prev_scores, i + 1, *states)
+
+            all_tokens = torch.cat((all_tokens, prev_token.unsqueeze(dim=0)), dim=0)
+            all_scores = torch.cat((all_scores, prev_scores.unsqueeze(dim=0)), dim=0)
+            all_weights = torch.cat((all_weights, attn_weights.unsqueeze(dim=0)), dim=0)
+            all_prev_indices = torch.cat((all_prev_indices, prev_hypos_indices.unsqueeze(dim=0)), dim=0)
+
+        return all_tokens, all_scores, all_weights, all_prev_indices
+
+    def onnx_export(self, output_path):
+        length = 10
+        src_tokens = torch.LongTensor(np.ones((length, 1), dtype='int64'))
+        src_lengths = torch.IntTensor(np.array([length], dtype='int32'))
+        prev_token = torch.LongTensor([self.models[0].dst_dict.eos()])
+        prev_scores = torch.FloatTensor([0.0])
+        attn_weights = torch.zeros(length + 1) # TODO
+        prev_hypos_indices = torch.zeros(self.beam_size, dtype=torch.int64)
+        num_steps = torch.LongTensor([20])
+
+        input_tuple = (src_tokens, src_lengths, prev_token, prev_scores,
+                       attn_weights, prev_hypos_indices, num_steps)
+
+        input_names = self.input_names[:]
+
+        for name, _ in self.named_parameters():
+            input_names.append(name)
+
+        with open(output_path, 'w+b') as netdef_file:
+            torch.onnx._export(
+                self,
+                input_tuple,
+                netdef_file,
+                verbose=False,
+                input_names=input_names,
+                output_names=self.output_names,
+            )
+
+    @staticmethod
+    def build_from_checkpoints(
+        checkpoint_filenames,
+        src_dict_filename,
+        dst_dict_filename,
+        beam_size,
+        word_penalty=0,
+        unk_penalty=0,
+    ):
+        models = load_models_from_checkpoints(
+            checkpoint_filenames,
+            src_dict_filename,
+            dst_dict_filename,
+        )
+        src_tokens = torch.LongTensor(np.ones((length, 1), dtype='int64'))
+        src_lengths = torch.IntTensor(np.array([length], dtype='int32'))
+        return BeamSearch(
+            models,
+            src_tokens,
+            src_lengths,
+            beam_size=beam_size,
+            word_penalty=word_penalty,
+            unk_penalty=unk_penalty,
+        )
+
+    def save_to_db(self, output_path, encoder_ensemble_outputs):
+        """
+        Save encapsulated beam search.
+        """
+        tmp_dir = tempfile.mkdtemp()
+        tmp_file = os.path.join(tmp_dir, 'decoder_step.pb')
+        self.onnx_export(tmp_file)
+
+        with open(tmp_file, 'r+b') as f:
+            onnx_model = onnx.load(f)
+        beam_search = caffe2_backend.prepare(onnx_model)
+
+        save_caffe2_rep_to_db(
+            caffe2_backend_rep=beam_search,
             output_path=output_path,
             input_names=self.input_names,
             output_names=self.output_names,

@@ -11,11 +11,10 @@ import unittest
 from fairseq import models
 from fbtranslate import rnn  # noqa
 from fbtranslate.ensemble_export import (
-    CombinedDecoderEnsemble,
-    CombinedEncoderEnsemble,
     DecoderBatchedStepEnsemble,
     DecoderStepEnsemble,
     EncoderEnsemble,
+    BeamSearch,
 )
 from fbtranslate.test import utils as test_utils
 
@@ -415,24 +414,17 @@ class TestONNX(unittest.TestCase):
 
         next_prev_scores = pytorch_first_step_outputs[1]
         next_timestep = timestep + 1
-        next_states = pytorch_first_step_outputs[4:]
+        next_states = list(pytorch_first_step_outputs[4:])
 
-        step_inputs = []
-
-        # encoder outputs need to be replicated for each input hypothesis
-        for encoder_rep in pytorch_encoder_outputs[:len(model_list)]:
-            step_inputs.append(encoder_rep.repeat(1, beam_size, 1))
-
-        if model_list[0].decoder.vocab_reduction_module is not None:
-            step_inputs.append(pytorch_encoder_outputs[len(model_list)])
-
-        step_inputs.extend(list(next_states))
+        # Tile these for the next timestep
+        for i in range(len(model_list)):
+            next_states[i] = next_states[i].repeat(1, beam_size, 1)
 
         pytorch_next_step_outputs = decoder_step_ensemble(
             next_input_tokens,
             next_prev_scores,
             next_timestep,
-            *step_inputs
+            *next_states
         )
 
         with open(decoder_step_pb_path, 'r+b') as f:
@@ -444,7 +436,7 @@ class TestONNX(unittest.TestCase):
             next_prev_scores.detach().numpy(),
             next_timestep.detach().numpy(),
         ]
-        for tensor in step_inputs:
+        for tensor in next_states:
             decoder_inputs_numpy.append(tensor.detach().numpy())
 
         caffe2_next_step_outputs = onnx_decoder.run(
@@ -480,3 +472,55 @@ class TestONNX(unittest.TestCase):
             'max_translation_candidates_per_word': 1,
         }
         self._test_batched_beam_decoder_step(test_args)
+
+    def _test_full_beam_decoder(self, test_args):
+        samples, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        sample = next(samples)
+        src_tokens = sample['net_input']['src_tokens'][0:1].t()
+        src_lengths = sample['net_input']['src_lengths'][0:1].int()
+
+        num_models = 3
+        model_list = []
+        for _ in range(num_models):
+            model_list.append(models.build_model(
+                test_args, src_dict, tgt_dict))
+
+        bs = BeamSearch(model_list, src_tokens, src_lengths,
+                                 beam_size=6)
+        prev_token = torch.LongTensor([0])
+        prev_scores = torch.FloatTensor([0.0])
+        attn_weights = torch.zeros(11)
+        prev_hypos_indices = torch.zeros(6, dtype=torch.int64)
+
+        outs = bs(src_tokens, src_lengths, prev_token, prev_scores,
+                  attn_weights, prev_hypos_indices, torch.LongTensor([20]))
+
+        import io
+        f = io.BytesIO()
+        torch.onnx._export(
+            bs,
+            (src_tokens, src_lengths, prev_token, prev_scores, attn_weights,
+             prev_hypos_indices, torch.LongTensor([20])),
+            f, export_params=True, verbose=False, example_outputs=outs)
+
+        s = torch.onnx._export_to_pretty_string(
+            bs,
+            (src_tokens, src_lengths, prev_token, prev_scores, attn_weights,
+             prev_hypos_indices, torch.LongTensor([20])),
+            f, export_params=True, verbose=False, example_outputs=outs)
+
+        f.seek(0)
+        import onnx
+        onnx_model = onnx.load(f)
+        c2_model = caffe2_backend.prepare(onnx_model)
+        c2_outs = c2_model.run((src_tokens.numpy(), src_lengths.numpy(),
+                      prev_token.numpy(), prev_scores.numpy(),
+                      attn_weights.numpy(), prev_hypos_indices.numpy(),
+                      np.array([20])))
+
+    def test_full_beam_decoder(self):
+        test_args = test_utils.ModelParamsDict(
+            encoder_bidirectional=True,
+            sequence_lstm=True,
+        )
+        self._test_full_beam_decoder(test_args)
