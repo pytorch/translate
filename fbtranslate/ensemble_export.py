@@ -183,7 +183,7 @@ def save_caffe2_rep_to_db(
             num_workers=num_workers,
         )
         predictor_exporter.save_to_db(
-            db_type='log_file_db',
+            db_type='minidb',
             db_destination=output_path,
             predictor_export_meta=predictor_export_meta,
         )
