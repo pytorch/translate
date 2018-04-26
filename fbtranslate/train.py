@@ -307,7 +307,6 @@ def setup_training(args):
         eval_corpus=eval_corpus,
         train_split=args.train_subset,
         eval_split=args.valid_subset,
-        save_dir=args.save_dir,
         args=args,
         penalized_target_tokens_file=args.penalized_target_tokens_file,
     )

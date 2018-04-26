@@ -57,7 +57,6 @@ def load_raw_text_dataset(
     eval_corpus: ParallelCorpusConfig,
     train_split: str,
     eval_split: str,
-    save_dir: str,
     args: argparse.Namespace,
     penalized_target_tokens_file=None,
 ) -> data.LanguageDatasets:
