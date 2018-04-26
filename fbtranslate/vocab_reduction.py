@@ -10,9 +10,9 @@ import torch.nn as nn
 logger = logging.getLogger(__name__)
 
 # Vocab reduction default params when only lexical dictionaries is provided
-NUM_TOP_WORDS_DEFAULT = 30
+NUM_TOP_WORDS_DEFAULT = 2000
 
-MAX_TRANSLATION_CANDIDATES_PER_WORD_DEFAULT = 2000
+MAX_TRANSLATION_CANDIDATES_PER_WORD_DEFAULT = 30
 
 
 def add_args(parser):
