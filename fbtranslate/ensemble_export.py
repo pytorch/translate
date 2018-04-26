@@ -13,7 +13,7 @@ import torch.onnx.operators
 from fairseq import utils
 from fbtranslate import dictionary, rnn  # noqa
 
-from caffe2.caffe2.fb.predictor import predictor_exporter
+from caffe2.python.predictor import predictor_exporter
 from caffe2.python import core, dyndep, workspace
 from caffe2.python.onnx import backend as caffe2_backend
 
