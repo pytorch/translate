@@ -13,7 +13,7 @@ import torch.onnx.operators
 from fairseq import utils
 from fbtranslate import dictionary, rnn  # noqa
 
-from caffe2.caffe2.fb.predictor import predictor_exporter
+from caffe2.python.predictor import predictor_exporter
 from caffe2.python import core, dyndep, workspace
 from caffe2.python.onnx import backend as caffe2_backend
 
@@ -780,39 +780,41 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
 class BeamSearch(torch.jit.ScriptModule):
 
+    __constants__ = ['bs']
+
     def __init__(self, model_list, src_tokens, src_lengths, beam_size=1,
                  word_penalty=0, unk_penalty=0):
         super().__init__()
         self.models = model_list
-        self.beam_size = beam_size
+        self.bs = beam_size
         self.word_penalty = word_penalty
         self.unk_penalty = unk_penalty
 
-        encoder_ens = EncoderEnsemble(models)
+        encoder_ens = EncoderEnsemble(self.models)
         example_encoder_outs = encoder_ens(src_tokens, src_lengths)
         self.encoder_ens = torch.jit.trace(src_tokens, src_lengths)(
             encoder_ens)
         decoder_ens = \
-            DecoderBatchedStepEnsemble(models, beam_size, word_penalty,
+            DecoderBatchedStepEnsemble(self.models, beam_size, word_penalty,
                                        unk_penalty, tile_internal=False)
         decoder_ens_tile = \
-            DecoderBatchedStepEnsemble(models, beam_size, word_penalty,
+            DecoderBatchedStepEnsemble(self.models, beam_size, word_penalty,
                                        unk_penalty, tile_internal=True)
         prev_token = torch.LongTensor([0])
         prev_scores = torch.FloatTensor([0.0])
         ts = torch.LongTensor([0])
-        _, _, _, _, *tiled_states = \
-            decoder_ens_tile(prev_token, prev_scores, ts, *example_encoder_outs)
+        _, _, _, _, *tiled_states = decoder_ens_tile(prev_token, prev_scores,
+                                                     ts, *example_encoder_outs)
         self.decoder_ens_tile = torch.jit.trace(
             prev_token, prev_scores, ts, *example_encoder_outs)(
                 decoder_ens_tile)
         self.decoder_ens = torch.jit.trace(
-            prev_token.repeat(6), prev_scores.repeat(6), ts,
+            prev_token.repeat(self.bs), prev_scores.repeat(self.bs), ts,
             *tiled_states)(decoder_ens)
 
         self.input_names = ['src_tokens', 'src_lengths', 'prev_token',
-                            'prev_scores', 'attn_weights', 'prev_hypos_indices',
-                            'num_steps']
+                            'prev_scores', 'attn_weights',
+                            'prev_hypos_indices', 'num_steps']
         self.output_names = ['all_tokens', 'all_scores', 'all_weights',
                              'all_prev_indices']
 
@@ -821,9 +823,10 @@ class BeamSearch(torch.jit.ScriptModule):
                 attn_weights, prev_hypos_indices, num_steps):
         enc_states = self.encoder_ens(src_tokens, src_lengths)
 
-        all_tokens = prev_token.repeat(repeats=[6]).unsqueeze(dim=0)
-        all_scores = prev_scores.repeat(repeats=[6]).unsqueeze(dim=0)
-        all_weights = attn_weights.unsqueeze(dim=0).repeat(repeats=[6, 1]).unsqueeze(dim=0)
+        all_tokens = prev_token.repeat(repeats=[self.bs]).unsqueeze(dim=0)
+        all_scores = prev_scores.repeat(repeats=[self.bs]).unsqueeze(dim=0)
+        all_weights = \
+            attn_weights.unsqueeze(dim=0).repeat(repeats=[self.bs, 1]).unsqueeze(dim=0)
         all_prev_indices = prev_hypos_indices.unsqueeze(dim=0)
 
         prev_token, prev_scores, prev_hypos_indices, attn_weights, *states = \
@@ -831,17 +834,28 @@ class BeamSearch(torch.jit.ScriptModule):
 
         all_tokens = torch.cat((all_tokens, prev_token.unsqueeze(dim=0)), dim=0)
         all_scores = torch.cat((all_scores, prev_scores.unsqueeze(dim=0)), dim=0)
-        all_weights = torch.cat((all_weights, attn_weights.unsqueeze(dim=0)), dim=0)
-        all_prev_indices = torch.cat((all_prev_indices, prev_hypos_indices.unsqueeze(dim=0)), dim=0)
+        all_weights = \
+            torch.cat((all_weights, attn_weights.unsqueeze(dim=0)), dim=0)
+        all_prev_indices = \
+            torch.cat((all_prev_indices, prev_hypos_indices.unsqueeze(dim=0)), dim=0)
 
         for i in range(num_steps - 1):
-            prev_token, prev_scores, prev_hypos_indices, attn_weights, *states = \
-                self.decoder_ens(prev_token, prev_scores, i + 1, *states)
+            (prev_token, prev_scores, prev_hypos_indices, attn_weights,
+             *states) = \
+              self.decoder_ens(prev_token, prev_scores, i + 1, *states)
 
-            all_tokens = torch.cat((all_tokens, prev_token.unsqueeze(dim=0)), dim=0)
-            all_scores = torch.cat((all_scores, prev_scores.unsqueeze(dim=0)), dim=0)
-            all_weights = torch.cat((all_weights, attn_weights.unsqueeze(dim=0)), dim=0)
-            all_prev_indices = torch.cat((all_prev_indices, prev_hypos_indices.unsqueeze(dim=0)), dim=0)
+            all_tokens = torch.cat(
+                (all_tokens, prev_token.unsqueeze(dim=0)),
+                dim=0)
+            all_scores = torch.cat(
+                (all_scores, prev_scores.unsqueeze(dim=0)),
+                dim=0)
+            all_weights = torch.cat(
+                (all_weights, attn_weights.unsqueeze(dim=0)),
+                dim=0)
+            all_prev_indices = torch.cat(
+                (all_prev_indices, prev_hypos_indices.unsqueeze(dim=0)),
+                dim=0)
 
         return all_tokens, all_scores, all_weights, all_prev_indices
 
@@ -851,8 +865,8 @@ class BeamSearch(torch.jit.ScriptModule):
         src_lengths = torch.IntTensor(np.array([length], dtype='int32'))
         prev_token = torch.LongTensor([self.models[0].dst_dict.eos()])
         prev_scores = torch.FloatTensor([0.0])
-        attn_weights = torch.zeros(length + 1) # TODO
-        prev_hypos_indices = torch.zeros(self.beam_size, dtype=torch.int64)
+        attn_weights = torch.zeros(length + 1)  # TODO
+        prev_hypos_indices = torch.zeros(self.bs, dtype=torch.int64)
         num_steps = torch.LongTensor([20])
 
         input_tuple = (src_tokens, src_lengths, prev_token, prev_scores,
@@ -882,6 +896,7 @@ class BeamSearch(torch.jit.ScriptModule):
         word_penalty=0,
         unk_penalty=0,
     ):
+        length = 10
         models = load_models_from_checkpoints(
             checkpoint_filenames,
             src_dict_filename,
@@ -903,7 +918,7 @@ class BeamSearch(torch.jit.ScriptModule):
         Save encapsulated beam search.
         """
         tmp_dir = tempfile.mkdtemp()
-        tmp_file = os.path.join(tmp_dir, 'decoder_step.pb')
+        tmp_file = os.path.join(tmp_dir, 'beam_search.pb')
         self.onnx_export(tmp_file)
 
         with open(tmp_file, 'r+b') as f:

@@ -11,7 +11,7 @@ from fbtranslate.ensemble_export import BeamSearch
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            'Export PyTorch-trained FBTranslate models to Caffe2 components'
+            'Export PyTorch-trained FBTranslate models to caffe2'
         ),
     )
     parser.add_argument(
