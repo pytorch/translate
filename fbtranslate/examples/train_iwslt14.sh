@@ -6,7 +6,7 @@ export LD_LIBRARY_PATH="${NCCL_ROOT_DIR}/lib:${LD_LIBRARY_PATH}"
 wget https://download.pytorch.org/models/translate/iwslt14/data.tar.gz
 tar -xvzf data.tar.gz
 rm -rf checkpoints && mkdir -p checkpoints
-python fbtranslate/multiprocessing_train.py \
+CUDA_VISIBLE_DEVICES=0 python fbtranslate/multiprocessing_train.py \
    "" \
    --arch rnn \
    --log-verbose \
@@ -29,7 +29,7 @@ python fbtranslate/multiprocessing_train.py \
    --decoder-dropout-out 0.2 \
    --criterion label_smoothed_cross_entropy \
    --label-smoothing 0.1 \
-   --batch-size 64 \
+   --batch-size 256 \
    --lenpen 0 \
    --unkpen 0.5 \
    --word-reward 0.25 \
@@ -39,7 +39,7 @@ python fbtranslate/multiprocessing_train.py \
    --encoder-hidden-dim 512 \
    --decoder-layers 2 \
    --decoder-embed-dim 256 \
-   --decoder-hidden-dim 256 \
+   --decoder-hidden-dim 512 \
    --decoder-out-embed-dim 256 \
    --save-dir checkpoints \
    --attention-type dot \
@@ -58,4 +58,5 @@ python fbtranslate/multiprocessing_train.py \
    --source-max-vocab-size 14000 \
    --target-max-vocab-size 14000 \
    --log-interval 5000 \
-   --seed "${RANDOM}"
+   --seed "${RANDOM}" \
+   2>&1 | tee -a checkpoints/log
