@@ -5,7 +5,7 @@ export NCCL_ROOT_DIR="$(pwd)/nccl_2.1.15-1+cuda8.0_x86_64"
 export LD_LIBRARY_PATH="${NCCL_ROOT_DIR}/lib:${LD_LIBRARY_PATH}"
 wget https://download.pytorch.org/models/translate/iwslt14/data.tar.gz
 tar -xvzf data.tar.gz
-rm -rf checkpoints && mkdir -p checkpoints
+rm -rf checkpoints data.tar.gz && mkdir -p checkpoints
 CUDA_VISIBLE_DEVICES=0 python fbtranslate/multiprocessing_train.py \
    "" \
    --arch rnn \
