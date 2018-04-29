@@ -11,3 +11,6 @@ build/
 
 # Dot files
 .python3
+
+# Produced by install script
+pytorch/
