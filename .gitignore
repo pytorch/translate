@@ -20,3 +20,4 @@ pytorch/
 # Produced by example scripts
 checkpoints/
 data/
+model/
