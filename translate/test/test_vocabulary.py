@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from collections import OrderedDict
-from fbtranslate.vocabulary import Vocabulary
+from pytorch_translate.vocabulary import Vocabulary
 
 
 class VocabularyTest(unittest.TestCase):

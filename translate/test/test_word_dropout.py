@@ -2,8 +2,8 @@
 
 import unittest
 
-from fbtranslate import word_dropout
-from fbtranslate.test import utils as test_utils
+from pytorch_translate import word_dropout
+from pytorch_translate.test import utils as test_utils
 
 
 class TestWordDropout(unittest.TestCase):

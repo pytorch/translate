@@ -3,8 +3,8 @@ from fairseq.models import (
     register_model_architecture,
     FairseqModel,
 )
-from fbtranslate import vocab_reduction
-from fbtranslate.rnn import (
+from pytorch_translate import vocab_reduction
+from pytorch_translate.rnn import (
     torch_find,
     LSTMSequenceEncoder,
     RNNEncoder,

@@ -6,7 +6,7 @@ import tempfile
 import torch
 
 from fairseq import data, utils
-from fbtranslate import dictionary as fbtranslate_dictionary
+from pytorch_translate import dictionary as pytorch_translate_dictionary
 
 
 class ModelParamsDict:
@@ -79,7 +79,7 @@ def dummy_dictionary(
 ):
     """First adds the amount of dummy_tokens that you specify, then
     finally the additional_token_list, which is a list of string token values"""
-    d = fbtranslate_dictionary.Dictionary()
+    d = pytorch_translate_dictionary.Dictionary()
     for i in range(dummy_tokens):
         token = 'token_{}'.format(i)
         d.add_symbol(token)
