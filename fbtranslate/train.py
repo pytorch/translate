@@ -144,13 +144,6 @@ def get_parser_with_args():
         'calculating validation loss and BLEU eval scores. '
         'This overrides what would be loaded from the data dir.',
     )
-    group.add_argument(
-        '--penalized-target-tokens-file',
-        default='',
-        metavar='FILE',
-        help='Path to text file of tokens to receive a penalty in decoding.'
-        'If left empty, no penalty will be applied',
-    )
 
     # Adds args related to checkpointing.
     group = parser.add_argument_group('Checkpointing')
@@ -308,7 +301,6 @@ def setup_training(args):
         train_split=args.train_subset,
         eval_split=args.valid_subset,
         args=args,
-        penalized_target_tokens_file=args.penalized_target_tokens_file,
     )
     if args.log_verbose:
         print('Finished loading dataset', flush=True)
