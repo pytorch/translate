@@ -40,7 +40,6 @@ def main(args):
         dialect=args.target_lang,
         save_dir=args.save_dir,
         max_vocab_size=args.target_max_vocab_size,
-        tokens_with_penalty=args.penalized_target_tokens_file,
     )
 
     # Set distributed training parameters for a single node.

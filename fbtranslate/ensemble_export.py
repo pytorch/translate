@@ -13,7 +13,7 @@ import torch.onnx.operators
 from fairseq import utils
 from fbtranslate import dictionary, rnn  # noqa
 
-from caffe2.caffe2.fb.predictor import predictor_exporter
+from caffe2.python.predictor import predictor_exporter
 from caffe2.python import core, dyndep, workspace
 from caffe2.python.onnx import backend as caffe2_backend
 
@@ -183,7 +183,7 @@ def save_caffe2_rep_to_db(
             num_workers=num_workers,
         )
         predictor_exporter.save_to_db(
-            db_type='log_file_db',
+            db_type='minidb',
             db_destination=output_path,
             predictor_export_meta=predictor_export_meta,
         )

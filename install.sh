@@ -17,16 +17,24 @@ conda install numpy pyyaml mkl mkl-include setuptools cmake cffi typing
 # Add LAPACK support for the GPU
 conda install -c pytorch magma-cuda80 # or magma-cuda90 if CUDA 9
 
-pushd ~
-git clone --recursive https://github.com/pytorch/pytorch
-cd pytorch
+yes | pip uninstall torch
+yes | pip uninstall torch
 
+# Install NCCL2
+wget https://s3.amazonaws.com/pytorch/nccl_2.1.15-1%2Bcuda8.0_x86_64.txz
+tar --no-same-owner -xvf nccl_2.1.15-1+cuda8.0_x86_64.txz
+export NCCL_ROOT_DIR="$(pwd)/nccl_2.1.15-1+cuda8.0_x86_64"
+export LD_LIBRARY_PATH="${NCCL_ROOT_DIR}/lib:${LD_LIBRARY_PATH}"
+rm nccl_2.1.15-1+cuda8.0_x86_64.txz
+
+git clone --recursive https://github.com/pytorch/pytorch
+pushd pytorch
 # PyTorch build from source
-python setup.py install
+NCCL_ROOT_DIR="${NCCL_ROOT_DIR}" python3 setup.py install
 
 # Caffe2 build from source (with ATen)
 #CMAKE_ARGS=-DUSE_ATEN=ON python setup_caffe2.py install
-mkdir build_caffe2 && pushd build_caffe2
+mkdir -p build_caffe2 && pushd build_caffe2
 cmake -DUSE_ATEN=ON -DCMAKE_PREFIX_PATH=$CONDA_PATH -DCMAKE_INSTALL_PATH=$CONDA_PATH
 make DESTDIR=$CONDA_PATH install -j8 2>&1 | tee MAKE_OUT
 popd
@@ -35,10 +43,8 @@ popd
 export LD_LIBRARY_PATH=$CONDA_PATH/lib:$LD_LIBRARY_PATH
 
 # Install ONNX
-pushd ~
-git clone --recursive https://github.com/onnx/onnx.git
-pip install ./onnx
-popd
+git clone https://github.com/onnx/onnx.git
+pip install onnx
 
 yes | pip uninstall fbtranslate
 python3 setup.py build develop
