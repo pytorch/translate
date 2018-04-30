@@ -33,7 +33,6 @@ pushd pytorch
 NCCL_ROOT_DIR="${NCCL_ROOT_DIR}" python3 setup.py install
 
 # Caffe2 build from source (with ATen)
-#CMAKE_ARGS=-DUSE_ATEN=ON python setup_caffe2.py install
 mkdir -p build_caffe2 && pushd build_caffe2
 cmake -DUSE_ATEN=ON -DCMAKE_PREFIX_PATH=$CONDA_PATH -DCMAKE_INSTALL_PATH=$CONDA_PATH ..
 make DESTDIR=$CONDA_PATH install -j8 2>&1 | tee MAKE_OUT
@@ -49,7 +48,7 @@ pip install onnx
 yes | pip uninstall pytorch-translate
 python3 setup.py build develop
 
-pushd translate/cpp
+pushd pytorch_translate/cpp
 cmake -DCMAKE_PREFIX_PATH==$CONDA_PATH/usr/local -DCMAKE_INSTALL_PATH==$CONDA_PATH .
 make
 popd
