@@ -52,8 +52,18 @@ python3 setup.py build develop
 
 ## Training
 
-We provide a example script to train a model for the IWSLT 2014 German-English task. We used this command to obtain [a pretrained model](TODO).
+We provide an example script to train a model for the IWSLT 2014 German-English task. We used this command to obtain [a pretrained model](TODO).
 
 ```
 bash fbtranslate/examples/train_iwslt14.sh
 ```
+
+## Exporting a Model with ONNX
+
+We provide an example script to export a PyTorch model to a Caffe2 graph via ONNX:
+
+```
+bash fbtranslate/examples/export_iwslt14.sh
+```
+
+TODO: add how to load the exported models from C++.
