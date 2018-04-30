@@ -13,4 +13,10 @@ build/
 .python3
 
 # Produced by install script
+onnx/
+nccl_2.1.15-1+cuda8.0_x86_64/
 pytorch/
+
+# Produced by example scripts
+checkpoints/
+data/

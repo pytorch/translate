@@ -49,3 +49,11 @@ git clone --recursive https://github.com/facebookincubator/fbtranslate.git
 cd fbtranslate
 python3 setup.py build develop
 ```
+
+## Training
+
+We provide a example script to train a model for the IWSLT 2014 German-English task. We used this command to obtain [a pretrained model](TODO).
+
+```
+bash fbtranslate/examples/train_iwslt14.sh
+```
