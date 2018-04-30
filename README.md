@@ -1,54 +1,14 @@
-# fbtranslate
+# Translate - a PyTorch Language Library
 
-## Installation instructions
+Translate is a library for machine translation written in PyTorch. It provides training for sequence-to-sequence models. These models can be exported to Caffe2 graphs via [ONNX](https://onnx.ai/), loaded and run from C++ for production purposes. Translate relies on [fairseq](https://github.com/facebookresearch/fairseq-py), a general sequence-to-sequence library.
 
-### Install MiniConda3
-```bash
-pushd ~
-wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
-chmod +x miniconda.sh
-./miniconda.sh -b -p ~/miniconda
-rm miniconda.sh
-popd
-```
+## Requirements and Installation
 
-### Install PyTorch and Caffe2
-```bash
+Translate requires
+* Mac OS X or Linux
+* A [CUDA installation](https://docs.nvidia.com/cuda/)
 
-# Install basic PyTorch dependencies
-conda install numpy pyyaml mkl mkl-include setuptools cmake cffi typing
-
-# Add LAPACK support for the GPU
-conda install -c pytorch magma-cuda80 # or magma-cuda90 if CUDA 9
-
-pushd ~
-git clone --recursive https://github.com/pytorch/pytorch
-cd pytorch
-
-# PyTorch build from source
-python setup.py install
-
-# Caffe2 build from source (with ATen)
-CMAKE_ARGS=-DUSE_ATEN=ON python setup_caffe2.py install
-popd
-```
-
-### Install ONNX
-```bash
-pushd ~
-git clone --recursive https://github.com/onnx/onnx.git
-pip install ./onnx
-popd
-```
-
-### Install FBTranslate
-```bash
-. ~/miniconda/bin/activate
-yes | pip uninstall fbtranslate
-git clone --recursive https://github.com/facebookincubator/fbtranslate.git
-cd fbtranslate
-python3 setup.py build develop
-```
+To install Translate, please refer to the `install.sh` script. In short, run `bash install.sh`.
 
 ## Training
 
@@ -69,3 +29,14 @@ bash fbtranslate/examples/generate_iwslt14.sh
 ```
 
 Note the improvement in performance when using an ensemble of size 2 instead of a single model.
+
+## Exporting Models
+
+TODO
+
+## Join the Translate community
+
+We welcome contributions! See the `CONTRIBUTING.md` file for how to help out.
+
+## License
+Translate is BSD-licensed, as found in the LICENSE file.
