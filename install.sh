@@ -12,10 +12,10 @@ popd
 export CONDA_PATH="$(dirname $(which conda))/../" # [anaconda root directory]
 
 # Install basic PyTorch dependencies
-conda install numpy pyyaml mkl mkl-include setuptools cmake cffi typing
+yes | conda install numpy pyyaml mkl mkl-include setuptools cmake cffi typing
 
 # Add LAPACK support for the GPU
-conda install -c pytorch magma-cuda80 # or magma-cuda90 if CUDA 9
+yes | conda install -c pytorch magma-cuda80 # or magma-cuda90 if CUDA 9
 
 yes | pip uninstall torch
 yes | pip uninstall torch
@@ -49,6 +49,6 @@ yes | pip uninstall fbtranslate
 python3 setup.py build develop
 
 pushd fbtranslate/cpp
-cmake -DCMAKE_PREFIX_PATH==$CONDA_PATH/usr/local -DCMAKE_INSTALL_PATH==$CONDA_PATH .
+cmake -DCMAKE_PREFIX_PATH=$CONDA_PATH/usr/local -DCMAKE_INSTALL_PATH=$CONDA_PATH .
 make
 popd
