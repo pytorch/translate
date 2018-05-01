@@ -38,7 +38,8 @@ popd
 
 # Install ONNX
 git clone https://github.com/onnx/onnx.git
-pip install onnx
+pip uninstall onnx
+pip install onnx/
 
 yes | pip uninstall fbtranslate
 python3 setup.py build develop
