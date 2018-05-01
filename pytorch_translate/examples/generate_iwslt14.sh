@@ -10,7 +10,7 @@ rm -f data.tar.gz model.tar.gz
 
 python3 pytorch_translate/generate.py \
        "" \
-       --path averaged_checkpoint_best_0.pt \
+       --path model/averaged_checkpoint_best_0.pt \
        --source-vocab-file model/dictionary-de.txt \
        --target-vocab-file model/dictionary-en.txt \
        --source-text-file data/test.tok.bpe.de \
@@ -29,8 +29,8 @@ python3 pytorch_translate/generate.py \
 
 python3 pytorch_translate/generate.py \
        "" \
-       --path averaged_checkpoint_best_0.pt \
-       --path averaged_checkpoint_best_1.pt \
+       --path model/averaged_checkpoint_best_0.pt \
+       --path model/averaged_checkpoint_best_1.pt \
        --source-vocab-file model/dictionary-de.txt \
        --target-vocab-file model/dictionary-en.txt \
        --source-text-file data/test.tok.bpe.de \
