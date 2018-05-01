@@ -41,7 +41,28 @@ bash pytorch_translate/examples/export_iwslt14.sh
 
 TODO: add how to load the exported models from C++.
 
-## Join the Translate community
+## Using the Model
+
+After you run `install.sh`, `cmake` will have been run on the
+`pytorch_translate/cpp` directory. In order to use your exported model to
+perform translations, you can compile and invoke the decoder from within the
+`pytorch_translate/cpp` directory like so:
+
+```
+make && \
+echo "sentence to translate" | \
+./translation_decoder \
+  --encoder_model "/path/to/exported/encoder" \
+  --decoder_step_model "/path/to/exported/decoder" \
+  --source_vocab_path "/path/to/source_vocab.txt" \
+  --target_vocab_path "/path/to/target_vocab.txt" \
+  `# Tuneable parameters` \
+  --max_out_seq_len_mult 0.9 --max_out_seq_len_bias 5 --beam_size 6 \
+  `# Must match your training settings` \
+  --reverse_source True --stop_at_eos True
+```
+
+## Join the Translate Community
 
 We welcome contributions! See the `CONTRIBUTING.md` file for how to help out.
 
