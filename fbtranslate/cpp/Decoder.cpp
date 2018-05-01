@@ -1,3 +1,22 @@
+/*
+Sample decoder to load an exported Caffe2 model and perform
+inference/beam search to provide translation results.
+
+Sample usage (assuming that cmake has already been run as a part of the
+installation done by install.sh and that you're in the cpp directory):
+  make && \
+  echo "sentence to translate" | \
+  ./translation_decoder \
+    --encoder_model "/path/to/exported/encoder" \
+    --decoder_step_model "/path/to/exported/decoder" \
+    --source_vocab_path "/path/to/source_vocab.txt" \
+    --target_vocab_path "/path/to/target_vocab.txt" \
+    `# Tuneable parameters` \
+    --max_out_seq_len_mult 0.9 --max_out_seq_len_bias 5 --beam_size 6 \
+    `# Must match your training settings` \
+    --reverse_source True --stop_at_eos True
+*/
+
 #include <cstdio>
 #include <iostream>
 #include <memory>

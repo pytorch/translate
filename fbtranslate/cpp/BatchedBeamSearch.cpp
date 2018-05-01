@@ -124,8 +124,8 @@ TensorMap BatchedBeamSearch::prepareInitialNextInputStepMap(
     const std::vector<std::string>& encoderOutputNames,
     const TensorMap& encoderOutputMap,
     RawTensorMap* trackRawPointers) {
-  std::regex encoderOutputRegex("encoder_output_([0-9]+)", std::regex_constants::basic);
-  std::regex initialStateRegex("initial_state_([0-9]+)", std::regex_constants::basic);
+  std::regex encoderOutputRegex("encoder_output_([0-9]+)", std::regex_constants::extended);
+  std::regex initialStateRegex("initial_state_([0-9]+)", std::regex_constants::extended);
   std::smatch regexMatch;
   TensorMap initialInputStepMap;
   for (const std::string& encoderOutputName : encoderOutputNames) {
@@ -191,8 +191,8 @@ TensorMap BatchedBeamSearch::prepareNextInputStepMap(
     const TensorMap& stepOutputMap,
     int timeStep,
     RawTensorMap* trackRawPointers) {
-  std::regex encoderOutputRegex("encoder_output_([0-9]+)", std::regex_constants::basic);
-  std::regex stepOutputRegex("state_output_([0-9]+)", std::regex_constants::basic);
+  std::regex encoderOutputRegex("encoder_output_([0-9]+)", std::regex_constants::extended);
+  std::regex stepOutputRegex("state_output_([0-9]+)", std::regex_constants::extended);
   std::smatch regexMatch;
   TensorMap inputStepMap;
 
