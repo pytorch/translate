@@ -7,8 +7,8 @@ import unittest
 
 
 import torch
-from fbtranslate.char_encoder import CharEmbModel
-from fbtranslate.dictionary import CharDictionary
+from pytorch_translate.char_encoder import CharEmbModel
+from pytorch_translate.dictionary import CharDictionary
 
 logger = logging.getLogger(__name__)
 

@@ -4,8 +4,8 @@ import argparse
 import numpy as np
 import torch
 
-from fbtranslate import rnn  # noqa
-from fbtranslate.ensemble_export import (
+from pytorch_translate import rnn  # noqa
+from pytorch_translate.ensemble_export import (
     DecoderBatchedStepEnsemble,
     DecoderStepEnsemble,
     EncoderEnsemble,

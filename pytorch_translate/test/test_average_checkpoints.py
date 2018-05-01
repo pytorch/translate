@@ -7,7 +7,7 @@ import tempfile
 import torch
 import unittest
 
-from fbtranslate.average_checkpoints import average_checkpoints
+from pytorch_translate.average_checkpoints import average_checkpoints
 
 
 class AverageCheckpointsTest(unittest.TestCase):

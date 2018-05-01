@@ -13,9 +13,9 @@ import signal
 import torch
 
 from fairseq import distributed_utils
-from fbtranslate import train
-from fbtranslate.train import main as single_process_main
-from fbtranslate import data as fbtranslate_data
+from pytorch_translate import train
+from pytorch_translate.train import main as single_process_main
+from pytorch_translate import data as pytorch_translate_data
 
 
 def main(args):
@@ -27,20 +27,19 @@ def main(args):
     if args.target_lang is None:
         args.target_lang = 'tgt'
 
-    args.source_vocab_file = fbtranslate_data.build_vocab_if_nonexistent(
+    args.source_vocab_file = pytorch_translate_data.build_vocab_if_nonexistent(
         vocab_file=args.source_vocab_file,
         corpus_file=args.train_source_text_file,
         dialect=args.source_lang,
         save_dir=args.save_dir,
         max_vocab_size=args.target_max_vocab_size,
     )
-    args.target_vocab_file = fbtranslate_data.build_vocab_if_nonexistent(
+    args.target_vocab_file = pytorch_translate_data.build_vocab_if_nonexistent(
         vocab_file=args.target_vocab_file,
         corpus_file=args.train_target_text_file,
         dialect=args.target_lang,
         save_dir=args.save_dir,
         max_vocab_size=args.target_max_vocab_size,
-        tokens_with_penalty=args.penalized_target_tokens_file,
     )
 
     # Set distributed training parameters for a single node.

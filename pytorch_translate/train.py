@@ -17,12 +17,12 @@ from fairseq import criterions, distributed_utils, models, options, \
 from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
 
-from fbtranslate import average_checkpoints
-from fbtranslate import data as fbtranslate_data
-from fbtranslate import generate
-from fbtranslate import rnn  # noqa
-from fbtranslate.research.word_prediction import word_prediction_criterion  # noqa
-from fbtranslate.research.word_prediction import word_prediction_model  # noqa
+from pytorch_translate import average_checkpoints
+from pytorch_translate import data as pytorch_translate_data
+from pytorch_translate import generate
+from pytorch_translate import rnn  # noqa
+from pytorch_translate.research.word_prediction import word_prediction_criterion  # noqa
+from pytorch_translate.research.word_prediction import word_prediction_model  # noqa
 
 
 def get_parser_with_args():
@@ -143,13 +143,6 @@ def get_parser_with_args():
         help='Path to raw text file containing target eval examples for '
         'calculating validation loss and BLEU eval scores. '
         'This overrides what would be loaded from the data dir.',
-    )
-    group.add_argument(
-        '--penalized-target-tokens-file',
-        default='',
-        metavar='FILE',
-        help='Path to text file of tokens to receive a penalty in decoding.'
-        'If left empty, no penalty will be applied',
     )
 
     # Adds args related to checkpointing.
@@ -279,22 +272,22 @@ def setup_training(args):
         args.target_lang = 'tgt'
 
     assert_corpora_files_specified(args)
-    train_corpus = fbtranslate_data.ParallelCorpusConfig(
-        source=fbtranslate_data.CorpusConfig(
+    train_corpus = pytorch_translate_data.ParallelCorpusConfig(
+        source=pytorch_translate_data.CorpusConfig(
             dialect=args.source_lang,
             data_file=args.train_source_text_file,
         ),
-        target=fbtranslate_data.CorpusConfig(
+        target=pytorch_translate_data.CorpusConfig(
             dialect=args.target_lang,
             data_file=args.train_target_text_file,
         ),
     )
-    eval_corpus = fbtranslate_data.ParallelCorpusConfig(
-        source=fbtranslate_data.CorpusConfig(
+    eval_corpus = pytorch_translate_data.ParallelCorpusConfig(
+        source=pytorch_translate_data.CorpusConfig(
             dialect=args.source_lang,
             data_file=args.eval_source_text_file,
         ),
-        target=fbtranslate_data.CorpusConfig(
+        target=pytorch_translate_data.CorpusConfig(
             dialect=args.target_lang,
             data_file=args.eval_target_text_file,
         ),
@@ -302,13 +295,12 @@ def setup_training(args):
 
     if args.log_verbose:
         print('Starting to load raw text files.', flush=True)
-    dataset = fbtranslate_data.load_raw_text_dataset(
+    dataset = pytorch_translate_data.load_raw_text_dataset(
         train_corpus=train_corpus,
         eval_corpus=eval_corpus,
         train_split=args.train_subset,
         eval_split=args.valid_subset,
         args=args,
-        penalized_target_tokens_file=args.penalized_target_tokens_file,
     )
     if args.log_verbose:
         print('Finished loading dataset', flush=True)

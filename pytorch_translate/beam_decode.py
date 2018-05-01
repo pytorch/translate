@@ -23,7 +23,6 @@ class SequenceGenerator(torch.nn.Module):
         normalize_scores=True,
         len_penalty=1,
         unk_penalty=0,
-        profanity_penalty=0,
         retain_dropout=False,
         word_reward=0,
     ):
@@ -56,8 +55,6 @@ class SequenceGenerator(torch.nn.Module):
         self.normalize_scores = normalize_scores
         self.len_penalty = len_penalty
         self.unk_penalty = unk_penalty
-        self.profanity_penalty = profanity_penalty
-        self.profanity_indices = models[0].dst_dict.profanity_indices_list()
         self.retain_dropout = retain_dropout
         self.word_reward = word_reward
 
@@ -289,8 +286,6 @@ class SequenceGenerator(torch.nn.Module):
                 probs.add_(scores[:, step - 1].view(-1, 1))
             probs[:, self.pad] = -math.inf  # never select pad
             probs[:, self.unk] -= self.unk_penalty  # apply unk penalty
-            # apply penalty to offensive words
-            probs[:, self.profanity_indices] -= self.profanity_penalty
 
             probs += self.word_reward
             probs[:, self.eos] -= self.word_reward

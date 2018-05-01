@@ -9,13 +9,13 @@ import torch
 import unittest
 
 from fairseq import models
-from fbtranslate import rnn  # noqa
-from fbtranslate.ensemble_export import (
+from pytorch_translate import rnn  # noqa
+from pytorch_translate.ensemble_export import (
     DecoderBatchedStepEnsemble,
     DecoderStepEnsemble,
     EncoderEnsemble,
 )
-from fbtranslate.test import utils as test_utils
+from pytorch_translate.test import utils as test_utils
 
 from caffe2.python.onnx import backend as caffe2_backend
 

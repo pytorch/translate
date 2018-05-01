@@ -11,7 +11,7 @@ import torch.nn.functional as F
 import torch.onnx.operators
 
 from fairseq import utils
-from fbtranslate import dictionary, rnn  # noqa
+from pytorch_translate import dictionary, rnn  # noqa
 
 from caffe2.python.predictor import predictor_exporter
 from caffe2.python import core, dyndep, workspace

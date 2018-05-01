@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from fairseq import dictionary
-from fbtranslate import vocab_constants
+from pytorch_translate import vocab_constants
 
 
 class Dictionary(dictionary.Dictionary):
@@ -18,7 +18,6 @@ class Dictionary(dictionary.Dictionary):
         self.symbols = []
         self.count = []
         self.indices = {}
-        self.profanity_indices = set()
 
         self.pad_index = self.add_symbol(pad)
         assert self.pad_index == vocab_constants.PAD_ID
@@ -39,9 +38,6 @@ class Dictionary(dictionary.Dictionary):
 
         self.nspecial = len(self.symbols)
         assert self.nspecial == max_special_tokens
-
-    def profanity_indices_list(self):
-        return list(self.profanity_indices)
 
 
 class CharDictionary(Dictionary):

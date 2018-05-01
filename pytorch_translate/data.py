@@ -6,7 +6,7 @@ import os
 from fairseq import data, indexed_dataset
 from typing import NamedTuple, Optional
 
-from fbtranslate import dictionary as fbtranslate_dictionary
+from pytorch_translate import dictionary as pytorch_translate_dictionary
 
 
 class CorpusConfig(NamedTuple):
@@ -22,8 +22,8 @@ class ParallelCorpusConfig(NamedTuple):
 def make_language_pair_dataset(
     source_file: str,
     target_file: str,
-    source_dict: fbtranslate_dictionary.Dictionary,
-    target_dict: fbtranslate_dictionary.Dictionary,
+    source_dict: pytorch_translate_dictionary.Dictionary,
+    target_dict: pytorch_translate_dictionary.Dictionary,
     args: Optional[argparse.Namespace] = None,
 ) -> data.LanguagePairDataset:
     return data.LanguagePairDataset(
@@ -58,10 +58,9 @@ def load_raw_text_dataset(
     train_split: str,
     eval_split: str,
     args: argparse.Namespace,
-    penalized_target_tokens_file=None,
 ) -> data.LanguageDatasets:
-    source_dict = fbtranslate_dictionary.Dictionary.load(args.source_vocab_file)
-    target_dict = fbtranslate_dictionary.Dictionary.load(args.target_vocab_file)
+    source_dict = pytorch_translate_dictionary.Dictionary.load(args.source_vocab_file)
+    target_dict = pytorch_translate_dictionary.Dictionary.load(args.target_vocab_file)
 
     dataset = data.LanguageDatasets(
         src=train_corpus.source.dialect,
@@ -110,29 +109,14 @@ def build_vocab_from_corpus(
     dialect: str,
     save_dir: str,
     max_vocab_size: int,
-    tokens_with_penalty: Optional[str] = None,
 ):
     vocab_file = os.path.join(save_dir, f'dictionary-{dialect}.txt')
-    d = fbtranslate_dictionary.Dictionary()
+    d = pytorch_translate_dictionary.Dictionary()
     with open(corpus_file, 'r') as f:
         for line in f:
             tokens = line.split()
             for t in tokens:
                 token_index = d.add_symbol(t)
-
-    # Set indices to receive penalty
-    if tokens_with_penalty:
-        # Assume input tokens are unique
-        bad_words_list = []
-        with open(tokens_with_penalty, 'r', encoding='utf-8') as f:
-            for line in f:
-                tokens = line.strip().split()
-                if len(tokens) == 1:
-                    bad_words_list.append(tokens[0])
-
-        for token, token_index in d.indices.items():
-            if token in bad_words_list:
-                d.profanity_indices.add(token_index)
 
     d.finalize()
     d.save(vocab_file, threshold=0, nwords=max_vocab_size)
@@ -151,7 +135,6 @@ def build_vocab_if_nonexistent(
     dialect: str,
     save_dir: str,
     max_vocab_size: int,
-    tokens_with_penalty: str = None,
 ):
     if vocab_file and os.path.isfile(vocab_file):
         return vocab_file
@@ -163,5 +146,4 @@ def build_vocab_if_nonexistent(
         dialect=dialect,
         save_dir=save_dir,
         max_vocab_size=max_vocab_size,
-        tokens_with_penalty=tokens_with_penalty,
     )

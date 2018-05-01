@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from fairseq.modules import ConvTBC
-from fbtranslate import rnn  # noqa
+from pytorch_translate import rnn  # noqa
 
 
 class HighwayLayer(nn.Module):
