@@ -17,3 +17,5 @@ python3 pytorch_translate/onnx_component_export.py \
     --word_penalty 0.25 \
     --unk_penalty -0.5 \
     --batched_beam
+
+echo "Finished exporting encoder as ./encoder.pb and decoder as ./decoder.pb"

@@ -39,9 +39,19 @@ We provide an example script to export a PyTorch model to a Caffe2 graph via ONN
 bash pytorch_translate/examples/export_iwslt14.sh
 ```
 
-TODO: add how to load the exported models from C++.
+## Using the Model
 
-## Join the Translate community
+To use the sample exported Caffe2 model to translate sentences, run:
+
+```
+echo "hallo welt ." | bash pytorch_translate/examples/translate_iwslt14.sh
+```
+
+Note that the model takes in [BPE](https://github.com/rsennrich/subword-nmt)
+inputs, so some input words need to be split into multiple tokens.
+For instance, "hineinstopfen" is represented as "hinein@@ stop@@ fen".
+
+## Join the Translate Community
 
 We welcome contributions! See the `CONTRIBUTING.md` file for how to help out.
 
