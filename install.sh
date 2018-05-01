@@ -1,5 +1,9 @@
 #!/bin/bash
 
+export http_proxy="http://fwdproxy.any:8080"
+export https_proxy="$http_proxy"
+export no_proxy=".facebook.com,.tfbnw.net,.fb.com, .fbcdn.net"
+
 pushd ~
 wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
 chmod +x miniconda.sh
@@ -43,8 +47,7 @@ export LD_LIBRARY_PATH=$CONDA_PATH/lib:$LD_LIBRARY_PATH
 
 # Install ONNX
 git clone https://github.com/onnx/onnx.git
-pip uninstall onnx
-pip install onnx/
+pip install ./onnx
 
 yes | pip uninstall pytorch-translate
 python3 setup.py build develop
