@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.onnx.operators
+from torch.onnx import ExportTypes
 
 from fairseq import utils
 from fbtranslate import dictionary, rnn  # noqa
@@ -120,7 +121,7 @@ def save_caffe2_rep_to_db(
         )
         predictor_exporter.save_to_db(
             db_type='log_file_db',
-            db_destination=output_path,
+            db_destination=output_path
             predictor_export_meta=predictor_export_meta,
         )
     logger.info('Caffe2 predictor net saved as: {}'.format(output_path))
@@ -865,17 +866,14 @@ class BeamSearch(torch.jit.ScriptModule):
         src_lengths = torch.IntTensor(np.array([length], dtype='int32'))
         prev_token = torch.LongTensor([self.models[0].dst_dict.eos()])
         prev_scores = torch.FloatTensor([0.0])
-        attn_weights = torch.zeros(length + 1)  # TODO
+        attn_weights = torch.zeros(length)
         prev_hypos_indices = torch.zeros(self.bs, dtype=torch.int64)
         num_steps = torch.LongTensor([20])
 
         input_tuple = (src_tokens, src_lengths, prev_token, prev_scores,
                        attn_weights, prev_hypos_indices, num_steps)
 
-        input_names = self.input_names[:]
-
-        for name, _ in self.named_parameters():
-            input_names.append(name)
+        example_outputs = self.forward(*input_tuple)
 
         with open(output_path, 'w+b') as netdef_file:
             torch.onnx._export(
@@ -883,8 +881,10 @@ class BeamSearch(torch.jit.ScriptModule):
                 input_tuple,
                 netdef_file,
                 verbose=False,
-                input_names=input_names,
+                input_names=self.input_names,
                 output_names=self.output_names,
+                example_outputs=example_outputs,
+                export_type=ExportTypes.ZIP_ARCHIVE,
             )
 
     @staticmethod
@@ -913,17 +913,13 @@ class BeamSearch(torch.jit.ScriptModule):
             unk_penalty=unk_penalty,
         )
 
-    def save_to_db(self, output_path, encoder_ensemble_outputs):
+    def save_to_db(self, output_path):
         """
         Save encapsulated beam search.
         """
         tmp_dir = tempfile.mkdtemp()
         tmp_file = os.path.join(tmp_dir, 'beam_search.pb')
         self.onnx_export(tmp_file)
-
-        with open(tmp_file, 'r+b') as f:
-            onnx_model = onnx.load(f)
-        beam_search = caffe2_backend.prepare(onnx_model)
 
         save_caffe2_rep_to_db(
             caffe2_backend_rep=beam_search,
