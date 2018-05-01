@@ -37,7 +37,7 @@ yes | pip install future
 
 # Caffe2 build from source (with ATen)
 mkdir -p build_caffe2 && pushd build_caffe2
-cmake -DPYTHON_INCLUDE_DIR=$(python -c 'from distutils import sysconfig; print(sysconfig.get_python_inc())') -DPYTHON_EXECUTABLE=$(which python) -DUSE_ATEN=ON -DCMAKE_PREFIX_PATH=$CONDA_PATH -DCMAKE_INSTALL_PREFIX=$CONDA_PATH ..
+cmake -DPYTHON_INCLUDE_DIR=$(python -c 'from distutils import sysconfig; print(sysconfig.get_python_inc())') -DPYTHON_EXECUTABLE=$(which python) -DUSE_ATEN=ON -DUSE_OPENCV=OFF -DCMAKE_PREFIX_PATH=$CONDA_PATH -DCMAKE_INSTALL_PREFIX=$CONDA_PATH ..
 make install -j8 2>&1 | tee MAKE_OUT
 popd
 popd
