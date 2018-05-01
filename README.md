@@ -1,6 +1,6 @@
 # Translate - a PyTorch Language Library
 
-Translate is a library for machine translation written in PyTorch. It provides training for sequence-to-sequence models. These models can be exported to Caffe2 graphs via [ONNX](https://onnx.ai/), loaded and run from C++ for production purposes. Translate relies on [fairseq](https://github.com/facebookresearch/fairseq-py), a general sequence-to-sequence library.
+Translate is a library for machine translation written in PyTorch. It provides training for sequence-to-sequence models. These models can be exported to Caffe2 graphs via [ONNX](https://onnx.ai/), loaded and run from C++ for production purposes. Translate relies on [fairseq](https://github.com/pytorch/fairseq), a general sequence-to-sequence library.
 
 ## Requirements and Installation
 
