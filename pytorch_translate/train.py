@@ -1000,3 +1000,9 @@ def validate_save_and_evaluate_bleu(
         val_bleu,
         stop_due_to_val_loss or stop_due_to_val_bleu,
     )
+
+
+if __name__ == '__main__':
+    parser = get_parser_with_args()
+    args = parse_args_and_arch(parser)
+    main(args)
