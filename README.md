@@ -39,28 +39,17 @@ We provide an example script to export a PyTorch model to a Caffe2 graph via ONN
 bash pytorch_translate/examples/export_iwslt14.sh
 ```
 
-TODO: add how to load the exported models from C++.
-
 ## Using the Model
 
-After you run `install.sh`, `cmake` will have been run on the
-`pytorch_translate/cpp` directory. In order to use your exported model to
-perform translations, you can compile and invoke the decoder from within the
-`pytorch_translate/cpp` directory like so:
+To use the sample exported Caffe2 model to translate sentences, run:
 
 ```
-make && \
-echo "sentence to translate" | \
-./translation_decoder \
-  --encoder_model "/path/to/exported/encoder" \
-  --decoder_step_model "/path/to/exported/decoder" \
-  --source_vocab_path "/path/to/source_vocab.txt" \
-  --target_vocab_path "/path/to/target_vocab.txt" \
-  `# Tuneable parameters` \
-  --max_out_seq_len_mult 0.9 --max_out_seq_len_bias 5 --beam_size 6 \
-  `# Must match your training settings` \
-  --reverse_source True --stop_at_eos True
+echo "hallo welt ." | bash pytorch_translate/examples/translate_iwslt14.sh
 ```
+
+Note that the model takes in [BPE](https://github.com/rsennrich/subword-nmt)
+inputs, so some input words need to be split into multiple tokens.
+For instance, "hineinstopfen" is represented as "hinein@@ stop@@ fen".
 
 ## Join the Translate Community
 
