@@ -37,12 +37,16 @@ yes | pip install future
 
 # Caffe2 build from source (with ATen)
 mkdir -p build_caffe2 && pushd build_caffe2
-cmake -DPYTHON_INCLUDE_DIR=$(python -c 'from distutils import sysconfig; print(sysconfig.get_python_inc())') -DPYTHON_EXECUTABLE=$(which python) -DUSE_ATEN=ON -DUSE_OPENCV=OFF -DCMAKE_PREFIX_PATH=$CONDA_PATH -DCMAKE_INSTALL_PREFIX=$CONDA_PATH ..
+cmake \
+  -DPYTHON_INCLUDE_DIR=$(python -c 'from distutils import sysconfig; print(sysconfig.get_python_inc())') \
+  -DPYTHON_EXECUTABLE=$(which python) \
+  -DUSE_ATEN=ON -DUSE_OPENCV=OFF \
+  -DCMAKE_PREFIX_PATH="${CONDA_PATH}" -DCMAKE_INSTALL_PREFIX="${CONDA_PATH}" ..
 make install -j8 2>&1 | tee MAKE_OUT
 popd
 popd
 
-export LD_LIBRARY_PATH=$CONDA_PATH/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH="${CONDA_PATH}/lib:${LD_LIBRARY_PATH}"
 
 # Install ONNX
 git clone --recursive https://github.com/onnx/onnx.git
@@ -52,6 +56,8 @@ yes | pip uninstall pytorch-translate
 python3 setup.py build develop
 
 pushd pytorch_translate/cpp
-cmake -DCMAKE_PREFIX_PATH=$CONDA_PATH/usr/local -DCMAKE_INSTALL_PATH==$CONDA_PATH .
+# If you need to specify a compiler other than the default one cmake is picking
+# up, you can use the -DCMAKE_C_COMPILER and -DCMAKE_CXX_COMPILER flags.
+cmake -DCMAKE_PREFIX_PATH="${CONDA_PATH}/usr/local" -DCMAKE_INSTALL_PATH="${CONDA_PATH}" .
 make
 popd
