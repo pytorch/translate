@@ -32,7 +32,7 @@ def main(args):
         corpus_file=args.train_source_text_file,
         dialect=args.source_lang,
         save_dir=args.save_dir,
-        max_vocab_size=args.target_max_vocab_size,
+        max_vocab_size=args.source_max_vocab_size,
     )
     args.target_vocab_file = pytorch_translate_data.build_vocab_if_nonexistent(
         vocab_file=args.target_vocab_file,
