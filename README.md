@@ -5,17 +5,17 @@ Translate is a library for machine translation written in PyTorch. It provides t
 ## Requirements and Installation
 
 Translate requires
-* Mac OS X or Linux
+* A Linux operating system with a CUDA compatible card
 * A [CUDA installation](https://docs.nvidia.com/cuda/)
 
-To install Translate, please refer to the `install.sh` script. In short, run `bash install.sh`.
+To install Translate, please refer to the `linux_install.sh` script. In short, run `bash linux_install.sh`.
 
 ## Training
 
 We provide a example script to train a model for the IWSLT 2014 German-English task. We used this command to obtain [a pretrained model](https://download.pytorch.org/models/translate/iwslt14/model.tar.gz):
 
 ```
-bash translate/examples/train_iwslt14.sh
+bash pytorch_translate/examples/train_iwslt14.sh
 ```
 
 The pretrained model actually contains two checkpoints that correspond to training twice with random initialization of the parameters. This is useful to obtain ensembles.
@@ -25,7 +25,7 @@ The pretrained model actually contains two checkpoints that correspond to traini
 A pretrained model for IWSLT 2014 can be evaluated by running the example script:
 
 ```
-bash translate/examples/generate_iwslt14.sh
+bash pytorch_translate/examples/generate_iwslt14.sh
 ```
 
 Note the improvement in performance when using an ensemble of size 2 instead of a single model.
