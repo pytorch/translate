@@ -7,7 +7,7 @@ wget https://download.pytorch.org/models/translate/iwslt14/model.tar.gz https://
 tar -xvzf model.tar.gz
 tar -xvzf data.tar.gz
 rm -f data.tar.gz model.tar.gz
-python3 fbtranslate/onnx_component_export.py \
+python3 pytorch_translate/onnx_component_export.py \
     --checkpoint model/averaged_checkpoint_best_0.pt \
     --encoder_output_file encoder.pb \
     --decoder_output_file decoder.pb \
