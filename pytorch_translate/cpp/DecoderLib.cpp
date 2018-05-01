@@ -16,18 +16,13 @@
 namespace pytorch {
 namespace translate {
 
-NmtDecoder::NmtDecoder(
-    int beamSize,
-    float maxOutputSeqLenMult,
-    int maxOutputSeqLenBias,
-    std::shared_ptr<Dictionary> sourceVocab,
-    std::shared_ptr<Dictionary> targetVocab,
-    const std::string& encoderModel,
-    const std::string& decoderStepModel,
-    bool reverseSource,
-    bool stopAtEos,
-    bool appendEos,
-    double lengthPenalty)
+NmtDecoder::NmtDecoder(int beamSize, float maxOutputSeqLenMult,
+                       int maxOutputSeqLenBias,
+                       std::shared_ptr<Dictionary> sourceVocab,
+                       std::shared_ptr<Dictionary> targetVocab,
+                       const std::string& encoderModel,
+                       const std::string& decoderStepModel, bool reverseSource,
+                       bool stopAtEos, bool appendEos, double lengthPenalty)
     : beamSize_(beamSize),
       maxOutputSeqLenMult_(maxOutputSeqLenMult),
       maxOutputSeqLenBias_(maxOutputSeqLenBias),
@@ -44,8 +39,7 @@ NmtDecoder::NmtDecoder(
 
 std::vector<Hypothesis> NmtDecoder::getNBestHypotheses(
     const BeamSearchOutput& beamSearchOutput,
-    const std::vector<int>& numberizedInput,
-    const double lengthPenalty,
+    const std::vector<int>& numberizedInput, const double lengthPenalty,
     const int nBest) {
   // the pair of int represents the ending position of a hypothesis in
   // the beam search grid. The first index corresponds to the length
@@ -69,7 +63,7 @@ std::vector<Hypothesis> NmtDecoder::getNBestHypotheses(
           currentHypoIsFinished[hypIndex] = true;
         }
         float score = beamSearchOutput.scoreBeamList[lengthIndex][hypIndex] /
-            pow(lengthIndex, lengthPenalty);
+                      pow(lengthIndex, lengthPenalty);
         if (endStates.size() == nBest) {
           if (score > -endStates.top().first) {
             endStates.pop();
@@ -157,11 +151,8 @@ std::vector<Hypothesis> NmtDecoder::getNBestHypotheses(
       }
     }
 
-    results.emplace_back(
-        std::move(output),
-        std::move(backAlignmentWeights),
-        modelScore,
-        std::move(indices));
+    results.emplace_back(std::move(output), std::move(backAlignmentWeights),
+                         modelScore, std::move(indices));
   }
 
   std::reverse(results.begin(), results.end());
@@ -177,19 +168,8 @@ TranslationResult NmtDecoder::translate(std::string input) {
   return results[0];
 }
 
-std::vector<int> NmtDecoder::updateAlignment(
-    const std::vector<int>& firstAlignment,
-    const std::vector<int>& secondAlignment) {
-  std::vector<int> res;
-  for (int firstAlignmentIndex : firstAlignment) {
-    res.emplace_back(secondAlignment[firstAlignmentIndex]);
-  }
-  return res;
-}
-
-std::vector<TranslationResult> NmtDecoder::translateNBest(
-    std::string input,
-    std::size_t nBest) {
+std::vector<TranslationResult> NmtDecoder::translateNBest(std::string input,
+                                                          std::size_t nBest) {
   std::vector<TranslationResult> results;
 
   std::vector<std::string> tokenizedSource = sourceVocab_->tokenize(input);
@@ -210,8 +190,8 @@ std::vector<TranslationResult> NmtDecoder::translateNBest(
   BeamSearchOutput beamSearchOutput;
   beamSearchOutput = batchedBeamSearch_->beamSearch(
       numberizedTokens, maxOutputSeqLen, reverseSource_);
-  nbestHypotheses = getNBestHypotheses(
-      beamSearchOutput, numberizedTokens, lengthPenalty_, nBest);
+  nbestHypotheses = getNBestHypotheses(beamSearchOutput, numberizedTokens,
+                                       lengthPenalty_, nBest);
 
   for (auto& hypothesis : nbestHypotheses) {
     TranslationResult result;
@@ -229,19 +209,19 @@ std::vector<TranslationResult> NmtDecoder::translateNBest(
     result.denumberizedTranslation = std::move(denumberizedTranslation);
     result.translation = std::move(translation);
 
-    result.numSourceTypes = std::unordered_set<int>(
-                                result.numberizedTokenizedInput.begin(),
+    result.numSourceTypes =
+        std::unordered_set<int>(result.numberizedTokenizedInput.begin(),
                                 result.numberizedTokenizedInput.end())
-                                .size();
-    result.numTargetTypes = std::unordered_set<int>(
-                                result.numberizedTokenizedOutput.begin(),
+            .size();
+    result.numTargetTypes =
+        std::unordered_set<int>(result.numberizedTokenizedOutput.begin(),
                                 result.numberizedTokenizedOutput.end())
-                                .size();
+            .size();
 
     results.emplace_back(result);
   }
   return results;
 }
 
-} // namespace translate
-} // namespace pytorch
+}  // namespace translate
+}  // namespace pytorch

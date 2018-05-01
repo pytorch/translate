@@ -29,12 +29,10 @@ struct BeamSearchOutput {
 
   BeamSearchOutput() {}
 
-  BeamSearchOutput(
-      int ns,
-      const std::vector<std::vector<int>>& tbl,
-      const std::vector<std::vector<float>>& sbl,
-      const std::vector<std::vector<int>>& pibl,
-      const std::vector<std::vector<std::vector<float>>>& awbl)
+  BeamSearchOutput(int ns, const std::vector<std::vector<int>>& tbl,
+                   const std::vector<std::vector<float>>& sbl,
+                   const std::vector<std::vector<int>>& pibl,
+                   const std::vector<std::vector<std::vector<float>>>& awbl)
       : numSteps(ns),
         tokenBeamList(tbl),
         scoreBeamList(sbl),
@@ -48,11 +46,9 @@ struct Hypothesis {
   float modelScore;
   BeamBestIndices bestIndices;
 
-  Hypothesis(
-      std::vector<int> numberizedTokenizedOutput,
-      std::vector<std::vector<float>> backAlignment,
-      float modelScore,
-      BeamBestIndices bestIndices)
+  Hypothesis(std::vector<int> numberizedTokenizedOutput,
+             std::vector<std::vector<float>> backAlignment, float modelScore,
+             BeamBestIndices bestIndices)
       : numberizedTokenizedOutput(numberizedTokenizedOutput),
         backAlignment(backAlignment),
         modelScore(modelScore),
@@ -117,5 +113,5 @@ std::vector<std::vector<std::vector<T>>> tensorToVector3D(
   return res;
 }
 
-} // namespace translate
-} // namespace pytorch
+}  // namespace translate
+}  // namespace pytorch

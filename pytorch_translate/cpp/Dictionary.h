@@ -24,11 +24,10 @@ constexpr int kUnkId = 3;
 
 class Dictionary {
  public:
-  explicit Dictionary(
-      const std::string& file_path,
-      const std::string& padSymbol = kPadSymbol,
-      const std::string& eosSymbol = kEosSymbol,
-      const std::string& unkSymbol = kUnkSymbol);
+  explicit Dictionary(const std::string& file_path,
+                      const std::string& padSymbol = kPadSymbol,
+                      const std::string& eosSymbol = kEosSymbol,
+                      const std::string& unkSymbol = kUnkSymbol);
 
   // Disable copy constructor and copy assignment operator.
   Dictionary(const Dictionary&) = delete;
@@ -40,28 +39,14 @@ class Dictionary {
 
   std::vector<std::string> denumberize(const std::vector<int>& ids) const;
 
-  const std::string& padSymbol() const {
-    return padSymbol_;
-  }
-  const std::string& eosSymbol() const {
-    return eosSymbol_;
-  }
-  const std::string& unkSymbol() const {
-    return unkSymbol_;
-  }
+  const std::string& padSymbol() const { return padSymbol_; }
+  const std::string& eosSymbol() const { return eosSymbol_; }
+  const std::string& unkSymbol() const { return unkSymbol_; }
 
-  int padId() const {
-    return padId_;
-  }
-  int eosId() const {
-    return eosId_;
-  }
-  int unkId() const {
-    return unkId_;
-  }
-  int size() const {
-    return idToToken_.size();
-  }
+  int padId() const { return padId_; }
+  int eosId() const { return eosId_; }
+  int unkId() const { return unkId_; }
+  int size() const { return idToToken_.size(); }
 
  private:
   int addToken(const std::string& token);
@@ -78,5 +63,5 @@ class Dictionary {
   int unkId_;
 };
 
-} // namespace translate
-} // namespace pytorch
+}  // namespace translate
+}  // namespace pytorch

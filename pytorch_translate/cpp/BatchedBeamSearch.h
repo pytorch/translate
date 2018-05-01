@@ -17,27 +17,20 @@ using RawTensorMap = std::unordered_map<caffe2::TensorCPU*, DestroyCall>;
 
 class BatchedBeamSearch {
  public:
-  BatchedBeamSearch(
-      const std::string& encoderModel,
-      const std::string& decoderStepModel,
-      int beamSize);
+  BatchedBeamSearch(const std::string& encoderModel,
+                    const std::string& decoderStepModel, int beamSize);
 
-  BeamSearchOutput beamSearch(
-      const std::vector<int>& numberizedInput,
-      int maxOutputSeqLen,
-      bool reverseSource);
+  BeamSearchOutput beamSearch(const std::vector<int>& numberizedInput,
+                              int maxOutputSeqLen, bool reverseSource);
 
  private:
   TensorMap prepareInitialNextInputStepMap(
       const std::vector<std::string>& encoderOutputNames,
-      const TensorMap& encoderOutputMap,
-      RawTensorMap* trackRawPointers);
+      const TensorMap& encoderOutputMap, RawTensorMap* trackRawPointers);
   TensorMap prepareNextInputStepMap(
       const std::vector<std::string>& encoderOutputNames,
       const std::vector<std::string>& stepOutputNames,
-      TensorMap& encoderOutputMap,
-      const TensorMap& stepOutputMap,
-      int timeStep,
+      TensorMap& encoderOutputMap, const TensorMap& stepOutputMap, int timeStep,
       RawTensorMap* trackRawPointers);
 
   std::unique_ptr<::caffe2::Workspace> encoder_workspace_;
@@ -47,5 +40,5 @@ class BatchedBeamSearch {
   int beamSize_;
 };
 
-} // namespace translate
-} // namespace pytorch
+}  // namespace translate
+}  // namespace pytorch
