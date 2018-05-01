@@ -34,7 +34,7 @@ Dictionary::Dictionary(
   std::ifstream input(file_path);
   if (input.fail()) {
     std::ostringstream errMessage;
-    errMessage << "Could not open file " << file_path << " - "
+    errMessage << "Dictionary could not open file: " << file_path << " - "
                << std::strerror(errno) << std::endl;
     throw std::invalid_argument(errMessage.str());
   }

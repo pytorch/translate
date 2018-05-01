@@ -1,5 +1,3 @@
-#include "common/init/Init.h"
-
 #include <cstdio>
 #include <iostream>
 #include <memory>
@@ -7,6 +5,7 @@
 #include <string>
 
 #include <caffe2/core/flags.h>
+#include <caffe2/core/init.h>
 
 #include "DecoderLib.h"
 
@@ -47,23 +46,25 @@ CAFFE2_DEFINE_double(
     "hypothesis score divided by (numwords ^ length_penalty)");
 
 int main(int argc, char** argv) {
-  facebook::initFacebook(&argc, &argv);
+  // Sets up command line flag parsing, etc.
+  caffe2::GlobalInit(&argc, &argv);
+
   std::shared_ptr<pyt::Dictionary> sourceVocab =
-      std::make_shared<pyt::Dictionary>(FLAGS_source_vocab_path);
+      std::make_shared<pyt::Dictionary>(caffe2::FLAGS_source_vocab_path);
   std::shared_ptr<pyt::Dictionary> targetVocab =
-      std::make_shared<pyt::Dictionary>(FLAGS_target_vocab_path);
+      std::make_shared<pyt::Dictionary>(caffe2::FLAGS_target_vocab_path);
   std::shared_ptr<pyt::NmtDecoder> decoder = std::make_shared<pyt::NmtDecoder>(
-      FLAGS_beam_size,
-      FLAGS_max_out_seq_len_mult,
-      FLAGS_max_out_seq_len_bias,
+      caffe2::FLAGS_beam_size,
+      caffe2::FLAGS_max_out_seq_len_mult,
+      caffe2::FLAGS_max_out_seq_len_bias,
       std::move(sourceVocab),
       std::move(targetVocab),
-      FLAGS_encoder_model,
-      FLAGS_decoder_step_model,
-      FLAGS_reverse_source,
-      FLAGS_stop_at_eos,
-      FLAGS_append_eos_to_source,
-      FLAGS_length_penalty);
+      caffe2::FLAGS_encoder_model,
+      caffe2::FLAGS_decoder_step_model,
+      caffe2::FLAGS_reverse_source,
+      caffe2::FLAGS_stop_at_eos,
+      caffe2::FLAGS_append_eos_to_source,
+      caffe2::FLAGS_length_penalty);
 
   if (decoder == nullptr) {
     LOG(FATAL) << "failed to load decoder";

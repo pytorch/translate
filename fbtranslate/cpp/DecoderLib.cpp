@@ -8,7 +8,9 @@
 #include <set>
 #include <stdexcept>
 
+#include <caffe2/core/common.h>
 #include <caffe2/core/logging.h>
+
 #include "DecoderUtil.h"
 
 namespace pytorch {
@@ -35,7 +37,7 @@ NmtDecoder::NmtDecoder(
       stopAtEos_(stopAtEos),
       appendEos_(appendEos),
       lengthPenalty_(lengthPenalty) {
-  batchedBeamSearch_ = std::make_unique<BatchedBeamSearch>(
+  batchedBeamSearch_ = caffe2::make_unique<BatchedBeamSearch>(
       encoderModel, decoderStepModel, beamSize_);
   LOG(INFO) << "C2 NMT Decoder is initialized";
 }

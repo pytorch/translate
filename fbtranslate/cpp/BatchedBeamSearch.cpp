@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <regex>
 
+#include <caffe2/core/common.h>
 #include <caffe2/core/logging.h>
 
 #include "Dictionary.h"
@@ -42,7 +44,7 @@ BeamSearchOutput BatchedBeamSearch::beamSearch(
   RawTensorMap trackRawPointers;
 
   // Create tensor of numberizedInput
-  auto inputBlob = std::make_unique<caffe2::Blob>();
+  auto inputBlob = caffe2::make_unique<caffe2::Blob>();
   caffe2::TensorCPU* inputTensor = inputBlob->GetMutable<caffe2::TensorCPU>();
   inputTensor->Resize(numberizedInput.size(), 1);
   auto* inputPointer = inputTensor->mutable_data<long>();
@@ -60,7 +62,7 @@ BeamSearchOutput BatchedBeamSearch::beamSearch(
   }
 
   // Create tensor encoderLen
-  auto encoderLenBlob = std::make_unique<caffe2::Blob>();
+  auto encoderLenBlob = caffe2::make_unique<caffe2::Blob>();
   caffe2::TensorCPU* encoderLenTensor =
       encoderLenBlob->GetMutable<caffe2::TensorCPU>();
   encoderLenTensor->Resize(1);
@@ -122,8 +124,8 @@ TensorMap BatchedBeamSearch::prepareInitialNextInputStepMap(
     const std::vector<std::string>& encoderOutputNames,
     const TensorMap& encoderOutputMap,
     RawTensorMap* trackRawPointers) {
-  std::regex encoderOutputRegex("encoder_output_(\\d+)");
-  std::regex initialStateRegex("initial_state_(\\d+)");
+  std::regex encoderOutputRegex("encoder_output_([0-9]+)", std::regex_constants::basic);
+  std::regex initialStateRegex("initial_state_([0-9]+)", std::regex_constants::basic);
   std::smatch regexMatch;
   TensorMap initialInputStepMap;
   for (const std::string& encoderOutputName : encoderOutputNames) {
@@ -140,12 +142,12 @@ TensorMap BatchedBeamSearch::prepareInitialNextInputStepMap(
     } else {
       throw std::runtime_error(
           "Encoder output blob names should match "
-          "encoder_output_(\\d+) or initial_state_(\\d+) or "
-          "possible_translation_tokens");
+          "encoder_output_([0-9]+) or initial_state_([0-9]+) or "
+          "possible_translation_tokens - instead, found name: " + encoderOutputName);
     }
   }
 
-  auto initialTimestepBlob = std::make_unique<caffe2::Blob>();
+  auto initialTimestepBlob = caffe2::make_unique<caffe2::Blob>();
   auto* initialTimestepTensor =
       initialTimestepBlob->GetMutable<caffe2::TensorCPU>();
   auto timestepDeleter = initialTimestepBlob->Release();
@@ -155,7 +157,7 @@ TensorMap BatchedBeamSearch::prepareInitialNextInputStepMap(
   initialTimestepTensor->Resize(1);
   initialTimestepTensor->mutable_data<int>()[0] = 0;
 
-  auto initialPrevtokenBlob = std::make_unique<caffe2::Blob>();
+  auto initialPrevtokenBlob = caffe2::make_unique<caffe2::Blob>();
   auto* initialPrevtokenTensor =
       initialPrevtokenBlob->GetMutable<caffe2::TensorCPU>();
   auto prevtokenDeleter = initialPrevtokenBlob->Release();
@@ -165,7 +167,7 @@ TensorMap BatchedBeamSearch::prepareInitialNextInputStepMap(
   initialPrevtokenTensor->Resize(1);
   initialPrevtokenTensor->mutable_data<int>()[0] = kEosId;
 
-  auto initialPrevScoresBlob = std::make_unique<caffe2::Blob>();
+  auto initialPrevScoresBlob = caffe2::make_unique<caffe2::Blob>();
   auto* initialPrevScoresTensor =
       initialPrevScoresBlob->GetMutable<caffe2::TensorCPU>();
   auto prevScoresDeleter = initialPrevScoresBlob->Release();
@@ -189,8 +191,8 @@ TensorMap BatchedBeamSearch::prepareNextInputStepMap(
     const TensorMap& stepOutputMap,
     int timeStep,
     RawTensorMap* trackRawPointers) {
-  std::regex encoderOutputRegex("encoder_output_(\\d+)");
-  std::regex stepOutputRegex("state_output_(\\d+)");
+  std::regex encoderOutputRegex("encoder_output_([0-9]+)", std::regex_constants::basic);
+  std::regex stepOutputRegex("state_output_([0-9]+)", std::regex_constants::basic);
   std::smatch regexMatch;
   TensorMap inputStepMap;
 
@@ -202,7 +204,7 @@ TensorMap BatchedBeamSearch::prepareNextInputStepMap(
               encoderOutputName, regexMatch, encoderOutputRegex)) {
         caffe2::TensorCPU* untiledTensor = encoderOutputMap[encoderOutputName];
 
-        auto tiledEncoderOutputsBlob = std::make_unique<caffe2::Blob>();
+        auto tiledEncoderOutputsBlob = caffe2::make_unique<caffe2::Blob>();
         caffe2::TensorCPU* tiledEncoderOutputTensor =
             tiledEncoderOutputsBlob->GetMutable<caffe2::TensorCPU>();
         auto sourceLength = untiledTensor->dims()[0];
@@ -247,7 +249,7 @@ TensorMap BatchedBeamSearch::prepareNextInputStepMap(
     }
   }
 
-  auto timestepBlob = std::make_unique<caffe2::Blob>();
+  auto timestepBlob = caffe2::make_unique<caffe2::Blob>();
   auto* timestepTensor = timestepBlob->GetMutable<caffe2::TensorCPU>();
   auto timestepDeleter = timestepBlob->Release();
   if (timestepDeleter != nullptr) {

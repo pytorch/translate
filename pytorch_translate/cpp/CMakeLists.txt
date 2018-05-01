@@ -25,8 +25,18 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -O2 -fPIC -Wno-narrowing")
 include(cmake/Summary.cmake)
 translation_decoder_print_config_summary()
 
-# add_library(translation_decoder "${CMAKE_CURRENT_SOURCE_DIR}/test.cpp")
-add_executable(translation_decoder "${CMAKE_CURRENT_SOURCE_DIR}/test.cpp")
+add_executable(translation_decoder
+    "${CMAKE_CURRENT_SOURCE_DIR}/Decoder.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/BatchedBeamSearch.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/BatchedBeamSearch.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/DbPredictor.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/DbPredictor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/DecoderLib.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/DecoderLib.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/DecoderUtil.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Dictionary.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Dictionary.cpp"
+)
 target_link_libraries(translation_decoder PUBLIC caffe2)
 target_include_directories(translation_decoder PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 install(TARGETS translation_decoder DESTINATION lib)
