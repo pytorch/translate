@@ -8,7 +8,7 @@ tar -xvzf model.tar.gz
 tar -xvzf data.tar.gz
 rm -f data.tar.gz model.tar.gz
 
-python3 fbtranslate/generate.py \
+python3 pytorch_translate/generate.py \
        "" \
        --path averaged_checkpoint_best_0.pt \
        --source-vocab-file model/dictionary-de.txt \
@@ -27,7 +27,7 @@ python3 fbtranslate/generate.py \
 # | Translated 6750 sentences (152251 tokens) in 37.9s (4018.00 tokens/s)
 # | Generate test with beam=6: BLEU4 = 31.31, 65.7/39.2/25.2/16.6 (BP=0.971, ratio=0.972, syslen=127453, reflen=131152)
 
-python3 fbtranslate/generate.py \
+python3 pytorch_translate/generate.py \
        "" \
        --path averaged_checkpoint_best_0.pt \
        --path averaged_checkpoint_best_1.pt \

@@ -45,10 +45,10 @@ export LD_LIBRARY_PATH=$CONDA_PATH/lib:$LD_LIBRARY_PATH
 git clone https://github.com/onnx/onnx.git
 pip install onnx
 
-yes | pip uninstall fbtranslate
+yes | pip uninstall pytorch-translate
 python3 setup.py build develop
 
-pushd fbtranslate/cpp
-cmake -DCMAKE_PREFIX_PATH=$CONDA_PATH/usr/local -DCMAKE_INSTALL_PATH=$CONDA_PATH .
+pushd pytorch_translate/cpp
+cmake -DCMAKE_PREFIX_PATH=$CONDA_PATH/usr/local -DCMAKE_INSTALL_PATH==$CONDA_PATH .
 make
 popd

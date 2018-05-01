@@ -15,7 +15,7 @@ To install Translate, please refer to the `install.sh` script. In short, run `ba
 We provide a example script to train a model for the IWSLT 2014 German-English task. We used this command to obtain [a pretrained model](https://download.pytorch.org/models/translate/iwslt14/model.tar.gz):
 
 ```
-bash fbtranslate/examples/train_iwslt14.sh
+bash translate/examples/train_iwslt14.sh
 ```
 
 The pretrained model actually contains two checkpoints that correspond to training twice with random initialization of the parameters. This is useful to obtain ensembles.
@@ -25,7 +25,7 @@ The pretrained model actually contains two checkpoints that correspond to traini
 A pretrained model for IWSLT 2014 can be evaluated by running the example script:
 
 ```
-bash fbtranslate/examples/generate_iwslt14.sh
+bash translate/examples/generate_iwslt14.sh
 ```
 
 Note the improvement in performance when using an ensemble of size 2 instead of a single model.

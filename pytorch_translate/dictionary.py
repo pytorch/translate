@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from fairseq import dictionary
-from fbtranslate import vocab_constants
+from pytorch_translate import vocab_constants
 
 
 class Dictionary(dictionary.Dictionary):

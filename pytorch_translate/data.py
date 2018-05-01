@@ -6,7 +6,7 @@ import os
 from fairseq import data, indexed_dataset
 from typing import NamedTuple, Optional
 
-from fbtranslate import dictionary as fbtranslate_dictionary
+from pytorch_translate import dictionary as pytorch_translate_dictionary
 
 
 class CorpusConfig(NamedTuple):
@@ -22,8 +22,8 @@ class ParallelCorpusConfig(NamedTuple):
 def make_language_pair_dataset(
     source_file: str,
     target_file: str,
-    source_dict: fbtranslate_dictionary.Dictionary,
-    target_dict: fbtranslate_dictionary.Dictionary,
+    source_dict: pytorch_translate_dictionary.Dictionary,
+    target_dict: pytorch_translate_dictionary.Dictionary,
     args: Optional[argparse.Namespace] = None,
 ) -> data.LanguagePairDataset:
     return data.LanguagePairDataset(
@@ -59,8 +59,8 @@ def load_raw_text_dataset(
     eval_split: str,
     args: argparse.Namespace,
 ) -> data.LanguageDatasets:
-    source_dict = fbtranslate_dictionary.Dictionary.load(args.source_vocab_file)
-    target_dict = fbtranslate_dictionary.Dictionary.load(args.target_vocab_file)
+    source_dict = pytorch_translate_dictionary.Dictionary.load(args.source_vocab_file)
+    target_dict = pytorch_translate_dictionary.Dictionary.load(args.target_vocab_file)
 
     dataset = data.LanguageDatasets(
         src=train_corpus.source.dialect,
@@ -111,7 +111,7 @@ def build_vocab_from_corpus(
     max_vocab_size: int,
 ):
     vocab_file = os.path.join(save_dir, f'dictionary-{dialect}.txt')
-    d = fbtranslate_dictionary.Dictionary()
+    d = pytorch_translate_dictionary.Dictionary()
     with open(corpus_file, 'r') as f:
         for line in f:
             tokens = line.split()
