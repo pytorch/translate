@@ -34,16 +34,16 @@ NCCL_ROOT_DIR="${NCCL_ROOT_DIR}" python3 setup.py install
 
 # Caffe2 build from source (with ATen)
 mkdir -p build_caffe2 && pushd build_caffe2
-cmake -DUSE_ATEN=ON -DCMAKE_PREFIX_PATH=$CONDA_PATH -DCMAKE_INSTALL_PATH=$CONDA_PATH ..
-make DESTDIR=$CONDA_PATH install -j8 2>&1 | tee MAKE_OUT
+cmake -DUSE_ATEN=ON -DCMAKE_PREFIX_PATH=$CONDA_PATH -DCMAKE_INSTALL_PREFIX=$CONDA_PATH ..
+make install -j8 2>&1 | tee MAKE_OUT
 popd
 popd
 
 export LD_LIBRARY_PATH=$CONDA_PATH/lib:$LD_LIBRARY_PATH
 
 # Install ONNX
-git clone https://github.com/onnx/onnx.git
-pip install onnx
+git clone --recursive https://github.com/onnx/onnx.git
+pip install ./onnx
 
 yes | pip uninstall pytorch-translate
 python3 setup.py build develop
