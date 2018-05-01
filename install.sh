@@ -1,9 +1,5 @@
 #!/bin/bash
 
-export http_proxy="http://fwdproxy.any:8080"
-export https_proxy="$http_proxy"
-export no_proxy=".facebook.com,.tfbnw.net,.fb.com, .fbcdn.net"
-
 pushd ~
 wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
 chmod +x miniconda.sh
@@ -36,9 +32,12 @@ pushd pytorch
 # PyTorch build from source
 NCCL_ROOT_DIR="${NCCL_ROOT_DIR}" python3 setup.py install
 
+# Caffe2 relies on past module
+pip install future
+
 # Caffe2 build from source (with ATen)
 mkdir -p build_caffe2 && pushd build_caffe2
-cmake -DUSE_ATEN=ON -DCMAKE_PREFIX_PATH=$CONDA_PATH -DCMAKE_INSTALL_PREFIX=$CONDA_PATH ..
+cmake -DPYTHON_EXECUTABLE=$(which python) -DUSE_ATEN=ON -DCMAKE_PREFIX_PATH=$CONDA_PATH -DCMAKE_INSTALL_PREFIX=$CONDA_PATH ..
 make install -j8 2>&1 | tee MAKE_OUT
 popd
 popd
