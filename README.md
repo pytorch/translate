@@ -31,13 +31,19 @@ bash pytorch_translate/examples/generate_iwslt14.sh
 
 Note the improvement in performance when using an ensemble of size 2 instead of a single model.
 
-## Exporting Models
+## Exporting a Model with ONNX
 
-TODO
+We provide an example script to export a PyTorch model to a Caffe2 graph via ONNX:
+
+```
+bash pytorch_translate/examples/export_iwslt14.sh
+```
+
+TODO: add how to load the exported models from C++.
 
 ## Join the Translate community
 
 We welcome contributions! See the `CONTRIBUTING.md` file for how to help out.
 
 ## License
-Translate is BSD-licensed, as found in the LICENSE file.
+Translate is BSD-licensed, as found in the `LICENSE` file.
