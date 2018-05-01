@@ -43,7 +43,7 @@ TODO: add how to load the exported models from C++.
 
 ## Using the Model
 
-After you run `linux_install.sh`, `cmake` will have been run on the
+After you run `install.sh`, `cmake` will have been run on the
 `pytorch_translate/cpp` directory. In order to use your exported model to
 perform translations, you can compile and invoke the decoder from within the
 `pytorch_translate/cpp` directory like so:
