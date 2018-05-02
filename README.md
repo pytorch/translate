@@ -9,7 +9,7 @@ Translate requires
 * C++ compiler supporting ECMAScript syntax for `<regex>`, such as GCC 4.9 and above.
 * A [CUDA installation](https://docs.nvidia.com/cuda/). We recommend CUDA 8 or CUDA 9.
 
-To install Translate, please refer to the `install.sh` script. In short, run `bash install.sh`. We have tested this script on CentOS 7.4.1708 with a Tesla M40 card. We encourage you to report an [issue](https://github.com/pytorch/translate/issues) if you are unable to install this project for your specific configuration.
+To install Translate, please refer to the `install.sh` script. In short, run `bash install.sh`. We have tested this script on CentOS 7.4.1708 with a Tesla M40 card and a CUDA 8 installation. We encourage you to report an [issue](https://github.com/pytorch/translate/issues) if you are unable to install this project for your specific configuration.
 
 Alternatively, you can launch an AWS instance using the `pytorch_translate_tmp_1` image. Once you have ssh'ed to the instance, the example commands below should work after running `cd translate`.
 
