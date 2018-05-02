@@ -11,11 +11,10 @@ import unittest
 from fairseq import models
 from pytorch_translate import rnn  # noqa
 from pytorch_translate.ensemble_export import (
-    CombinedDecoderEnsemble,
-    CombinedEncoderEnsemble,
     DecoderBatchedStepEnsemble,
     DecoderStepEnsemble,
     EncoderEnsemble,
+    BeamSearch
 )
 from pytorch_translate.test import utils as test_utils
 
@@ -26,137 +25,6 @@ logger = logging.getLogger(__name__)
 
 
 class TestONNX(unittest.TestCase):
-
-    class BeamSearch(torch.jit.ScriptModule):
-
-        def __init__(self, test_args, src_dict, tgt_dict):
-            super().__init__(False)
-            # Create models
-            self.num_models = 3
-            self.model_list = []
-
-            self.incremental_states = [[{} for _ in range(len(self.model_list))]]
-            for _ in range(self.num_models):
-                self.model_list.append(models.build_model(
-                    test_args, src_dict, tgt_dict))
-            self.encoder_ensemble = CombinedEncoderEnsemble(self.model_list)
-            self.decoder_ensemble = CombinedDecoderEnsemble(self.model_list)
-
-            def encoder(src_tokens, src_lengths):
-                self.incremental_states[0] = [{} for _ in range(len(self.model_list))]
-                enc_outs = self.encoder_ensemble(
-                    src_tokens.repeat(6, 1), src_lengths.repeat(6))
-                return enc_outs
-
-            def decoder(input_tokens, encoder_outs, final_hidden, final_cell,
-                        src_lengths, src_tokens):
-                dec_outs = self.decoder_ensemble(
-                    input_tokens, encoder_outs, final_hidden, final_cell,
-                    src_lengths, src_tokens, self.incremental_states[0])
-                return dec_outs
-
-            def reorder_states(new_order):
-                for i, model in enumerate(self.decoder_ensemble.models):
-                    model.decoder.reorder_incremental_state(
-                        self.incremental_states[0][i], new_order.squeeze(dim=0))
-                return torch.zeros(1, 2, 3)  # prevent DCE
-
-            self.define('''
-            def forward(
-                self, src_tokens, src_lengths, scores_t, hypo_t, tokens_t, attention_t
-            ):
-                encoder_outs, final_hidden, final_cells, src_lengths, src_tokens\
-                 = encoder(src_tokens, src_lengths)
-
-                output_token_beam_list = tokens_t
-                output_prev_index_beam_list = hypo_t
-                output_score_beam_list = scores_t
-                output_attention_weights_beam_list = attention_t
-                dce = tokens_t
-
-                timestep = 0
-
-                while timestep < 20:
-                    log_probs, attn = decoder(output_token_beam_list,
-                        encoder_outs, final_hidden, final_cells, src_lengths,
-                        src_tokens)
-
-                    best_scores_per_hypo, best_tokens_per_hypo = topk(
-                        log_probs, k=6, dim=-1, largest=1, sorted=1)
-
-                    output_scores = best_scores_per_hypo + \
-                        squeeze(scores_t, dim=0)
-
-                    output_scores_flattened = view(output_scores, size=[-1])
-                    output_scores_flattened_slice = output_scores_flattened
-                    if timestep == 0:
-                        output_scores_flattened_slice = slice(
-                            output_scores_flattened, dim=0, end=6, start=0,
-                            step=1)
-                    else:
-                        output_scores_flattened_slice = slice(
-                            output_scores_flattened, dim=0, end=-1, start=0,
-                            step=1)
-                    output_scores_flattened_slice = view(
-                        output_scores_flattened_slice, size=[1, -1])
-
-                    scores_t, best_indices = topk(
-                        output_scores_flattened_slice, k=6, dim=-1,
-                        largest=1, sorted=1)
-
-                    hypo_t_int64 = best_indices / 6
-
-                    attention_t = index_select(
-                        attention_t, squeeze(hypo_t_int64, dim=0), dim=0)
-                    tokens_t_int64 = view(best_tokens_per_hypo, size=[-1])
-                    tokens_t_int64 = index_select(
-                        tokens_t_int64, squeeze(best_indices, dim=0), dim=0)
-                    tokens_t_int64 = view(tokens_t_int64, size=[-1, 1])
-
-                    output_token_beam_list = cat(
-                        output_token_beam_list, tokens_t_int64, dim=1)
-                    output_prev_index_beam_list = cat(
-                        output_prev_index_beam_list, hypo_t_int64, dim=0)
-                    output_score_beam_list = cat(
-                        output_score_beam_list, scores_t, dim=0)
-                    output_attention_weights_beam_list = cat(
-                        output_attention_weights_beam_list, attention_t, dim=0)
-
-                    timestep += 1
-
-                    dce = reorder_states(hypo_t_int64)
-
-                return output_token_beam_list, output_prev_index_beam_list, \
-                    output_score_beam_list, output_attention_weights_beam_list,\
-                    dce
-            ''')
-
-
-    def test_beam_search(self):
-        test_args = test_utils.ModelParamsDict(
-            encoder_bidirectional=True,
-            sequence_lstm=True,
-        )
-
-        # Create data
-        samples, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
-        sample = next(samples)
-        # TODO batched beam search
-        src_tokens = sample['net_input']['src_tokens'][0]
-        src_tokens = torch.unsqueeze(src_tokens, dim=0)
-        src_lengths = sample['net_input']['src_lengths'][0]
-        src_lengths = torch.unsqueeze(src_lengths, dim=0)
-
-        bs = TestONNX.BeamSearch(test_args, src_dict, tgt_dict)
-
-        scores_t = torch.zeros(1, 6)
-        hypo_t = torch.zeros(1, 6).type(torch.LongTensor)
-        eos = bs.model_list[0].dst_dict.eos()
-        tokens_t = (torch.ones(6, 1) * eos).type(torch.LongTensor)
-        attention_t = torch.nn.functional.softmax(torch.randn(6, 20), dim=-1)
-
-        bs.forward(src_tokens, src_lengths, scores_t, hypo_t, tokens_t, attention_t)
-
     def _test_ensemble_encoder_export(self, test_args):
         samples, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
 
@@ -415,24 +283,17 @@ class TestONNX(unittest.TestCase):
 
         next_prev_scores = pytorch_first_step_outputs[1]
         next_timestep = timestep + 1
-        next_states = pytorch_first_step_outputs[4:]
+        next_states = list(pytorch_first_step_outputs[4:])
 
-        step_inputs = []
-
-        # encoder outputs need to be replicated for each input hypothesis
-        for encoder_rep in pytorch_encoder_outputs[:len(model_list)]:
-            step_inputs.append(encoder_rep.repeat(1, beam_size, 1))
-
-        if model_list[0].decoder.vocab_reduction_module is not None:
-            step_inputs.append(pytorch_encoder_outputs[len(model_list)])
-
-        step_inputs.extend(list(next_states))
+        # Tile these for the next timestep
+        for i in range(len(model_list)):
+            next_states[i] = next_states[i].repeat(1, beam_size, 1)
 
         pytorch_next_step_outputs = decoder_step_ensemble(
             next_input_tokens,
             next_prev_scores,
             next_timestep,
-            *step_inputs
+            *next_states
         )
 
         with open(decoder_step_pb_path, 'r+b') as f:
@@ -444,7 +305,7 @@ class TestONNX(unittest.TestCase):
             next_prev_scores.detach().numpy(),
             next_timestep.detach().numpy(),
         ]
-        for tensor in step_inputs:
+        for tensor in next_states:
             decoder_inputs_numpy.append(tensor.detach().numpy())
 
         caffe2_next_step_outputs = onnx_decoder.run(
@@ -480,3 +341,56 @@ class TestONNX(unittest.TestCase):
             'max_translation_candidates_per_word': 1,
         }
         self._test_batched_beam_decoder_step(test_args)
+
+
+    def _test_full_beam_decoder(self, test_args):
+        samples, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        sample = next(samples)
+        src_tokens = sample['net_input']['src_tokens'][0:1].t()
+        src_lengths = sample['net_input']['src_lengths'][0:1].int()
+
+        num_models = 3
+        model_list = []
+        for _ in range(num_models):
+            model_list.append(models.build_model(
+                test_args, src_dict, tgt_dict))
+
+        bs = BeamSearch(model_list, src_tokens, src_lengths,
+                                 beam_size=6)
+        prev_token = torch.LongTensor([0])
+        prev_scores = torch.FloatTensor([0.0])
+        attn_weights = torch.zeros(11)
+        prev_hypos_indices = torch.zeros(6, dtype=torch.int64)
+
+        outs = bs(src_tokens, src_lengths, prev_token, prev_scores,
+                  attn_weights, prev_hypos_indices, torch.LongTensor([20]))
+
+        import io
+        f = io.BytesIO()
+        torch.onnx._export(
+            bs,
+            (src_tokens, src_lengths, prev_token, prev_scores, attn_weights,
+             prev_hypos_indices, torch.LongTensor([20])),
+            f, export_params=True, verbose=False, example_outputs=outs)
+
+        s = torch.onnx._export_to_pretty_string(
+            bs,
+            (src_tokens, src_lengths, prev_token, prev_scores, attn_weights,
+             prev_hypos_indices, torch.LongTensor([20])),
+            f, export_params=True, verbose=False, example_outputs=outs)
+
+        f.seek(0)
+        import onnx
+        onnx_model = onnx.load(f)
+        c2_model = caffe2_backend.prepare(onnx_model)
+        c2_outs = c2_model.run((src_tokens.numpy(), src_lengths.numpy(),
+                      prev_token.numpy(), prev_scores.numpy(),
+                      attn_weights.numpy(), prev_hypos_indices.numpy(),
+                      np.array([20])))
+
+    def test_full_beam_decoder(self):
+        test_args = test_utils.ModelParamsDict(
+            encoder_bidirectional=True,
+            sequence_lstm=True,
+        )
+        self._test_full_beam_decoder(test_args)
