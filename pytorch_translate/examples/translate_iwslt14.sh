@@ -8,7 +8,6 @@
 # Sample usage:
 # echo "hallo welt ." | bash pytorch_translate/examples/translate_iwslt14.sh
 
-. ~/miniconda/bin/activate
 export CONDA_PATH="$(dirname $(which conda))/../"
 export NCCL_ROOT_DIR="$(pwd)/nccl_2.1.15-1+cuda8.0_x86_64"
 export LD_LIBRARY_PATH="${CONDA_PATH}/lib:${NCCL_ROOT_DIR}/lib:${LD_LIBRARY_PATH}"
