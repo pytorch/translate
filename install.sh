@@ -58,6 +58,6 @@ python3 setup.py build develop
 pushd pytorch_translate/cpp
 # If you need to specify a compiler other than the default one cmake is picking
 # up, you can use the -DCMAKE_C_COMPILER and -DCMAKE_CXX_COMPILER flags.
-cmake -DCMAKE_PREFIX_PATH="${CONDA_PATH}/usr/local" -DCMAKE_INSTALL_PATH="${CONDA_PATH}" .
+cmake -DCMAKE_PREFIX_PATH="${CONDA_PATH}/usr/local" -DCMAKE_INSTALL_PREFIX="${CONDA_PATH}" .
 make
 popd
