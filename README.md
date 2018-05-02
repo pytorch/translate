@@ -13,7 +13,7 @@ To install Translate, please refer to the `install.sh` script. In short, run `ba
 
 ## Training
 
-We provide a example script to train a model for the IWSLT 2014 German-English task. We used this command to obtain [a pretrained model](https://download.pytorch.org/models/translate/iwslt14/model.tar.gz):
+We provide an [example script](https://github.com/pytorch/translate/blob/master/pytorch_translate/examples/train_iwslt14.sh) to train a model for the IWSLT 2014 German-English task. We used this command to obtain [a pretrained model](https://download.pytorch.org/models/translate/iwslt14/model.tar.gz):
 
 ```
 bash pytorch_translate/examples/train_iwslt14.sh
@@ -23,7 +23,7 @@ The pretrained model actually contains two checkpoints that correspond to traini
 
 ## Pretrained Model
 
-A pretrained model for IWSLT 2014 can be evaluated by running the example script:
+A pretrained model for IWSLT 2014 can be evaluated by running the [example script](https://github.com/pytorch/translate/blob/master/pytorch_translate/examples/generate_iwslt14.sh):
 
 ```
 bash pytorch_translate/examples/generate_iwslt14.sh
@@ -33,7 +33,7 @@ Note the improvement in performance when using an ensemble of size 2 instead of 
 
 ## Exporting a Model with ONNX
 
-We provide an example script to export a PyTorch model to a Caffe2 graph via ONNX:
+We provide an [example script](https://github.com/pytorch/translate/blob/master/pytorch_translate/examples/export_iwslt14.sh) to export a PyTorch model to a Caffe2 graph via ONNX:
 
 ```
 bash pytorch_translate/examples/export_iwslt14.sh
