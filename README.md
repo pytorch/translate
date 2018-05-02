@@ -11,7 +11,7 @@ Translate requires
 
 To install Translate, please refer to the `install.sh` script. In short, run `bash install.sh`. We have tested this script on CentOS 7.4.1708 with a Tesla M40 card and a CUDA 8 installation. We encourage you to report an [issue](https://github.com/pytorch/translate/issues) if you are unable to install this project for your specific configuration.
 
-Alternatively, you can launch an AWS instance using the `pytorch_translate_initial_release` image. Once you have ssh'ed to the AWS instance, the example commands below should work after running `cd translate`.
+Alternatively, you can launch an AWS instance using the `pytorch_translate_initial_release` image (AMI ID: ami-04ff53cdd573658dc). Once you have ssh'ed to the AWS instance, the example commands below should work after running `cd translate`.
 
 ## Training
 
