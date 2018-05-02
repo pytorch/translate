@@ -1,17 +1,11 @@
 #!/bin/bash
 
-if [ -n "$(which conda)" ]; then
-    pushd ~
-    wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
-    chmod +x miniconda.sh
-    ./miniconda.sh -b -p ~/miniconda
-    rm miniconda.sh
-    popd
-
-    . ~/miniconda/bin/activate
-
-    export CONDA_PATH="$(dirname $(which conda))/../" # [anaconda root directory]
+if [ -z "$(which conda)" ]; then
+    >&2 echo "Cannot find conda, please install Anaconda and rerun install"
+    exit 1
 fi
+
+export CONDA_PATH="$(dirname $(which conda))/../" # [anaconda root directory]
 
 # Install basic PyTorch dependencies
 yes | conda install numpy pyyaml mkl mkl-include setuptools cmake cffi typing
