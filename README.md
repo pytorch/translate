@@ -6,8 +6,8 @@ Translate is a library for machine translation written in PyTorch. It provides t
 
 Translate requires
 * A Linux operating system with a CUDA compatible card
-* C++ compiler supporting ECMAScript syntax for `<regex>`, such as GCC 4.9 and above.
-* A [CUDA installation](https://docs.nvidia.com/cuda/). We recommend CUDA 8 or CUDA 9.
+* C++ compiler supporting ECMAScript syntax for `<regex>`, such as GCC 4.9 and above
+* A [CUDA installation](https://docs.nvidia.com/cuda/). We recommend CUDA 8 or CUDA 9
 
 To install Translate, please refer to the `install.sh` script. In short, run `bash install.sh`. We have tested this script on CentOS 7.4.1708 with a Tesla M40 card and a CUDA 8 installation. We encourage you to report an [issue](https://github.com/pytorch/translate/issues) if you are unable to install this project for your specific configuration.
 
