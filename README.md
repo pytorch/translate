@@ -1,6 +1,6 @@
 # Translate - a PyTorch Language Library
 
-Translate is a library for machine translation written in PyTorch. It provides training for sequence-to-sequence models. Translate relies on [fairseq](https://github.com/pytorch/fairseq), a general sequence-to-sequence library, which means that models implemented in Translate and Fairseq can be trained. Translate also provides the ability to export some models to Caffe2 graphs via [ONNX](https://onnx.ai/) and to load and run these models from C++ for production purposes. Currently, we export components (encoder, decoder) to Caffe2 separatetly and beam search is implemented in C++. In the near future, we will be able to export the beam search as well. We also plan to add export support to more models.
+Translate is a library for machine translation written in PyTorch. It provides training for sequence-to-sequence models. Translate relies on [fairseq](https://github.com/pytorch/fairseq), a general sequence-to-sequence library, which means that models implemented in both Translate and Fairseq can be trained. Translate also provides the ability to export some models to Caffe2 graphs via [ONNX](https://onnx.ai/) and to load and run these models from C++ for production purposes. Currently, we export components (encoder, decoder) to Caffe2 separately and beam search is implemented in C++. In the near future, we will be able to export the beam search as well. We also plan to add export support to more models.
 
 ## Requirements and Installation
 
@@ -59,7 +59,7 @@ For instance, "hineinstopfen" is represented as "hinein@@ stop@@ fen".
 
 ## Join the Translate Community
 
-We're excited to welcome contributions! See the `CONTRIBUTING.md` file for how to help out.
+We welcome contributions! See the `CONTRIBUTING.md` file for how to help out.
 
 ## License
 Translate is BSD-licensed, as found in the `LICENSE` file.
