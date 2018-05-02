@@ -1,15 +1,15 @@
 # Translate - a PyTorch Language Library
 
-Translate is a library for machine translation written in PyTorch. It provides training for sequence-to-sequence models. These models can be exported to Caffe2 graphs via [ONNX](https://onnx.ai/), loaded and run from C++ for production purposes. Translate relies on [fairseq](https://github.com/pytorch/fairseq), a general sequence-to-sequence library.
+Translate is a library for machine translation written in PyTorch. It provides training for sequence-to-sequence models. Translate relies on [fairseq](https://github.com/pytorch/fairseq), a general sequence-to-sequence library, which means that models implemented in Translate and Fairseq can be trained. Translate also provides the ability to export some models to Caffe2 graphs via [ONNX](https://onnx.ai/) and to load and run these models from C++ for production purposes. Currently, we export components (encoder, decoder) to Caffe2 separatetly and beam search is implemented in C++. In the near future, we will be able to export the beam search as well. We also plan to add export support to more models.
 
 ## Requirements and Installation
 
 Translate requires
 * A Linux operating system with a CUDA compatible card
 * C++ compiler supporting ECMAScript syntax for `<regex>`, such as GCC 4.9 and above.
-* A [CUDA installation](https://docs.nvidia.com/cuda/)
+* A [CUDA installation](https://docs.nvidia.com/cuda/). We recommend CUDA 8 or CUDA 9.
 
-To install Translate, please refer to the `install.sh` script. In short, run `bash install.sh`.
+To install Translate, please refer to the `install.sh` script. In short, run `bash install.sh`. We have tested this script on CentOS 7.4.1708 with a Tesla M40 card. We encourage you to report an [issue](https://github.com/pytorch/translate/issues) if you are unable to install this project for your specific configuration.
 
 ## Training
 
@@ -19,7 +19,7 @@ We provide an [example script](https://github.com/pytorch/translate/blob/master/
 bash pytorch_translate/examples/train_iwslt14.sh
 ```
 
-The pretrained model actually contains two checkpoints that correspond to training twice with random initialization of the parameters. This is useful to obtain ensembles.
+The pretrained model actually contains two checkpoints that correspond to training twice with random initialization of the parameters. This is useful to obtain ensembles. This dataset is relatively small (~160K sentence pairs), so training will complete in a few hours on a single GPU.
 
 ## Pretrained Model
 
@@ -39,6 +39,8 @@ We provide an [example script](https://github.com/pytorch/translate/blob/master/
 bash pytorch_translate/examples/export_iwslt14.sh
 ```
 
+This will output two files, `encoder.pb` and `decoder.pb`, that correspond to the computation of the encoder and one step of the decoder. The example exports a single checkpoint (`--checkpoint model/averaged_checkpoint_best_0.pt` but is also possible to export an ensemble (`--checkpoint model/averaged_checkpoint_best_0.pt --checkpoint model/averaged_checkpoint_best_1.pt`). Note that during export, you can also control a few hyperparameters such as beam search size, word and UNK rewards.
+
 ## Using the Model
 
 To use the sample exported Caffe2 model to translate sentences, run:
@@ -53,7 +55,7 @@ For instance, "hineinstopfen" is represented as "hinein@@ stop@@ fen".
 
 ## Join the Translate Community
 
-We welcome contributions! See the `CONTRIBUTING.md` file for how to help out.
+We're excited to welcome contributions! See the `CONTRIBUTING.md` file for how to help out.
 
 ## License
 Translate is BSD-licensed, as found in the `LICENSE` file.
