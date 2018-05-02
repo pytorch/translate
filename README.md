@@ -11,7 +11,11 @@ Translate requires
 
 To install Translate, please refer to the `install.sh` script. In short, run `bash install.sh`. We have tested this script on CentOS 7.4.1708 with a Tesla M40 card. We encourage you to report an [issue](https://github.com/pytorch/translate/issues) if you are unable to install this project for your specific configuration.
 
+Alternatively, you can launch an AWS instance using the `pytorch_translate_tmp_1` image. Once you have ssh'ed to the instance, the example commands below should work after running `cd translate`.
+
 ## Training
+
+Note: the example commands given assume that you are the root of the cloned gihub repository or that you're using an AWS instance and that you have run `cd translate`.
 
 We provide an [example script](https://github.com/pytorch/translate/blob/master/pytorch_translate/examples/train_iwslt14.sh) to train a model for the IWSLT 2014 German-English task. We used this command to obtain [a pretrained model](https://download.pytorch.org/models/translate/iwslt14/model.tar.gz):
 
