@@ -1,15 +1,17 @@
 #!/bin/bash
 
-pushd ~
-wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
-chmod +x miniconda.sh
-./miniconda.sh -b -p ~/miniconda
-rm miniconda.sh
-popd
+if [ -n "$(which conda)" ]; then
+    pushd ~
+    wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
+    chmod +x miniconda.sh
+    ./miniconda.sh -b -p ~/miniconda
+    rm miniconda.sh
+    popd
 
-. ~/miniconda/bin/activate
+    . ~/miniconda/bin/activate
 
-export CONDA_PATH="$(dirname $(which conda))/../" # [anaconda root directory]
+    export CONDA_PATH="$(dirname $(which conda))/../" # [anaconda root directory]
+fi
 
 # Install basic PyTorch dependencies
 yes | conda install numpy pyyaml mkl mkl-include setuptools cmake cffi typing
