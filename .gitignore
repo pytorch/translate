@@ -20,4 +20,13 @@ pytorch/
 # Produced by example scripts
 checkpoints/
 data/
+decoder.pb
+encoder.pb
 model/
+
+# CMake compilation
+CMakeCache.txt
+CMakeFiles
+Makefile
+cmake_install.cmake
+translation_decoder
