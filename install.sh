@@ -5,6 +5,8 @@ if [ -z "$(which conda)" ]; then
     exit 1
 fi
 
+export CONDA_PATH="$(dirname $(which conda))/../" # [anaconda root directory]
+
 # Install basic PyTorch dependencies
 yes | conda install numpy pyyaml mkl mkl-include setuptools cmake cffi typing
 
