@@ -773,13 +773,13 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
 class BeamSearch(torch.jit.ScriptModule):
 
-    __constants__ = ['bs']
+    __constants__ = ['beam_size']
 
     def __init__(self, model_list, src_tokens, src_lengths, beam_size=1,
                  word_penalty=0, unk_penalty=0):
         super().__init__()
         self.models = model_list
-        self.bs = beam_size
+        self.beam_size = beam_size
         self.word_penalty = word_penalty
         self.unk_penalty = unk_penalty
 
@@ -801,9 +801,9 @@ class BeamSearch(torch.jit.ScriptModule):
         self.decoder_ens_tile = torch.jit.trace(
             prev_token, prev_scores, ts, *example_encoder_outs)(
                 decoder_ens_tile)
-        self.decoder_ens = torch.jit.trace(
-            prev_token.repeat(self.bs), prev_scores.repeat(self.bs), ts,
-            *tiled_states)(decoder_ens)
+        self.decoder_ens = torch.jit.trace(prev_token.repeat(self.beam_size),
+            prev_scores.repeat(self.beam_size), ts, *tiled_states)(
+                decoder_ens)
 
         self.input_names = ['src_tokens', 'src_lengths', 'prev_token',
                             'prev_scores', 'attn_weights',
@@ -816,10 +816,13 @@ class BeamSearch(torch.jit.ScriptModule):
                 attn_weights, prev_hypos_indices, num_steps):
         enc_states = self.encoder_ens(src_tokens, src_lengths)
 
-        all_tokens = prev_token.repeat(repeats=[self.bs]).unsqueeze(dim=0)
-        all_scores = prev_scores.repeat(repeats=[self.bs]).unsqueeze(dim=0)
+        all_tokens = prev_token.repeat(repeats=[self.beam_size])\
+                .unsqueeze(dim=0)
+        all_scores = prev_scores.repeat(repeats=[self.beam_size])\
+                .unsqueeze(dim=0)
         all_weights = \
-            attn_weights.unsqueeze(dim=0).repeat(repeats=[self.bs, 1]).unsqueeze(dim=0)
+            attn_weights.unsqueeze(dim=0).repeat(repeats=[self.beam_size, 1])\
+            .unsqueeze(dim=0)
         all_prev_indices = prev_hypos_indices.unsqueeze(dim=0)
 
         prev_token, prev_scores, prev_hypos_indices, attn_weights, *states = \
@@ -859,7 +862,7 @@ class BeamSearch(torch.jit.ScriptModule):
         prev_token = torch.LongTensor([self.models[0].dst_dict.eos()])
         prev_scores = torch.FloatTensor([0.0])
         attn_weights = torch.zeros(length)
-        prev_hypos_indices = torch.zeros(self.bs, dtype=torch.int64)
+        prev_hypos_indices = torch.zeros(self.beam_size, dtype=torch.int64)
         num_steps = torch.LongTensor([20])
 
         input_tuple = (src_tokens, src_lengths, prev_token, prev_scores,
@@ -912,6 +915,8 @@ class BeamSearch(torch.jit.ScriptModule):
         tmp_dir = tempfile.mkdtemp()
         tmp_file = os.path.join(tmp_dir, 'beam_search.pb')
         self.onnx_export(tmp_file)
+
+        beam_search = caffe2_backend.prepare_zip_archive(tmp_file)
 
         save_caffe2_rep_to_db(
             caffe2_backend_rep=beam_search,
