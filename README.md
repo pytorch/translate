@@ -52,6 +52,8 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
   # Build PyTorch from source.
   git clone --recursive https://github.com/pytorch/pytorch
   pushd pytorch
+  # Pin to a specific commit for now to guard against breakage in HEAD.
+  git checkout d154d32
   git submodule update --init
   NCCL_ROOT_DIR="${NCCL_ROOT_DIR}" python3 setup.py install
   ```
@@ -110,7 +112,7 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
   popd
   popd
   ```
-  
+
 Now you should be able to run the example scripts below!
 
 ### To use our Amazon Machine Image:
