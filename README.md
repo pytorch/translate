@@ -4,27 +4,121 @@ Translate is a library for machine translation written in PyTorch. It provides t
 
 ## Requirements and Installation
 
-Translate requires
+### Translate requires:
 * A Linux operating system with a CUDA compatible card
 * C++ compiler supporting ECMAScript syntax for `<regex>`, such as GCC 4.9 and above
 * A [CUDA installation](https://docs.nvidia.com/cuda/). We recommend CUDA 8 or CUDA 9
 
-To install Translate from source:
-- Install Anaconda or Miniconda3 from https://conda.io/miniconda.html:
-  ```
+### To install Translate from source:
+These instructions were mainly tested on CentOS 7.4.1708 with a Tesla M40 card
+and a CUDA 8 installation. We highly encourage you to [report an issue](https://github.com/pytorch/translate/issues)
+if you are unable to install this project for your specific configuration.
+
+- If you don't already have an existing [Anaconda](https://www.anaconda.com/download/)
+environment with Python 3.6, you can install one via [Miniconda3](https://conda.io/miniconda.html):
+  ```bash
   wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
   chmod +x miniconda.sh
   ./miniconda.sh -b -p ~/miniconda
   rm miniconda.sh
   . ~/miniconda/bin/activate
   ```
-- Please refer to the `install.sh` script. In many cases you can simply run `bash install.sh`. We have tested this script on CentOS 7.4.1708 with a Tesla M40 card and a CUDA 8 installation. We encourage you to report an [issue](https://github.com/pytorch/translate/issues) if you are unable to install this project for your specific configuration.
 
-Alternatively, you can launch an AWS instance using the `pytorch_translate_initial_release` image (AMI ID: ami-04ff53cdd573658dc). Once you have ssh'ed to the AWS instance, the example commands below should work after running `cd translate`.
+- Clone the Translate repo:
+  ```bash
+  git clone https://github.com/pytorch/translate.git
+  pushd translate
+  ```
+
+- Build [PyTorch](https://pytorch.org/) from source (currently needed for ONNX compatibility):
+  ```bash
+  # Uninstall previous versions of PyTorch. Doing this twice is intentional.
+  # Error messages about torch not being installed are benign.
+  pip uninstall -y torch
+  pip uninstall -y torch
+
+  # Install basic PyTorch dependencies.
+  conda install -y cffi cmake mkl mkl-include numpy pyyaml setuptools typing
+  # Add LAPACK support for the GPU.
+  conda install -y -c pytorch magma-cuda80 # or magma-cuda90 if CUDA 9
+
+  # Install NCCL2.
+  wget https://s3.amazonaws.com/pytorch/nccl_2.1.15-1%2Bcuda8.0_x86_64.txz
+  tar -xvf nccl_2.1.15-1+cuda8.0_x86_64.txz
+  export NCCL_ROOT_DIR="$(pwd)/nccl_2.1.15-1+cuda8.0_x86_64"
+  export LD_LIBRARY_PATH="${NCCL_ROOT_DIR}/lib:${LD_LIBRARY_PATH}"
+  rm nccl_2.1.15-1+cuda8.0_x86_64.txz
+
+  # Build PyTorch from source.
+  git clone --recursive https://github.com/pytorch/pytorch
+  pushd pytorch
+  git submodule update --init
+  NCCL_ROOT_DIR="${NCCL_ROOT_DIR}" python3 setup.py install
+  ```
+
+- Build [Caffe2](http://caffe2.ai/) from source (under PyTorch):
+  ```bash
+  # Caffe2 relies on the past module.
+  yes | pip install future
+
+  export CONDA_PATH="$(dirname $(which conda))/.."
+
+  # Compile Caffe2 from source with ATen.
+  # If you need to specify a compiler other than the default one cmake is picking
+  # up, you can use the -DCMAKE_C_COMPILER and -DCMAKE_CXX_COMPILER flags.
+  mkdir build_caffe2 && pushd build_caffe2
+  cmake \
+    -DPYTHON_INCLUDE_DIR=$(python -c 'from distutils import sysconfig; print(sysconfig.get_python_inc())') \
+    -DPYTHON_EXECUTABLE=$(which python) \
+    -DUSE_ATEN=ON \
+    -DUSE_OPENCV=OFF \
+    -DCMAKE_PREFIX_PATH="${CONDA_PATH}" \
+    -DCMAKE_INSTALL_PREFIX="${CONDA_PATH}" .. \
+    2>&1 | tee CMAKE_OUT
+  make install -j8 2>&1 | tee MAKE_OUT
+
+  export ATEN_LIB="$(pwd)/caffe2/contrib/aten/aten/lib"
+  export LD_LIBRARY_PATH="${ATEN_LIB}:${CONDA_PATH}/lib:${LD_LIBRARY_PATH}"
+
+  # Return to the translate directory.
+  popd
+  popd
+  ```
+
+- Install [ONNX](https://onnx.ai/):
+  ```bash
+  git clone --recursive https://github.com/onnx/onnx.git
+  yes | pip install ./onnx
+  ```
+
+- Build Translate:
+  ```bash
+  pip uninstall -y pytorch-translate
+  python3 setup.py build develop
+  pushd pytorch_translate/cpp
+
+  # If you need to specify a compiler other than the default one cmake is picking
+  # up, you can use the -DCMAKE_C_COMPILER and -DCMAKE_CXX_COMPILER flags.
+  mkdir build && pushd build
+  cmake \
+    -DCMAKE_PREFIX_PATH="${CONDA_PATH}/usr/local" \
+    -DCMAKE_INSTALL_PREFIX="${CONDA_PATH}" .. \
+    2>&1 | tee CMAKE_OUT
+  make 2>&2 | tee MAKE_OUT
+
+  # Return to the translate directory.
+  popd
+  popd
+  ```
+  
+Now you should be able to run the example scripts below!
+
+### To use our Amazon Machine Image:
+You can launch an AWS instance using the `pytorch_translate_initial_release` image (AMI ID: ami-04ff53cdd573658dc). Once you have ssh'ed to the AWS instance, the example commands below should work after running `cd translate`.
 
 ## Training
 
-Note: the example commands given assume that you are the root of the cloned gihub repository or that you're using an AWS instance and that you have run `cd translate`.
+Note: the example commands given assume that you are the root of the cloned GitHub repository or that you're using an AWS instance and that you have run `cd translate`.
 
 We provide an [example script](https://github.com/pytorch/translate/blob/master/pytorch_translate/examples/train_iwslt14.sh) to train a model for the IWSLT 2014 German-English task. We used this command to obtain [a pretrained model](https://download.pytorch.org/models/translate/iwslt14/model.tar.gz):
 
