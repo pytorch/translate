@@ -16,7 +16,7 @@ if you are unable to install this project for your specific configuration.
 
 - If you don't already have an existing [Anaconda](https://www.anaconda.com/download/)
 environment with Python 3.6, you can install one via [Miniconda3](https://conda.io/miniconda.html):
-  ```
+  ```bash
   wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
   chmod +x miniconda.sh
   ./miniconda.sh -b -p ~/miniconda
@@ -25,13 +25,13 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
   ```
 
 - Clone the Translate repo:
-  ```
+  ```bash
   git clone --recursive https://github.com/pytorch/translate.git
   pushd translate
   ```
 
 - Build [PyTorch](https://pytorch.org/) from source (currently needed for ONNX compatibility):
-  ```
+  ```bash
   # Uninstall previous versions of PyTorch. Doing this twice is intentional.
   # Error messages about torch not being installed are benign.
   pip uninstall -y torch
@@ -57,7 +57,7 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
   ```
 
 - Build [Caffe2](http://caffe2.ai/) from source (under PyTorch):
-  ```
+  ```bash
   # Caffe2 relies on past module.
   yes | pip install future
 
@@ -86,13 +86,13 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
   ```
 
 - Install [ONNX](https://onnx.ai/):
-  ```
+  ```bash
   git clone --recursive https://github.com/onnx/onnx.git
   yes | pip install ./onnx
   ```
 
 - Build Translate:
-  ```
+  ```bash
   pip uninstall -y pytorch-translate
   python3 setup.py build develop
   pushd pytorch_translate/cpp
