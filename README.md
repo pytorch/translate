@@ -55,7 +55,8 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
   # Pin to a specific commit for now to guard against breakage in HEAD.
   git checkout d154d32
   git submodule update --init
-  NCCL_ROOT_DIR="${NCCL_ROOT_DIR}" python3 setup.py install
+  NCCL_ROOT_DIR="${NCCL_ROOT_DIR}" python3 setup.py install \
+    2>&1 | tee PYTORCH_OUT
   ```
 
 - Build [Caffe2](http://caffe2.ai/) from source (under PyTorch):
@@ -90,7 +91,7 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
 - Install [ONNX](https://onnx.ai/):
   ```bash
   git clone --recursive https://github.com/onnx/onnx.git
-  yes | pip install ./onnx
+  yes | pip install ./onnx 2>&1 | tee ONNX_OUT
   ```
 
 - Build Translate:
