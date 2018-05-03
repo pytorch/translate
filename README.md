@@ -32,6 +32,9 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
 
 - Build [PyTorch](https://pytorch.org/) from source (currently needed for ONNX compatibility):
   ```bash
+  # Set to 9 if you have CUDA 9.
+  TMP_CUDA_VERSION="8"
+
   # Uninstall previous versions of PyTorch. Doing this twice is intentional.
   # Error messages about torch not being installed are benign.
   pip uninstall -y torch
@@ -40,14 +43,15 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
   # Install basic PyTorch dependencies.
   conda install -y cffi cmake mkl mkl-include numpy pyyaml setuptools typing
   # Add LAPACK support for the GPU.
-  conda install -y -c pytorch magma-cuda80 # or magma-cuda90 if CUDA 9
+  conda install -y -c pytorch "magma-cuda${TMP_CUDA_VERSION}0"
 
   # Install NCCL2.
-  wget https://s3.amazonaws.com/pytorch/nccl_2.1.15-1%2Bcuda8.0_x86_64.txz
-  tar -xvf nccl_2.1.15-1+cuda8.0_x86_64.txz
-  export NCCL_ROOT_DIR="$(pwd)/nccl_2.1.15-1+cuda8.0_x86_64"
+  wget "https://s3.amazonaws.com/pytorch/nccl_2.1.15-1%2Bcuda${TMP_CUDA_VERSION}.0_x86_64.txz"
+  TMP_NCCL_VERSION="nccl_2.1.15-1+cuda${TMP_CUDA_VERSION}.0_x86_64"
+  tar -xvf "${TMP_NCCL_VERSION}.txz"
+  export NCCL_ROOT_DIR="$(pwd)/${TMP_NCCL_VERSION}"
   export LD_LIBRARY_PATH="${NCCL_ROOT_DIR}/lib:${LD_LIBRARY_PATH}"
-  rm nccl_2.1.15-1+cuda8.0_x86_64.txz
+  rm "${TMP_NCCL_VERSION}.txz"
 
   # Build PyTorch from source.
   git clone --recursive https://github.com/pytorch/pytorch
