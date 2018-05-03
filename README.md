@@ -26,7 +26,7 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
 
 - Clone the Translate repo:
   ```bash
-  git clone --recursive https://github.com/pytorch/translate.git
+  git clone https://github.com/pytorch/translate.git
   pushd translate
   ```
 
@@ -44,7 +44,7 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
 
   # Install NCCL2.
   wget https://s3.amazonaws.com/pytorch/nccl_2.1.15-1%2Bcuda8.0_x86_64.txz
-  tar --no-same-owner -xvf nccl_2.1.15-1+cuda8.0_x86_64.txz
+  tar -xvf nccl_2.1.15-1+cuda8.0_x86_64.txz
   export NCCL_ROOT_DIR="$(pwd)/nccl_2.1.15-1+cuda8.0_x86_64"
   export LD_LIBRARY_PATH="${NCCL_ROOT_DIR}/lib:${LD_LIBRARY_PATH}"
   rm nccl_2.1.15-1+cuda8.0_x86_64.txz
@@ -58,7 +58,7 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
 
 - Build [Caffe2](http://caffe2.ai/) from source (under PyTorch):
   ```bash
-  # Caffe2 relies on past module.
+  # Caffe2 relies on the past module.
   yes | pip install future
 
   export CONDA_PATH="$(dirname $(which conda))/.."
