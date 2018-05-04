@@ -81,7 +81,7 @@ def dummy_dictionary(
     finally the additional_token_list, which is a list of string token values"""
     d = pytorch_translate_dictionary.Dictionary()
     for i in range(dummy_tokens):
-        token = 'token_{}'.format(i)
+        token = f'token_{i}'
         d.add_symbol(token)
     if additional_token_list is not None:
         for token in additional_token_list:

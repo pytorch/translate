@@ -28,7 +28,7 @@ def _generate_score(models, args, dataset, dataset_split):
 
     # Load ensemble
     if not args.quiet:
-        print('| loading model(s) from {}'.format(', '.join(args.path)))
+        print(f"| loading model(s) from {', '.join(args.path)}")
 
     # Optimize ensemble for generation
     for model in models:
@@ -97,8 +97,8 @@ def _generate_score(models, args, dataset, dataset_split):
                 )
 
             if not args.quiet:
-                print('S-{}\t{}'.format(sample_id, src_str))
-                print('T-{}\t{}'.format(sample_id, target_str))
+                print(f'S-{sample_id}\t{src_str)}')
+                print(f'T-{sample_id}\t{target_str}')
 
             # Process top predictions
             for i, hypo in enumerate(hypos[:min(len(hypos), args.nbest)]):
@@ -111,11 +111,9 @@ def _generate_score(models, args, dataset, dataset_split):
                     remove_bpe=args.remove_bpe)
 
                 if not args.quiet:
-                    print('H-{}\t{}\t{}'.format(sample_id, hypo['score'], hypo_str))
-                    print('A-{}\t{}'.format(
-                        sample_id,
-                        ' '.join(map(lambda x: str(utils.item(x)), alignment))
-                    ))
+                    print(f"H-{sample_id}\t{hypo['score']}\t{hypo_str}")
+                    print(f"A-{sample_id}\t{' '.join(map(lambda x: str(utils.item(x)), alignment))}")
+
 
                 # Score only the top hypothesis
                 if i == 0:
@@ -264,22 +262,19 @@ def generate(args):
         # record inferred languages in args
         args.source_lang, args.target_lang = dataset.src, dataset.dst
 
-    print('| [{}] dictionary: {} types'.format(dataset.src, len(dataset.src_dict)))
-    print('| [{}] dictionary: {} types'.format(dataset.dst, len(dataset.dst_dict)))
-    print('| {} {} examples'.format(
-        args.gen_subset,
-        len(dataset.splits[args.gen_subset])),
-    )
+    print(f'| [{dataset.src}] dictionary: {dataset.src_dict} types')
+    print(f'| [{dataset.dst}] dictionary: {len(dataset.dst_dict)} types')
+    print(f'| {args.gen_subset} {len(dataset.splits[args.gen_subset])} examples')
 
     scorer, num_sentences, gen_timer = generate_score(
         args=args,
         dataset=dataset,
         dataset_split=args.gen_subset,
     )
-    print('| Translated {} sentences ({} tokens) in {:.1f}s ({:.2f} tokens/s)'.format(
-        num_sentences, gen_timer.n, gen_timer.sum, 1. / gen_timer.avg))
-    print('| Generate {} with beam={}: {}'.format(
-        args.gen_subset, args.beam, scorer.result_string()))
+    print(f'| Translated {num_sentences} sentences ({gen_timer.n} tokens) '
+        'in {gen_timer.sum:.1f}s ({1. / gen_timer.avg:.2f} tokens/s)')
+    print(f'| Generate {args.gen_subset} with beam={args.beam}: '
+        '{scorer.result_string()}')
     return scorer.score()
 
 

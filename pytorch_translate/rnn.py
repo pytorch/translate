@@ -523,7 +523,7 @@ class RNNLayer(nn.Module):
         elif cell_type == 'layer_norm_lstm':
             cell_class = rnn_cell.LayerNormLSTMCell
         else:
-            raise Exception('{} not implemented'.format(cell_type))
+            raise Exception(f'{cell_type} not implemented')
 
         self.fwd_cell = cell_class(input_size, hidden_size // num_directions)
         if is_bidirectional:
@@ -660,7 +660,7 @@ class RNNEncoder(FairseqEncoder):
                     x.data.new(bsz, current_hidden_size).zero_(),
                 )
             else:
-                raise Exception('{} not implemented'.format(self.cell_type))
+                raise Exception(f'{self.cell_type} not implemented')
 
             hidden, current_output = rnn_layer.forward(
                 packed_input,
@@ -758,7 +758,7 @@ class AttentionLayer(nn.Module):
             )
         else:
             raise ValueError(
-                'Attention type {} is not supported'.format(self.attention_type)
+                f'Attention type {self.attention_type} is not supported'
             )
         return output, attn_scores
 
