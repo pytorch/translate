@@ -141,14 +141,20 @@ def add_args(parser):
         action='store_true',
         default=False,
         help=(
-            'Apppend EOS to source sentences (instead of just target). '
+            'Apppend EOS to source sentences (instead of just target). When '
+            'running generate.py we ignore this command line argument and use '
+            'the same --append-eos-to-source value from training.'
         ),
     )
     group.add_argument(
         '--reverse-source',
         action='store_true',
         default=False,
-        help='Feed source sentence to model in reverse order.',
+        help=(
+            'Feed source sentence to model in reverse order. When running '
+            'generate.py we ignore this command line argument and use the same '
+            '--reverse-source value from training.'
+        ),
     )
     group.add_argument(
         '--word-reward',
@@ -208,8 +214,8 @@ def main():
 
 def assert_test_corpus_and_vocab_files_specified(args):
     assert not args.data, (
-        'Specifying a data directory is disabled in FBTranslate since the '
-        'fairseq data class is not supported. Please specify '
+        'Specifying a data directory is disabled in PyTorch Translate since '
+        'the fairseq data class is not supported. Please specify '
         '--train-source-text-file, --train-target-text-file, '
         '--eval-source-text-file, and  --eval-target-text-file instead.'
     )
@@ -250,14 +256,19 @@ def generate(args):
         src_dict=src_dict,
         dst_dict=dst_dict,
     )
+    models, model_args = utils.load_ensemble_for_inference(
+        args.path,
+        dataset.src_dict,
+        dataset.dst_dict,
+    )
     dataset.splits[args.gen_subset] = pytorch_translate_data.make_language_pair_dataset(
         source_file=args.source_text_file,
         target_file=args.target_text_file,
         source_dict=src_dict,
         target_dict=dst_dict,
-        args=args,
+        append_eos=model_args.append_eos_to_source,
+        reverse_source=model_args.reverse_source,
     )
-
     if args.source_lang is None or args.target_lang is None:
         # record inferred languages in args
         args.source_lang, args.target_lang = dataset.src, dataset.dst
@@ -266,7 +277,8 @@ def generate(args):
     print(f'| [{dataset.dst}] dictionary: {len(dataset.dst_dict)} types')
     print(f'| {args.gen_subset} {len(dataset.splits[args.gen_subset])} examples')
 
-    scorer, num_sentences, gen_timer = generate_score(
+    scorer, num_sentences, gen_timer = _generate_score(
+        models=models,
         args=args,
         dataset=dataset,
         dataset_split=args.gen_subset,
