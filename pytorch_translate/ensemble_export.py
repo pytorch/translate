@@ -124,7 +124,7 @@ def save_caffe2_rep_to_db(
             db_destination=output_path,
             predictor_export_meta=predictor_export_meta,
         )
-    logger.info('Caffe2 predictor net saved as: {}'.format(output_path))
+    logger.info(f'Caffe2 predictor net saved as: {output_path}')
 
 
 class EncoderEnsemble(nn.Module):
@@ -136,7 +136,7 @@ class EncoderEnsemble(nn.Module):
         super().__init__()
         self.models = models
         for i, model in enumerate(self.models):
-            self._modules['model_{}'.format(i)] = model
+            self._modules[f'model_{i}'] = model
 
     def forward(self, src_tokens, src_lengths):
         outputs = []
@@ -158,7 +158,7 @@ class EncoderEnsemble(nn.Module):
             # "primary" encoder output (vector representations per source token)
             encoder_outputs = encoder_out[0]
             outputs.append(encoder_outputs)
-            output_names.append('encoder_output_{}'.format(i))
+            output_names.append(f'encoder_output_{i}')
 
             init_hiddens, init_cells = model.decoder._init_prev_states(
                 encoder_out,
@@ -179,7 +179,7 @@ class EncoderEnsemble(nn.Module):
 
         for i, state in enumerate(states):
             outputs.append(state)
-            output_names.append('initial_state_{}'.format(i))
+            output_names.append(f'initial_state_{i}')
 
         self.output_names = output_names
 
@@ -251,7 +251,7 @@ class DecoderStepEnsemble(nn.Module):
         self.models = models
         for i, model in enumerate(self.models):
             model.decoder.attention.src_length_masking = False
-            self._modules['model_{}'.format(i)] = model
+            self._modules[f'model_{i}'] = model
 
         self.beam_size = beam_size
         self.word_penalty = word_penalty
@@ -381,7 +381,7 @@ class DecoderStepEnsemble(nn.Module):
 
         self.input_names = ['prev_token', 'timestep']
         for i in range(len(self.models)):
-            self.input_names.append('fixed_input_{}'.format(i))
+            self.input_names.append(f'fixed_input_{i}')
 
         if possible_translation_tokens is not None:
             self.input_names.append('possible_translation_tokens')
@@ -398,8 +398,8 @@ class DecoderStepEnsemble(nn.Module):
         ]
         for i, state in enumerate(state_outputs):
             outputs.append(state)
-            self.output_names.append('state_output_{}'.format(i))
-            self.input_names.append('state_input_{}'.format(i))
+            self.output_names.append(f'state_output_{i}')
+            self.input_names.append(f'state_input_{i}')
 
         return tuple(outputs)
 
@@ -481,7 +481,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
         self.models = models
         for i, model in enumerate(self.models):
             model.decoder.attention.src_length_masking = False
-            self._modules['model_{}'.format(i)] = model
+            self._modules[f'model_{i}'] = model
 
         self.beam_size = beam_size
         self.word_penalty = word_penalty
@@ -658,7 +658,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
         self.input_names = ['prev_tokens', 'prev_scores', 'timestep']
         for i in range(len(self.models)):
-            self.input_names.append('fixed_input_{}'.format(i))
+            self.input_names.append(f'fixed_input_{i}')
 
         if possible_translation_tokens is not None:
             self.input_names.append('possible_translation_tokens')
@@ -679,7 +679,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
             'attention_weights_average',
         ]
         for i in range(len(self.models)):
-            self.output_names.append('fixed_input_{}'.format(i))
+            self.output_names.append(f'fixed_input_{i}')
             if self.tile_internal:
                 outputs.append(inputs[i].repeat(1, self.beam_size, 1))
             else:
@@ -695,8 +695,8 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 index=prev_hypos,
             )
             outputs.append(next_state)
-            self.output_names.append('state_output_{}'.format(i))
-            self.input_names.append('state_input_{}'.format(i))
+            self.output_names.append(f'state_output_{i}')
+            self.input_names.append(f'state_input_{i}')
 
         return tuple(outputs)
 
