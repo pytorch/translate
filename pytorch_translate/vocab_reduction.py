@@ -153,7 +153,7 @@ def get_translation_candidates(
     translation_candidates_set = set()
 
     for lexical_dictionary in lexical_dictionaries:
-        logger.info('Processing dictionary file {}'.format(lexical_dictionary))
+        logger.info(f'Processing dictionary file {lexical_dictionary}')
         translation_candidates_saved = 0
 
         with codecs.open(
@@ -167,7 +167,7 @@ def get_translation_candidates(
                 alignment_data = line.split()
                 if len(alignment_data) != 3:
                     logger.warning(
-                        'Malformed line in lexical dictionary: {}'.format(line)
+                        f'Malformed line in lexical dictionary: {line}'
                     )
                     continue
                 source_word, target_word, prob = alignment_data
@@ -216,10 +216,8 @@ def get_translation_candidates(
             translation_candidates_set,
         )
         logger.info(
-            'Loaded {} translation candidates from dictionary {}'.format(
-                translation_candidates_saved,
-                lexical_dictionary,
-            )
+            f'Loaded {translation_candidates_saved} translation'
+            'candidates from dictionary {lexical_dictionary}'
         )
     return translation_candidates
 
