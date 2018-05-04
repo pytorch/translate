@@ -218,10 +218,7 @@ def load_existing_checkpoint(save_dir, restore_file, trainer):
     extra_state = trainer.load_checkpoint(checkpoint_path)
     if extra_state is not None:
         print(
-            '| loaded checkpoint {} (epoch {})'.format(
-                checkpoint_path,
-                extra_state['epoch'],
-            )
+            f"| loaded checkpoint {checkpoint_path} (epoch {extra_state['epoch']})"
         )
         # batch_offset being None denotes this was a checkpoint saved at
         # the end of an epoch (after the last batch).
@@ -311,51 +308,28 @@ def setup_training(args):
         # record inferred languages in args, so that it's saved in checkpoints
         args.source_lang, args.target_lang = dataset.src, dataset.dst
 
-    print(
-        '| [{}] dictionary: {} types'.format(
-            dataset.src,
-            len(dataset.src_dict),
-        )
-    )
-    print(
-        '| [{}] dictionary: {} types'.format(
-            dataset.dst,
-            len(dataset.dst_dict),
-        )
-    )
+    print(f'| [{dataset.src}] dictionary: {len(dataset.src_dict)} types')
+    print(f'| [{dataset.dst}] dictionary: {dataset.dst_dict} types')
+
     for split in splits:
-        print(
-            '| {} {} examples'.format(
-                split,
-                len(dataset.splits[split]),
-            )
-        )
+        print(f'| {split} {len(dataset.splits[split])} examples')
 
     # Build model and criterion
     model = models.build_model(args, dataset.src_dict, dataset.dst_dict)
     criterion = criterions.build_criterion(
         args, dataset.src_dict, dataset.dst_dict
     )
-    print(
-        '| model {}, criterion {}'.format(
-            args.arch,
-            criterion.__class__.__name__,
-        )
-    )
-    print(
-        '| num. model params: {}'.
-        format(sum(p.data.numel() for p in model.parameters()))
-    )
+    print(f'| model {args.arch}, criterion {criterion.__class__.__name__}')
+    print(f'| num. model params: \
+        {sum(p.data.numel() for p in model.parameters())}')
 
     # Build trainer
     trainer = Trainer(args, model, criterion)
-    print('| training on {} GPUs'.format(args.distributed_world_size))
+    print(f'| training on {args.distributed_world_size} GPUs')
     print(
-        '| max tokens per GPU = {} and max sentences per GPU = {}'.format(
-            args.max_tokens,
-            args.max_sentences,
-        ),
-        flush=True,
+        f'| max tokens per GPU = {args.max_tokens} and \
+        max sentences per GPU = {args.max_sentences}',
+        flush=True
     )
 
     extra_state = load_existing_checkpoint(
@@ -533,7 +507,7 @@ def train(
             break
 
     train_meter.stop()
-    print('| done training in {:.1f} seconds'.format(train_meter.sum))
+    print(f'| done training in {train_meter.sum:.1f} seconds')
     if hasattr(evaluate_bleu, 'best') and hasattr(evaluate_bleu, 'best_epoch'):
         print(
             f'| Best BLEU score of {evaluate_bleu.best} was from '
@@ -546,10 +520,8 @@ def is_training_over_time_limit(start_time, stop_time):
     training_over_time_limit = False
     if stop_time >= 0 and elapsed_hr > stop_time:
         print(
-            'Stopping training due to stop time limit - it has been '
-            '{} hours since starting training at {}.'.format(
-                elapsed_hr, start_time
-            )
+            f'Stopping training due to stop time limit - it has been  '
+            '{elapsed_hr} hours since starting training at {start_time}.'
         )
         training_over_time_limit = True
     return training_over_time_limit
@@ -557,7 +529,7 @@ def is_training_over_time_limit(start_time, stop_time):
 
 def get_perplexity(loss):
     try:
-        return '{:.2f}'.format(math.pow(2, loss))
+        return f'{math.pow(2, loss):.2f}'
     except OverflowError:
         return float('inf')
 
@@ -660,21 +632,21 @@ def log_end_epoch_stats(
 
 def get_training_stats(trainer):
     stats = collections.OrderedDict()
-    stats['loss'] = '{:.3f}'.format(trainer.get_meter('train_loss').avg)
+    stats['loss'] = f"{trainer.get_meter('train_loss').avg:.3f}"
     if trainer.get_meter('train_nll_loss').count > 0:
         nll_loss = trainer.get_meter('train_nll_loss').avg
-        stats['nll_loss'] = '{:.3f}'.format(nll_loss)
+        stats['nll_loss'] = f'{nll_loss:.3f}'
     else:
         nll_loss = trainer.get_meter('train_loss').avg
     stats['ppl'] = get_perplexity(nll_loss)
     stats['wps'] = round(trainer.get_meter('wps').avg)
-    stats['ups'] = '{:.1f}'.format(trainer.get_meter('ups').avg)
+    stats['ups'] = f"{trainer.get_meter('ups').avg:.1f}"
     stats['wpb'] = round(trainer.get_meter('wpb').avg)
     stats['bsz'] = round(trainer.get_meter('bsz').avg)
     stats['num_updates'] = trainer.get_num_updates()
     stats['lr'] = trainer.get_lr()
-    stats['gnorm'] = '{:.3f}'.format(trainer.get_meter('gnorm').avg)
-    stats['clip'] = '{:.0%}'.format(trainer.get_meter('clip').avg)
+    stats['gnorm'] = f"{trainer.get_meter('gnorm').avg:.3f}"
+    stats['clip'] = f"{trainer.get_meter('clip').avg:.0%}"
     stats['oom'] = trainer.get_meter('oom').avg
     return stats
 
@@ -733,7 +705,7 @@ def save_checkpoint(trainer, args, extra_state):
         if not args.no_epoch_checkpoints:
             epoch_filename = os.path.join(
                 args.save_dir,
-                'checkpoint{}.pt'.format(epoch),
+                f'checkpoint{epoch}.pt'
             )
             save_checkpoint_maybe_continuous(
                 epoch_filename,
@@ -758,7 +730,7 @@ def save_checkpoint(trainer, args, extra_state):
     elif not args.no_epoch_checkpoints:
         epoch_filename = os.path.join(
             args.save_dir,
-            'checkpoint{}_{}.pt'.format(epoch, batch_offset),
+            f'checkpoint{epoch}_{batch_offset}.pt'
         )
         save_checkpoint_maybe_continuous(
             epoch_filename,
@@ -806,7 +778,7 @@ def validate(args, trainer, dataset, subset, epoch):
     )
     progress = progress_bar.build_progress_bar(
         args, itr, epoch,
-        prefix='valid on \'{}\' subset'.format(subset),
+        prefix=f'valid on \'{subset}\' subset',
         no_progress_bar='simple'
     )
 
@@ -853,11 +825,9 @@ def validate(args, trainer, dataset, subset, epoch):
             validate.num_since_best > args.stop_no_best_validate_loss):
         stop_due_to_val_loss = True
         print(
-            'Stopping training due to validation score stagnation - last best '
-            'validation loss of {} (current loss: {}) was {} validations ago.'.
-            format(
-                validate.lowest_loss, val_loss, validate.num_since_best
-            )
+            f'Stopping training due to validation score stagnation - last best '
+            'validation loss of {validate.lowest_loss} (current loss: {val_loss})'
+            'was {validate.num_since_best} validations ago.'
         )
     return val_loss, val_ppl, stop_due_to_val_loss
 
@@ -884,7 +854,7 @@ def _save_averaged_checkpoint(args, epoch, offset):
     averaged_state = average_checkpoints.average_checkpoints(
         save_checkpoint.last_checkpoints)
     filename = os.path.join(
-        args.save_dir, 'averaged_checkpoint{}_{}.pt'.format(epoch, offset))
+        args.save_dir, f'averaged_checkpoint{epoch}_{offset}.pt')
     if args.log_verbose:
         print(
             f'Preparing to save averaged checkpoint for '
@@ -947,13 +917,10 @@ def evaluate_bleu(args, dataset, epoch, offset):
             evaluate_bleu.num_since_best > args.stop_no_best_bleu_eval):
         stop_due_to_val_bleu = True
         print(
-            'Stopping training due to BLEU score stagnation on valid set - '
-            'last best BLEU score of {} (current score: {}) was {} evals ago.'
-            .format(
-                evaluate_bleu.best,
-                val_bleu,
-                evaluate_bleu.num_since_best,
-            )
+            f'Stopping training due to BLEU score stagnation on valid set - '
+            'last best BLEU score of {evaluate_bleu.best} '
+            '(current score: {val_bleu}) was'
+            '{evaluate_bleu.num_since_best} evals ago.'
         )
     return val_bleu, stop_due_to_val_bleu
 
@@ -1083,8 +1050,7 @@ def main(args):
 
     # Set distributed training parameters for a single node.
     args.distributed_world_size = torch.cuda.device_count()
-    args.distributed_init_method = 'tcp://localhost:{port}'.format(
-        port=random.randint(10000, 20000))
+    args.distributed_init_method = f'tcp://localhost:{random.randint(10000, 20000)}'
 
     if args.distributed_world_size == 1:
         return single_process_main(args)

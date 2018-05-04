@@ -50,13 +50,14 @@ class AverageCheckpointsTest(unittest.TestCase):
         for (k_expected, v_expected), (k_out, v_out) in zip(
                 params_avg.items(), output.items()):
             self.assertEquals(
-                k_expected, k_out, 'Key mismatch - expected {} but found {}. '
-                '(Expected list of keys: {} vs actual list of keys: {})'.format(
-                    k_expected, k_out, params_avg.keys(), output.keys()
-                )
+                k_expected,
+                k_out,
+                f'Key mismatch - expected {k_expected} but found {k_out}. '
+                '(Expected list of keys: {params_avg.keys()} '
+                'vs actual list of keys: {output.keys()})'
             )
             np.testing.assert_allclose(
                 v_expected.numpy(),
                 v_out.numpy(),
-                err_msg='Tensor value mismatch for key {}'.format(k_expected)
+                err_msg=f'Tensor value mismatch for key {k_expected}'
             )
