@@ -149,7 +149,7 @@ def add_args(parser):
     group.add_argument(
         '--reverse-source',
         action='store_true',
-        default=False,
+        default=True,
         help=(
             'Feed source sentence to model in reverse order. When running '
             'generate.py we ignore this command line argument and use the same '

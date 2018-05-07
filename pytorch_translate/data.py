@@ -25,7 +25,7 @@ def make_language_pair_dataset(
     source_dict: pytorch_translate_dictionary.Dictionary,
     target_dict: pytorch_translate_dictionary.Dictionary,
     append_eos: Optional[bool] = False,
-    reverse_source: Optional[bool] = False,
+    reverse_source: Optional[bool] = True,
 ) -> data.LanguagePairDataset:
     return data.LanguagePairDataset(
         src=indexed_dataset.IndexedRawTextDataset(
