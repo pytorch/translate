@@ -24,14 +24,15 @@ def make_language_pair_dataset(
     target_file: str,
     source_dict: pytorch_translate_dictionary.Dictionary,
     target_dict: pytorch_translate_dictionary.Dictionary,
-    args: Optional[argparse.Namespace] = None,
+    append_eos: Optional[bool] = False,
+    reverse_source: Optional[bool] = True,
 ) -> data.LanguagePairDataset:
     return data.LanguagePairDataset(
         src=indexed_dataset.IndexedRawTextDataset(
             path=source_file,
             dictionary=source_dict,
-            append_eos=args.append_eos_to_source if args is not None else True,
-            reverse_order=args.reverse_source if args is not None else False,
+            append_eos=append_eos,
+            reverse_order=reverse_source,
         ),
         dst=indexed_dataset.IndexedRawTextDataset(
             path=target_file,
@@ -95,7 +96,8 @@ def load_raw_text_dataset(
             target_file=corpus.target.data_file,
             source_dict=source_dict,
             target_dict=target_dict,
-            args=args,
+            append_eos=args.append_eos_to_source,
+            reverse_source=args.reverse_source,
         )
     return dataset
 
