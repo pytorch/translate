@@ -521,7 +521,7 @@ def is_training_over_time_limit(start_time, stop_time):
     if stop_time >= 0 and elapsed_hr > stop_time:
         print(
             f'Stopping training due to stop time limit - it has been  '
-            '{elapsed_hr} hours since starting training at {start_time}.'
+            f'{elapsed_hr} hours since starting training at {start_time}.'
         )
         training_over_time_limit = True
     return training_over_time_limit
@@ -826,8 +826,8 @@ def validate(args, trainer, dataset, subset, epoch):
         stop_due_to_val_loss = True
         print(
             f'Stopping training due to validation score stagnation - last best '
-            'validation loss of {validate.lowest_loss} (current loss: {val_loss})'
-            'was {validate.num_since_best} validations ago.'
+            f'validation loss of {validate.lowest_loss} (current loss: {val_loss})'
+            f'was {validate.num_since_best} validations ago.'
         )
     return val_loss, val_ppl, stop_due_to_val_loss
 
@@ -918,9 +918,9 @@ def evaluate_bleu(args, dataset, epoch, offset):
         stop_due_to_val_bleu = True
         print(
             f'Stopping training due to BLEU score stagnation on valid set - '
-            'last best BLEU score of {evaluate_bleu.best} '
-            '(current score: {val_bleu}) was'
-            '{evaluate_bleu.num_since_best} evals ago.'
+            f'last best BLEU score of {evaluate_bleu.best} '
+            f'(current score: {val_bleu}) was'
+            f'{evaluate_bleu.num_since_best} evals ago.'
         )
     return val_bleu, stop_due_to_val_bleu
 

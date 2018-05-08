@@ -40,7 +40,7 @@ def average_checkpoints(inputs: Iterable[str]) -> Dict[str, Any]:
         if params_keys != model_params_keys:
             raise KeyError(
                 f'For checkpoint {f}, expected list of params: {params_keys}, '
-                'but found: {model_params_keys}'
+                f'but found: {model_params_keys}'
             )
 
         for k in params_keys:

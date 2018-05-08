@@ -97,7 +97,7 @@ def _generate_score(models, args, dataset, dataset_split):
                 )
 
             if not args.quiet:
-                print(f'S-{sample_id}\t{src_str)}')
+                print(f'S-{sample_id}\t{src_str}')
                 print(f'T-{sample_id}\t{target_str}')
 
             # Process top predictions
@@ -284,9 +284,9 @@ def generate(args):
         dataset_split=args.gen_subset,
     )
     print(f'| Translated {num_sentences} sentences ({gen_timer.n} tokens) '
-        'in {gen_timer.sum:.1f}s ({1. / gen_timer.avg:.2f} tokens/s)')
+          f'in {gen_timer.sum:.1f}s ({1. / gen_timer.avg:.2f} tokens/s)')
     print(f'| Generate {args.gen_subset} with beam={args.beam}: '
-        '{scorer.result_string()}')
+          f'{scorer.result_string()}')
     return scorer.score()
 
 

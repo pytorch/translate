@@ -86,9 +86,9 @@ def load_raw_text_dataset(
                 prev_target_dialect != corpus.target.dialect):
             raise ValueError(
                 f'We currently only support monolingual directions - expected '
-                '{prev_source_dialect}->{prev_target_dialect} for all corpora, '
-                'but found {corpus.source.dialect}->{corpus.target.dialect} for '
-                'split {split}'
+                f'{prev_source_dialect}->{prev_target_dialect} for all corpora, '
+                f'but found {corpus.source.dialect}->{corpus.target.dialect} for '
+                f'split {split}'
             )
 
         dataset.splits[split] = make_language_pair_dataset(
