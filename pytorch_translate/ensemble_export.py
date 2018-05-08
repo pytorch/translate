@@ -546,7 +546,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
             next_state_input += 1
 
             # no batching, we only care about care about "max" length
-            src_length_int = encoder_output.size()[0]
+            src_length_int = int(encoder_output.size()[0])
             src_length = torch.LongTensor(np.array([src_length_int]))
 
             # notional, not actually used for decoder computation

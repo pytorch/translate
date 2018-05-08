@@ -160,7 +160,7 @@ This will output two files, `encoder.pb` and `decoder.pb`, that correspond to th
 To use the sample exported Caffe2 model to translate sentences, run:
 
 ```
-echo "hallo welt ." | bash pytorch_translate/examples/translate_iwslt14.sh
+echo "hallo welt" | bash pytorch_translate/examples/translate_iwslt14.sh
 ```
 
 Note that the model takes in [BPE](https://github.com/rsennrich/subword-nmt)
