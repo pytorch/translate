@@ -217,7 +217,7 @@ def get_translation_candidates(
         )
         logger.info(
             f'Loaded {translation_candidates_saved} translation'
-            'candidates from dictionary {lexical_dictionary}'
+            f'candidates from dictionary {lexical_dictionary}'
         )
     return translation_candidates
 
