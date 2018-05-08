@@ -6,7 +6,7 @@
 # producing the `translation_decoder` binary.
 #
 # Sample usage:
-# echo "hallo welt ." | bash pytorch_translate/examples/translate_iwslt14.sh
+# echo "hallo welt" | bash pytorch_translate/examples/translate_iwslt14.sh
 
 export CONDA_PATH="$(dirname $(which conda))/../"
 export NCCL_ROOT_DIR="$(pwd)/nccl_2.1.15-1+cuda8.0_x86_64"
