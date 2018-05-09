@@ -9,7 +9,7 @@ import torch.nn.functional as F
 def LSTMCell(input_dim, hidden_dim, **kwargs):
     m = nn.LSTMCell(input_dim, hidden_dim, **kwargs)
     for name, param in m.named_parameters():
-        if 'weight' in name or 'bias' in name:
+        if "weight" in name or "bias" in name:
             param.data.uniform_(-0.1, 0.1)
     return m
 
@@ -26,7 +26,7 @@ class MILSTMCellBackend(nn.RNNCell):
         if bias:
             self.bias = nn.Parameter(torch.Tensor(4 * hidden_size))
         else:
-            self.register_parameter('bias', None)
+            self.register_parameter("bias", None)
         self.alpha = nn.Parameter(torch.Tensor(4 * hidden_size))
         self.beta_h = nn.Parameter(torch.Tensor(4 * hidden_size))
         self.beta_i = nn.Parameter(torch.Tensor(4 * hidden_size))
@@ -44,12 +44,7 @@ class MILSTMCellBackend(nn.RNNCell):
         Uz = F.linear(hx, self.weight_hh)
 
         # Section 2.1 in https://arxiv.org/pdf/1606.06630.pdf
-        gates = (
-            self.alpha * Wx * Uz +
-            self.beta_i * Wx +
-            self.beta_h * Uz +
-            self.bias
-        )
+        gates = (self.alpha * Wx * Uz + self.beta_i * Wx + self.beta_h * Uz + self.bias)
 
         # Same as LSTMCell after this point
         ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
@@ -68,12 +63,13 @@ class MILSTMCellBackend(nn.RNNCell):
 def MILSTMCell(input_dim, hidden_dim, **kwargs):
     m = MILSTMCellBackend(input_dim, hidden_dim, **kwargs)
     for name, param in m.named_parameters():
-        if 'weight' in name or 'bias' in name:
+        if "weight" in name or "bias" in name:
             param.data.uniform_(-0.1, 0.1)
     return m
 
 
 class LayerNormLSTMCellBackend(nn.LSTMCell):
+
     def __init__(self, input_dim, hidden_dim, bias=True, epsilon=0.00001):
         super(LayerNormLSTMCellBackend, self).__init__(input_dim, hidden_dim, bias)
         self.epsilon = epsilon
@@ -85,7 +81,9 @@ class LayerNormLSTMCellBackend(nn.LSTMCell):
 
     def forward(self, x, hidden):
         hx, cx = hidden
-        gates = F.linear(x, self.weight_ih, self.bias_ih) + F.linear(hx, self.weight_hh, self.bias_hh)
+        gates = F.linear(x, self.weight_ih, self.bias_ih) + F.linear(
+            hx, self.weight_hh, self.bias_hh
+        )
 
         ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
 
@@ -104,6 +102,6 @@ class LayerNormLSTMCellBackend(nn.LSTMCell):
 def LayerNormLSTMCell(input_dim, hidden_dim, **kwargs):
     m = LayerNormLSTMCellBackend(input_dim, hidden_dim, **kwargs)
     for name, param in m.named_parameters():
-        if 'weight' in name or 'bias' in name:
+        if "weight" in name or "bias" in name:
             param.data.uniform_(-0.1, 0.1)
     return m

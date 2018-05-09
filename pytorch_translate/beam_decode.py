@@ -6,6 +6,7 @@ from fairseq.models import FairseqIncrementalDecoder
 
 
 class SequenceGenerator(torch.nn.Module):
+
     def __init__(
         self,
         models,
@@ -44,7 +45,9 @@ class SequenceGenerator(torch.nn.Module):
         self.beam_size = beam_size
         self.minlen = minlen
         max_decoder_len = min(m.max_decoder_positions() for m in self.models)
-        self.maxlen = max_decoder_len if maxlen is None else min(maxlen, max_decoder_len)
+        self.maxlen = max_decoder_len if maxlen is None else min(
+            maxlen, max_decoder_len
+        )
         self.stop_early = stop_early
         self.normalize_scores = normalize_scores
         self.len_penalty = len_penalty
@@ -59,8 +62,16 @@ class SequenceGenerator(torch.nn.Module):
             model.cuda()
         return self
 
-    def generate_batched_itr(self, data_itr, beam_size=None, maxlen_a=0.0, maxlen_b=None,
-                             cuda=False, timer=None, prefix_size=0):
+    def generate_batched_itr(
+        self,
+        data_itr,
+        beam_size=None,
+        maxlen_a=0.0,
+        maxlen_b=None,
+        cuda=False,
+        timer=None,
+        prefix_size=0,
+    ):
         """Iterate over a batched dataset and yield individual translations.
 
         Args:
@@ -74,32 +85,40 @@ class SequenceGenerator(torch.nn.Module):
 
         for sample in data_itr:
             s = utils.make_variable(sample, volatile=True, cuda=cuda)
-            input = s['net_input']
-            srclen = input['src_tokens'].size(1)
+            input = s["net_input"]
+            srclen = input["src_tokens"].size(1)
             if timer is not None:
                 timer.start()
             with utils.maybe_no_grad():
                 hypos = self.generate(
-                    input['src_tokens'],
-                    input['src_lengths'],
+                    input["src_tokens"],
+                    input["src_lengths"],
                     beam_size=beam_size,
                     maxlen=int(maxlen_a * srclen + maxlen_b),
-                    prefix_tokens=s['target'][:, :prefix_size] if prefix_size > 0 else None,
+                    prefix_tokens=s["target"][:, :prefix_size]
+                    if prefix_size > 0
+                    else None,
                 )
             if timer is not None:
-                timer.stop(s['ntokens'])
-            for i, id in enumerate(s['id'].data):
-                src = input['src_tokens'].data[i, :]
+                timer.stop(s["ntokens"])
+            for i, id in enumerate(s["id"].data):
+                src = input["src_tokens"].data[i, :]
                 # remove padding from ref
-                ref = utils.strip_pad(s['target'].data[i, :], self.pad)
+                ref = utils.strip_pad(s["target"].data[i, :], self.pad)
                 yield id, src, ref, hypos[i]
 
-    def generate(self, src_tokens, src_lengths, beam_size=None, maxlen=None, prefix_tokens=None):
+    def generate(
+        self, src_tokens, src_lengths, beam_size=None, maxlen=None, prefix_tokens=None
+    ):
         """Generate a batch of translations."""
         with utils.maybe_no_grad():
-            return self._generate(src_tokens, src_lengths, beam_size, maxlen, prefix_tokens)
+            return self._generate(
+                src_tokens, src_lengths, beam_size, maxlen, prefix_tokens
+            )
 
-    def _generate(self, src_tokens, src_lengths, beam_size=None, maxlen=None, prefix_tokens=None):
+    def _generate(
+        self, src_tokens, src_lengths, beam_size=None, maxlen=None, prefix_tokens=None
+    ):
         bsz, srclen = src_tokens.size()
         maxlen = min(maxlen, self.maxlen) if maxlen is not None else self.maxlen
 
@@ -136,18 +155,19 @@ class SequenceGenerator(torch.nn.Module):
         # list of completed sentences
         finalized = [[] for i in range(bsz)]
         finished = [False for i in range(bsz)]
-        worst_finalized = [{'idx': None, 'score': -math.inf} for i in range(bsz)]
+        worst_finalized = [{"idx": None, "score": -math.inf} for i in range(bsz)]
         num_remaining_sent = bsz
 
         # number of candidate hypos per step
         cand_size = 2 * beam_size  # 2 x beam size in case half are EOS
 
         # offset arrays for converting between different indexing schemes
-        bbsz_offsets = (torch.arange(0, bsz)*beam_size).unsqueeze(1).type_as(tokens)
+        bbsz_offsets = (torch.arange(0, bsz) * beam_size).unsqueeze(1).type_as(tokens)
         cand_offsets = torch.arange(0, cand_size).type_as(tokens)
 
         # helper function for allocating buffers on the fly
         buffers = {}
+
         def buffer(name, type_of=tokens):  # noqa
             if name not in buffers:
                 buffers[name] = type_of.new()
@@ -168,7 +188,7 @@ class SequenceGenerator(torch.nn.Module):
                 best_unfinalized_score = unfinalized_scores[sent].max()
                 if self.normalize_scores:
                     best_unfinalized_score /= maxlen
-                if worst_finalized[sent]['score'] >= best_unfinalized_score:
+                if worst_finalized[sent]["score"] >= best_unfinalized_score:
                     return True
             return False
 
@@ -194,12 +214,14 @@ class SequenceGenerator(torch.nn.Module):
 
             # clone relevant token and attention tensors
             tokens_clone = tokens.index_select(0, bbsz_idx)
-            tokens_clone = tokens_clone[:, 1:step + 2]  # skip the first index, which is EOS
+            tokens_clone = tokens_clone[
+                :, 1 : step + 2
+            ]  # skip the first index, which is EOS
             tokens_clone[:, step] = self.eos
-            attn_clone = attn.index_select(0, bbsz_idx)[:, :, 1:step + 2]
+            attn_clone = attn.index_select(0, bbsz_idx)[:, :, 1 : step + 2]
 
             # compute scores per token position
-            pos_scores = scores.index_select(0, bbsz_idx)[:, :step + 1]
+            pos_scores = scores.index_select(0, bbsz_idx)[:, : step + 1]
             pos_scores[:, step] = eos_scores
             # convert from cumulative to per-position scores
             pos_scores[:, 1:] = pos_scores[:, 1:] - pos_scores[:, :-1]
@@ -210,10 +232,7 @@ class SequenceGenerator(torch.nn.Module):
 
             sents_seen = set()
             for i, (idx, score) in enumerate(
-                zip(
-                    bbsz_idx.tolist(),
-                    eos_scores.tolist(),
-                ),
+                zip(bbsz_idx.tolist(), eos_scores.tolist())
             ):
                 sent = idx // beam_size
                 sents_seen.add(sent)
@@ -221,30 +240,26 @@ class SequenceGenerator(torch.nn.Module):
                 def get_hypo():
                     _, alignment = attn_clone[i].max(dim=0)
                     return {
-                        'tokens': tokens_clone[i],
-                        'score': score,
-                        'attention': attn_clone[i],  # src_len x tgt_len
-                        'alignment': alignment,
-                        'positional_scores': pos_scores[i],
+                        "tokens": tokens_clone[i],
+                        "score": score,
+                        "attention": attn_clone[i],  # src_len x tgt_len
+                        "alignment": alignment,
+                        "positional_scores": pos_scores[i],
                     }
 
                 if len(finalized[sent]) < beam_size:
                     finalized[sent].append(get_hypo())
-                elif not self.stop_early and score > worst_finalized[sent]['score']:
+                elif not self.stop_early and score > worst_finalized[sent]["score"]:
                     # replace worst hypo for this sentence with new/better one
-                    worst_idx = worst_finalized[sent]['idx']
+                    worst_idx = worst_finalized[sent]["idx"]
                     if worst_idx is not None:
                         finalized[sent][worst_idx] = get_hypo()
 
                     # find new worst finalized hypo for this sentence
                     idx, s = min(
-                        enumerate(finalized[sent]),
-                        key=lambda r: r[1]['score'],
+                        enumerate(finalized[sent]), key=lambda r: r[1]["score"]
                     )
-                    worst_finalized[sent] = {
-                        'score': s['score'],
-                        'idx': idx,
-                    }
+                    worst_finalized[sent] = {"score": s["score"], "idx": idx}
 
             # return number of hypotheses finished this step
             num_finished = 0
@@ -262,10 +277,12 @@ class SequenceGenerator(torch.nn.Module):
                 for model in self.models:
                     if isinstance(model.decoder, FairseqIncrementalDecoder):
                         model.decoder.reorder_incremental_state(
-                            incremental_states[model], reorder_state)
+                            incremental_states[model], reorder_state
+                        )
 
             decode_output = self._decode(
-                tokens[:, :step + 1], encoder_outs, incremental_states)
+                tokens[:, : step + 1], encoder_outs, incremental_states
+            )
             if len(decode_output) == 3:
                 probs, avg_attn_scores, possible_translation_tokens = decode_output
             else:
@@ -291,11 +308,11 @@ class SequenceGenerator(torch.nn.Module):
             # Record attention scores
             attn[:, :, step + 1].copy_(avg_attn_scores)
 
-            cand_scores = buffer('cand_scores', type_of=scores)
-            cand_indices = buffer('cand_indices')
-            cand_beams = buffer('cand_beams')
-            eos_bbsz_idx = buffer('eos_bbsz_idx')
-            eos_scores = buffer('eos_scores', type_of=scores)
+            cand_scores = buffer("cand_scores", type_of=scores)
+            cand_indices = buffer("cand_indices")
+            cand_beams = buffer("cand_beams")
+            eos_bbsz_idx = buffer("eos_bbsz_idx")
+            eos_scores = buffer("eos_scores", type_of=scores)
             if step < maxlen:
                 if prefix_tokens is not None and step < prefix_tokens.size(1):
                     probs_slice = probs.view(bsz, -1, probs.size(-1))[:, 0, :]
@@ -303,15 +320,21 @@ class SequenceGenerator(torch.nn.Module):
                         probs_slice,
                         dim=1,
                         index=prefix_tokens[:, step].view(-1, 1).data,
-                    ).expand(-1, cand_size)
-                    cand_indices = prefix_tokens[:, step].view(-1, 1).expand(bsz, cand_size).data
+                    ).expand(
+                        -1, cand_size
+                    )
+                    cand_indices = prefix_tokens[:, step].view(-1, 1).expand(
+                        bsz, cand_size
+                    ).data
                     cand_beams.resize_as_(cand_indices).fill_(0)
                 else:
                     # take the best 2 x beam_size predictions. We'll choose the first
                     # beam_size of these which don't predict eos to continue with.
                     torch.topk(
                         probs.view(bsz, -1),
-                        k=min(cand_size, probs.view(bsz, -1).size(1) - 1),  # -1 so we never select pad
+                        k=min(
+                            cand_size, probs.view(bsz, -1).size(1) - 1
+                        ),  # -1 so we never select pad
                         out=(cand_scores, cand_indices),
                     )
                     possible_tokens_size = self.vocab_size
@@ -321,11 +344,9 @@ class SequenceGenerator(torch.nn.Module):
                     cand_indices.fmod_(possible_tokens_size)
                     if possible_translation_tokens is not None:
                         possible_translation_tokens = possible_translation_tokens.view(
-                            1,
-                            possible_tokens_size,
+                            1, possible_tokens_size
                         ).expand(
-                            cand_indices.size(0),
-                            possible_tokens_size,
+                            cand_indices.size(0), possible_tokens_size
                         ).data
                         cand_indices = torch.gather(
                             possible_translation_tokens,
@@ -337,12 +358,9 @@ class SequenceGenerator(torch.nn.Module):
                 # finalize all active hypotheses once we hit maxlen
                 # pick the hypothesis with the highest prob of EOS right now
                 torch.sort(
-                    probs[:, self.eos],
-                    descending=True,
-                    out=(eos_scores, eos_bbsz_idx),
+                    probs[:, self.eos], descending=True, out=(eos_scores, eos_bbsz_idx)
                 )
-                num_remaining_sent -= finalize_hypos(
-                    step, eos_bbsz_idx, eos_scores)
+                num_remaining_sent -= finalize_hypos(step, eos_bbsz_idx, eos_scores)
                 assert num_remaining_sent == 0
                 break
 
@@ -367,7 +385,8 @@ class SequenceGenerator(torch.nn.Module):
                         out=eos_scores,
                     )
                     num_remaining_sent -= finalize_hypos(
-                        step, eos_bbsz_idx, eos_scores, cand_scores)
+                        step, eos_bbsz_idx, eos_scores, cand_scores
+                    )
 
             assert num_remaining_sent >= 0
             if num_remaining_sent == 0:
@@ -377,16 +396,16 @@ class SequenceGenerator(torch.nn.Module):
             # set active_mask so that values > cand_size indicate eos hypos
             # and values < cand_size indicate candidate active hypos.
             # After, the min values per row are the top candidate active hypos
-            active_mask = buffer('active_mask')
+            active_mask = buffer("active_mask")
             torch.add(
                 eos_mask.type_as(cand_offsets) * cand_size,
-                cand_offsets[:eos_mask.size(1)],
+                cand_offsets[: eos_mask.size(1)],
                 out=active_mask,
             )
 
             # get the top beam_size active hypotheses, which are just the hypos
             # with the smallest values in active_mask
-            active_hypos, _ignore = buffer('active_hypos'), buffer('_ignore')
+            active_hypos, _ignore = buffer("active_hypos"), buffer("_ignore")
             torch.topk(
                 active_mask,
                 k=beam_size,
@@ -394,13 +413,8 @@ class SequenceGenerator(torch.nn.Module):
                 largest=False,
                 out=(_ignore, active_hypos),
             )
-            active_bbsz_idx = buffer('active_bbsz_idx')
-            torch.gather(
-                cand_bbsz_idx,
-                dim=1,
-                index=active_hypos,
-                out=active_bbsz_idx,
-            )
+            active_bbsz_idx = buffer("active_bbsz_idx")
+            torch.gather(cand_bbsz_idx, dim=1, index=active_hypos, out=active_bbsz_idx)
             active_scores = torch.gather(
                 cand_scores,
                 dim=1,
@@ -412,27 +426,37 @@ class SequenceGenerator(torch.nn.Module):
 
             # copy tokens and scores for active hypotheses
             torch.index_select(
-                tokens[:, :step + 1], dim=0, index=active_bbsz_idx,
-                out=tokens_buf[:, :step + 1],
+                tokens[:, : step + 1],
+                dim=0,
+                index=active_bbsz_idx,
+                out=tokens_buf[:, : step + 1],
             )
             torch.gather(
-                cand_indices, dim=1, index=active_hypos,
+                cand_indices,
+                dim=1,
+                index=active_hypos,
                 out=tokens_buf.view(bsz, beam_size, -1)[:, :, step + 1],
             )
             if step > 0:
                 torch.index_select(
-                    scores[:, :step], dim=0, index=active_bbsz_idx,
+                    scores[:, :step],
+                    dim=0,
+                    index=active_bbsz_idx,
                     out=scores_buf[:, :step],
                 )
             torch.gather(
-                cand_scores, dim=1, index=active_hypos,
+                cand_scores,
+                dim=1,
+                index=active_hypos,
                 out=scores_buf.view(bsz, beam_size, -1)[:, :, step],
             )
 
             # copy attention for active hypotheses
             torch.index_select(
-                attn[:, :, :step + 2], dim=0, index=active_bbsz_idx,
-                out=attn_buf[:, :, :step + 2],
+                attn[:, :, : step + 2],
+                dim=0,
+                index=active_bbsz_idx,
+                out=attn_buf[:, :, : step + 2],
             )
 
             # swap buffers
@@ -452,9 +476,7 @@ class SequenceGenerator(torch.nn.Module):
         # sort by score descending
         for sent in range(bsz):
             finalized[sent] = sorted(
-                finalized[sent],
-                key=lambda r: r['score'],
-                reverse=True,
+                finalized[sent], key=lambda r: r["score"], reverse=True
             )
 
         return finalized
@@ -468,11 +490,7 @@ class SequenceGenerator(torch.nn.Module):
         for model, encoder_out in zip(self.models, encoder_outs):
             with utils.maybe_no_grad():
                 decoder_out = list(
-                    model.decoder(
-                        tokens,
-                        encoder_out,
-                        incremental_states[model],
-                    ),
+                    model.decoder(tokens, encoder_out, incremental_states[model])
                 )
                 decoder_out[0] = decoder_out[0][:, -1, :]
                 attn = decoder_out[1]

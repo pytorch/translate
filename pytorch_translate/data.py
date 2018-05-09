@@ -73,22 +73,21 @@ def load_raw_text_dataset(
     prev_source_dialect = None
     prev_target_dialect = None
 
-    for split, corpus in [
-        (train_split, train_corpus),
-        (eval_split, eval_corpus),
-    ]:
+    for split, corpus in [(train_split, train_corpus), (eval_split, eval_corpus)]:
         # Sanity check that all language directions are consistent until this
         # has been updated to support multilingual corpora.
         if prev_source_dialect is None and prev_target_dialect is None:
             prev_source_dialect = corpus.source.dialect
             prev_target_dialect = corpus.target.dialect
-        elif (prev_source_dialect != corpus.source.dialect or
-                prev_target_dialect != corpus.target.dialect):
+        elif (
+            prev_source_dialect != corpus.source.dialect
+            or prev_target_dialect != corpus.target.dialect
+        ):
             raise ValueError(
-                f'We currently only support monolingual directions - expected '
-                f'{prev_source_dialect}->{prev_target_dialect} for all corpora, '
-                f'but found {corpus.source.dialect}->{corpus.target.dialect} for '
-                f'split {split}'
+                f"We currently only support monolingual directions - expected "
+                f"{prev_source_dialect}->{prev_target_dialect} for all corpora, "
+                f"but found {corpus.source.dialect}->{corpus.target.dialect} for "
+                f"split {split}"
             )
 
         dataset.splits[split] = make_language_pair_dataset(
@@ -109,9 +108,9 @@ def build_vocab_from_corpus(
     max_vocab_size: int,
     tokens_with_penalty: Optional[str] = None,
 ):
-    vocab_file = os.path.join(save_dir, f'dictionary-{dialect}.txt')
+    vocab_file = os.path.join(save_dir, f"dictionary-{dialect}.txt")
     d = pytorch_translate_dictionary.Dictionary()
-    with open(corpus_file, 'r') as f:
+    with open(corpus_file, "r") as f:
         for line in f:
             tokens = line.split()
             for t in tokens:
@@ -121,7 +120,7 @@ def build_vocab_from_corpus(
     if tokens_with_penalty:
         # Assume input tokens are unique
         lexicon = []
-        with open(tokens_with_penalty, 'r', encoding='utf-8') as f:
+        with open(tokens_with_penalty, "r", encoding="utf-8") as f:
             for line in f:
                 tokens = line.strip().split()
                 if len(tokens) == 1:
@@ -133,11 +132,11 @@ def build_vocab_from_corpus(
 
     d.finalize()
     d.save(vocab_file, threshold=0, nwords=max_vocab_size)
-    print(f'Generated new vocab file saved at {vocab_file}.')
+    print(f"Generated new vocab file saved at {vocab_file}.")
     if max_vocab_size < 0:
-        print('No maximum vocab sized enforced.')
+        print("No maximum vocab sized enforced.")
     else:
-        print(f'Maximum vocab size {max_vocab_size}')
+        print(f"Maximum vocab size {max_vocab_size}")
 
     return vocab_file
 
@@ -154,7 +153,7 @@ def build_vocab_if_nonexistent(
         return vocab_file
     # Vocab file is either unspecified or does not exist
     if vocab_file and not os.path.isfile(vocab_file):
-        print(f'Vocab file {vocab_file} does not exist.')
+        print(f"Vocab file {vocab_file} does not exist.")
     return build_vocab_from_corpus(
         corpus_file=corpus_file,
         dialect=dialect,
