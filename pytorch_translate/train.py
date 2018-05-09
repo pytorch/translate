@@ -147,6 +147,13 @@ def get_parser_with_args():
         'calculating validation loss and BLEU eval scores. '
         'This overrides what would be loaded from the data dir.',
     )
+    group.add_argument(
+        '--penalized-target-tokens-file',
+        default='',
+        metavar='FILE',
+        help='Path to text file of tokens to receive a penalty in decoding.'
+        'If left empty, no penalty will be applied',
+    )
 
     # Adds args related to checkpointing.
     group = parser.add_argument_group('Checkpointing')
@@ -1050,7 +1057,9 @@ def main(args):
 
     # Set distributed training parameters for a single node.
     args.distributed_world_size = torch.cuda.device_count()
-    args.distributed_init_method = f'tcp://localhost:{random.randint(10000, 20000)}'
+    args.distributed_init_method = (
+        f'tcp://localhost:{random.randint(10000, 20000)}'
+    )
 
     if args.distributed_world_size == 1:
         return single_process_main(args)

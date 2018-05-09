@@ -16,5 +16,5 @@ class DbPredictor : public ::caffe2::Predictor {
   ~DbPredictor() {}
 };
 
-}  // namespace translate
-}  // namespace pytorch
+} // namespace translate
+} // namespace pytorch

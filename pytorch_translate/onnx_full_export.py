@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import numpy as np
-import torch
 
 from pytorch_translate import rnn  # noqa
 from pytorch_translate.ensemble_export import BeamSearch
@@ -71,16 +69,6 @@ def main():
         word_penalty=args.word_penalty,
         unk_penalty=args.unk_penalty,
     )
-
-    src_dict = beam_search.models[0].src_dict
-    token_list = [src_dict.unk()] * 4 + [src_dict.eos()]
-    src_tokens = torch.LongTensor(
-        np.array(token_list, dtype='int64').reshape(-1, 1),
-    )
-    src_lengths = torch.IntTensor(
-        np.array([len(token_list)], dtype='int32'),
-    )
-
     beam_search.save_to_db(
         args.output_file,
     )

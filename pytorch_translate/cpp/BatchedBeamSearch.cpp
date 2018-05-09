@@ -13,9 +13,10 @@
 namespace pytorch {
 namespace translate {
 
-BatchedBeamSearch::BatchedBeamSearch(const std::string& encoderModel,
-                                     const std::string& decoderStepModel,
-                                     int beamSize)
+BatchedBeamSearch::BatchedBeamSearch(
+    const std::string& encoderModel,
+    const std::string& decoderStepModel,
+    int beamSize)
     : beamSize_(beamSize) {
   encoder_workspace_.reset(new ::caffe2::Workspace());
   encoder_.reset(new ::pytorch::translate::DbPredictor(
@@ -26,17 +27,19 @@ BatchedBeamSearch::BatchedBeamSearch(const std::string& encoderModel,
 }
 
 BeamSearchOutput BatchedBeamSearch::beamSearch(
-    const std::vector<int>& numberizedInput, int maxOutputSeqLen,
+    const std::vector<int>& numberizedInput,
+    int maxOutputSeqLen,
     bool reverseSource) {
   // first element of result vectors corresponds to input (unused)
   std::vector<std::vector<int>> tokenBeamList(1, std::vector<int>(beamSize_));
-  std::vector<std::vector<float>> scoreBeamList(1,
-                                                std::vector<float>(beamSize_));
-  std::vector<std::vector<int>> prevIndexBeamList(1,
-                                                  std::vector<int>(beamSize_));
+  std::vector<std::vector<float>> scoreBeamList(
+      1, std::vector<float>(beamSize_));
+  std::vector<std::vector<int>> prevIndexBeamList(
+      1, std::vector<int>(beamSize_));
   std::vector<std::vector<std::vector<float>>> attentionWeightsBeamList(
-      1, std::vector<std::vector<float>>(
-             beamSize_, std::vector<float>(numberizedInput.size())));
+      1,
+      std::vector<std::vector<float>>(
+          beamSize_, std::vector<float>(numberizedInput.size())));
 
   RawTensorMap trackRawPointers;
 
@@ -96,12 +99,20 @@ BeamSearchOutput BatchedBeamSearch::beamSearch(
         tensorToVector2D<float>(*stepOutputMap["attention_weights_average"]));
 
     stepInputMap = prepareNextInputStepMap(
-        encoder_->output_names(), decoderStep_->output_names(),
-        encoderOutputMap, stepOutputMap, decoderStep + 1, &trackRawPointers);
+        encoder_->output_names(),
+        decoderStep_->output_names(),
+        encoderOutputMap,
+        stepOutputMap,
+        decoderStep + 1,
+        &trackRawPointers);
   }
 
-  BeamSearchOutput output(maxOutputSeqLen, tokenBeamList, scoreBeamList,
-                          prevIndexBeamList, attentionWeightsBeamList);
+  BeamSearchOutput output(
+      maxOutputSeqLen,
+      tokenBeamList,
+      scoreBeamList,
+      prevIndexBeamList,
+      attentionWeightsBeamList);
   // Clean up memory used by intermediate tensors/blobs.
   for (const auto& kv : trackRawPointers) {
     kv.second(kv.first);
@@ -111,19 +122,20 @@ BeamSearchOutput BatchedBeamSearch::beamSearch(
 
 TensorMap BatchedBeamSearch::prepareInitialNextInputStepMap(
     const std::vector<std::string>& encoderOutputNames,
-    const TensorMap& encoderOutputMap, RawTensorMap* trackRawPointers) {
-  std::regex encoderOutputRegex("encoder_output_([0-9]+)",
-                                std::regex_constants::extended);
-  std::regex initialStateRegex("initial_state_([0-9]+)",
-                               std::regex_constants::extended);
+    const TensorMap& encoderOutputMap,
+    RawTensorMap* trackRawPointers) {
+  std::regex encoderOutputRegex(
+      "encoder_output_([0-9]+)", std::regex_constants::extended);
+  std::regex initialStateRegex(
+      "initial_state_([0-9]+)", std::regex_constants::extended);
   std::smatch regexMatch;
   TensorMap initialInputStepMap;
   for (const std::string& encoderOutputName : encoderOutputNames) {
     if (std::regex_search(encoderOutputName, regexMatch, encoderOutputRegex)) {
       initialInputStepMap["fixed_input_" + regexMatch.str(1)] =
           encoderOutputMap.at(encoderOutputName);
-    } else if (std::regex_search(encoderOutputName, regexMatch,
-                                 initialStateRegex)) {
+    } else if (std::regex_search(
+                   encoderOutputName, regexMatch, initialStateRegex)) {
       initialInputStepMap["state_input_" + regexMatch.str(1)] =
           encoderOutputMap.at(encoderOutputName);
     } else if (encoderOutputName == "possible_translation_tokens") {
@@ -178,12 +190,14 @@ TensorMap BatchedBeamSearch::prepareInitialNextInputStepMap(
 TensorMap BatchedBeamSearch::prepareNextInputStepMap(
     const std::vector<std::string>& encoderOutputNames,
     const std::vector<std::string>& stepOutputNames,
-    TensorMap& encoderOutputMap, const TensorMap& stepOutputMap, int timeStep,
+    TensorMap& encoderOutputMap,
+    const TensorMap& stepOutputMap,
+    int timeStep,
     RawTensorMap* trackRawPointers) {
-  std::regex encoderOutputRegex("encoder_output_([0-9]+)",
-                                std::regex_constants::extended);
-  std::regex stepOutputRegex("state_output_([0-9]+)",
-                             std::regex_constants::extended);
+  std::regex encoderOutputRegex(
+      "encoder_output_([0-9]+)", std::regex_constants::extended);
+  std::regex stepOutputRegex(
+      "state_output_([0-9]+)", std::regex_constants::extended);
   std::smatch regexMatch;
   TensorMap inputStepMap;
 
@@ -191,8 +205,8 @@ TensorMap BatchedBeamSearch::prepareNextInputStepMap(
     // Encoder outputs tiled in place from shape (max_src_len, 1, H)
     // to (max_src_len, beam_size, H) on sencond step (used by all future steps)
     for (const std::string& encoderOutputName : encoderOutputNames) {
-      if (std::regex_search(encoderOutputName, regexMatch,
-                            encoderOutputRegex)) {
+      if (std::regex_search(
+              encoderOutputName, regexMatch, encoderOutputRegex)) {
         caffe2::TensorCPU* untiledTensor = encoderOutputMap[encoderOutputName];
 
         auto tiledEncoderOutputsBlob = caffe2::make_unique<caffe2::Blob>();
@@ -208,8 +222,10 @@ TensorMap BatchedBeamSearch::prepareNextInputStepMap(
           for (int j = 0; j < beamSize_; ++j) {
             auto tiledIndex = i * beamSize_ * hiddenSize + j * hiddenSize;
             auto untiledIndex = i * hiddenSize;
-            memcpy(tiledEncoderOutputPointer + tiledIndex,
-                   untiledPointer + untiledIndex, sizeof(float) * hiddenSize);
+            memcpy(
+                tiledEncoderOutputPointer + tiledIndex,
+                untiledPointer + untiledIndex,
+                sizeof(float) * hiddenSize);
           }
         }
         encoderOutputMap[encoderOutputName] = tiledEncoderOutputTensor;
@@ -254,5 +270,5 @@ TensorMap BatchedBeamSearch::prepareNextInputStepMap(
   return inputStepMap;
 }
 
-}  // namespace translate
-}  // namespace pytorch
+} // namespace translate
+} // namespace pytorch

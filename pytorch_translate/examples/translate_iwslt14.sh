@@ -8,9 +8,12 @@
 # Sample usage:
 # echo "hallo welt" | bash pytorch_translate/examples/translate_iwslt14.sh
 
-export CONDA_PATH="$(dirname $(which conda))/../"
-export NCCL_ROOT_DIR="$(pwd)/nccl_2.1.15-1+cuda8.0_x86_64"
-export LD_LIBRARY_PATH="${CONDA_PATH}/lib:${NCCL_ROOT_DIR}/lib:${LD_LIBRARY_PATH}"
+CONDA_PATH="$(dirname "$(which conda)")/../"
+export CONDA_PATH
+NCCL_ROOT_DIR="$(pwd)/nccl_2.1.15-1+cuda8.0_x86_64"
+export NCCL_ROOT_DIR
+LD_LIBRARY_PATH="${CONDA_PATH}/lib:${NCCL_ROOT_DIR}/lib:${LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH
 
 cat | pytorch_translate/cpp/build/translation_decoder \
   --encoder_model "encoder.pb" \

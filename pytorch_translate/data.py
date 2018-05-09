@@ -107,6 +107,7 @@ def build_vocab_from_corpus(
     dialect: str,
     save_dir: str,
     max_vocab_size: int,
+    tokens_with_penalty: Optional[str] = None,
 ):
     vocab_file = os.path.join(save_dir, f'dictionary-{dialect}.txt')
     d = pytorch_translate_dictionary.Dictionary()
@@ -115,6 +116,20 @@ def build_vocab_from_corpus(
             tokens = line.split()
             for t in tokens:
                 token_index = d.add_symbol(t)
+
+    # Set indices to receive penalty
+    if tokens_with_penalty:
+        # Assume input tokens are unique
+        lexicon = []
+        with open(tokens_with_penalty, 'r', encoding='utf-8') as f:
+            for line in f:
+                tokens = line.strip().split()
+                if len(tokens) == 1:
+                    lexicon.append(tokens[0])
+
+        for token, token_index in d.indices.items():
+            if token in lexicon:
+                d.lexicon_indices.add(token_index)
 
     d.finalize()
     d.save(vocab_file, threshold=0, nwords=max_vocab_size)
@@ -133,6 +148,7 @@ def build_vocab_if_nonexistent(
     dialect: str,
     save_dir: str,
     max_vocab_size: int,
+    tokens_with_penalty: str = None,
 ):
     if vocab_file and os.path.isfile(vocab_file):
         return vocab_file
@@ -144,4 +160,5 @@ def build_vocab_if_nonexistent(
         dialect=dialect,
         save_dir=save_dir,
         max_vocab_size=max_vocab_size,
+        tokens_with_penalty=tokens_with_penalty,
     )

@@ -18,6 +18,7 @@ class Dictionary(dictionary.Dictionary):
         self.symbols = []
         self.count = []
         self.indices = {}
+        self.lexicon_indices = set()
 
         self.pad_index = self.add_symbol(pad)
         assert self.pad_index == vocab_constants.PAD_ID
@@ -38,6 +39,9 @@ class Dictionary(dictionary.Dictionary):
 
         self.nspecial = len(self.symbols)
         assert self.nspecial == max_special_tokens
+
+    def lexicon_indices_list(self):
+        return list(self.lexicon_indices)
 
 
 class CharDictionary(Dictionary):

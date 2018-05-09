@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import argparse
 import os
 import torch
 
@@ -28,7 +27,7 @@ def _generate_score(models, args, dataset, dataset_split):
 
     # Load ensemble
     if not args.quiet:
-        print(f"| loading model(s) from {', '.join(args.path)}")
+        print('| loading model(s) from {}'.format(', '.join(args.path)))
 
     # Optimize ensemble for generation
     for model in models:
@@ -112,8 +111,10 @@ def _generate_score(models, args, dataset, dataset_split):
 
                 if not args.quiet:
                     print(f"H-{sample_id}\t{hypo['score']}\t{hypo_str}")
-                    print(f"A-{sample_id}\t{' '.join(map(lambda x: str(utils.item(x)), alignment))}")
-
+                    print('A-{}\t{}'.format(
+                        sample_id,
+                        ' '.join(map(lambda x: str(utils.item(x)), alignment))
+                    ))
 
                 # Score only the top hypothesis
                 if i == 0:
@@ -214,8 +215,8 @@ def main():
 
 def assert_test_corpus_and_vocab_files_specified(args):
     assert not args.data, (
-        'Specifying a data directory is disabled in PyTorch Translate since '
-        'the fairseq data class is not supported. Please specify '
+        'Specifying a data directory is disabled in FBTranslate since the '
+        'fairseq data class is not supported. Please specify '
         '--train-source-text-file, --train-target-text-file, '
         '--eval-source-text-file, and  --eval-target-text-file instead.'
     )
@@ -269,6 +270,7 @@ def generate(args):
         append_eos=model_args.append_eos_to_source,
         reverse_source=model_args.reverse_source,
     )
+
     if args.source_lang is None or args.target_lang is None:
         # record inferred languages in args
         args.source_lang, args.target_lang = dataset.src, dataset.dst
@@ -276,7 +278,6 @@ def generate(args):
     print(f'| [{dataset.src}] dictionary: {dataset.src_dict} types')
     print(f'| [{dataset.dst}] dictionary: {len(dataset.dst_dict)} types')
     print(f'| {args.gen_subset} {len(dataset.splits[args.gen_subset])} examples')
-
     scorer, num_sentences, gen_timer = _generate_score(
         models=models,
         args=args,

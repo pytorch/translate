@@ -16,6 +16,7 @@ class SequenceGenerator(torch.nn.Module):
         normalize_scores=True,
         len_penalty=1,
         unk_penalty=0,
+        lexicon_penalty=0,
         retain_dropout=False,
         word_reward=0,
     ):
@@ -48,6 +49,8 @@ class SequenceGenerator(torch.nn.Module):
         self.normalize_scores = normalize_scores
         self.len_penalty = len_penalty
         self.unk_penalty = unk_penalty
+        self.lexicon_penalty = lexicon_penalty
+        self.lexicon_indices = models[0].dst_dict.lexicon_indices_list()
         self.retain_dropout = retain_dropout
         self.word_reward = word_reward
 
@@ -279,6 +282,8 @@ class SequenceGenerator(torch.nn.Module):
                 probs.add_(scores[:, step - 1].view(-1, 1))
             probs[:, self.pad] = -math.inf  # never select pad
             probs[:, self.unk] -= self.unk_penalty  # apply unk penalty
+            # external lexicon penalty
+            probs[:, self.lexicon_indices] -= self.lexicon_penalty
 
             probs += self.word_reward
             probs[:, self.eos] -= self.word_reward

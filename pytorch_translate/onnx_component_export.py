@@ -12,7 +12,7 @@ from pytorch_translate.ensemble_export import (
 )
 
 
-def main():
+def get_parser_with_args():
     parser = argparse.ArgumentParser(
         description=(
             'Export PyTorch-trained FBTranslate models to Caffe2 components'
@@ -25,65 +25,74 @@ def main():
         help='PyTorch checkpoint file (at least one required)',
     )
     parser.add_argument(
-        '--encoder_output_file',
+        '--encoder-output-file',
         default='',
         help='File name to which to save encoder ensemble network',
     )
     parser.add_argument(
-        '--decoder_output_file',
+        '--decoder-output-file',
         default='',
         help='File name to which to save decoder step ensemble network',
     )
     parser.add_argument(
-        '--src_dict',
+        '--source-vocab-file',
         required=True,
         help='File encoding PyTorch dictionary for source language',
     )
     parser.add_argument(
-        '--dst_dict',
+        '--target-vocab-file',
         required=True,
         help='File encoding PyTorch dictionary for source language',
     )
     parser.add_argument(
-        '--beam_size',
+        '--beam-size',
         type=int,
         default=6,
         help='Number of top candidates returned by each decoder step',
     )
     parser.add_argument(
-        '--word_penalty',
+        '--word-penalty',
         type=float,
         default=0.0,
         help='Value to add for each word (besides EOS)',
     )
     parser.add_argument(
-        '--unk_penalty',
+        '--unk-penalty',
         type=float,
         default=0.0,
         help='Value to add for each word UNK token',
     )
     parser.add_argument(
-        '--batched_beam',
+        '--batched-beam',
         action='store_true',
         help='Decoder step has entire beam as input/output',
     )
+    return parser
 
-    args = parser.parse_args()
 
+def assert_required_args_are_set(args):
     if args.encoder_output_file == args.decoder_output_file == '':
         print(
             'No action taken. Need at least one of --encoder_output_file '
             'and --decoder_output_file.'
         )
-        parser.print_help()
         return
 
-    checkpoint_filenames = [arg[0] for arg in args.checkpoint]
+
+def main():
+    parser = get_parser_with_args()
+    args = parser.parse_args()
+    export(args)
+
+
+def export(args):
+    assert_required_args_are_set(args)
+    checkpoint_filenames = [arg[0] for arg in args.path]
 
     encoder_ensemble = EncoderEnsemble.build_from_checkpoints(
         checkpoint_filenames=checkpoint_filenames,
-        src_dict_filename=args.src_dict,
-        dst_dict_filename=args.dst_dict,
+        src_dict_filename=args.source_vocab_file,
+        dst_dict_filename=args.target_vocab_file,
     )
     if args.encoder_output_file != '':
         encoder_ensemble.save_to_db(args.encoder_output_file)
@@ -95,8 +104,8 @@ def main():
             decoder_step_class = DecoderStepEnsemble
         decoder_step_ensemble = decoder_step_class.build_from_checkpoints(
             checkpoint_filenames=checkpoint_filenames,
-            src_dict_filename=args.src_dict,
-            dst_dict_filename=args.dst_dict,
+            src_dict_filename=args.source_vocab_file,
+            dst_dict_filename=args.target_vocab_file,
             beam_size=args.beam_size,
             word_penalty=args.word_penalty,
             unk_penalty=args.unk_penalty,

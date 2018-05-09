@@ -838,7 +838,7 @@ class BeamSearch(torch.jit.ScriptModule):
         for i in range(num_steps - 1):
             (prev_token, prev_scores, prev_hypos_indices, attn_weights,
              *states) = \
-              self.decoder_ens(prev_token, prev_scores, i + 1, *states)
+                self.decoder_ens(prev_token, prev_scores, i + 1, *states)
 
             all_tokens = torch.cat(
                 (all_tokens, prev_token.unsqueeze(dim=0)),

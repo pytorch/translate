@@ -12,10 +12,11 @@
 namespace pytorch {
 namespace translate {
 
-Dictionary::Dictionary(const std::string& file_path,
-                       const std::string& padSymbol,
-                       const std::string& eosSymbol,
-                       const std::string& unkSymbol)
+Dictionary::Dictionary(
+    const std::string& file_path,
+    const std::string& padSymbol,
+    const std::string& eosSymbol,
+    const std::string& unkSymbol)
     : padSymbol_(padSymbol), eosSymbol_(eosSymbol), unkSymbol_(unkSymbol) {
   idToToken_.reserve(kMaxSpecialTokens);
   tokenToId_.reserve(kMaxSpecialTokens);
@@ -79,8 +80,10 @@ std::vector<std::string> Dictionary::tokenize(const std::string& line) {
   // default.
   std::vector<std::string> output;
   std::istringstream stringStream(line, std::ios_base::out);
-  copy(std::istream_iterator<std::string>(stringStream),
-       std::istream_iterator<std::string>(), back_inserter(output));
+  copy(
+      std::istream_iterator<std::string>(stringStream),
+      std::istream_iterator<std::string>(),
+      back_inserter(output));
   return output;
 }
 
@@ -113,5 +116,5 @@ std::vector<std::string> Dictionary::denumberize(
   return tokens;
 }
 
-}  // namespace translate
-}  // namespace pytorch
+} // namespace translate
+} // namespace pytorch

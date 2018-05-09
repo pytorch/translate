@@ -1,12 +1,17 @@
+#!/usr/bin/env python3
+
 from setuptools import setup, find_packages
+
 
 def readme():
     with open('README.md') as f:
         return f.read()
 
+
 def requirements():
     with open('requirements.txt') as f:
         return f.read()
+
 
 setup(
     name='pytorch-translate',
