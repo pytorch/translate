@@ -9,9 +9,9 @@ class Dictionary(dictionary.Dictionary):
 
     def __init__(
         self,
-        pad='<pad>',
-        eos='</s>',
-        unk='<unk>',
+        pad="<pad>",
+        eos="</s>",
+        unk="<unk>",
         max_special_tokens=vocab_constants.MAX_SPECIAL_TOKENS,
     ):
         self.unk_word, self.pad_word, self.eos_word = unk, pad, eos
@@ -24,7 +24,7 @@ class Dictionary(dictionary.Dictionary):
         assert self.pad_index == vocab_constants.PAD_ID
 
         # Adds a junk symbol for vocab_constants' GO_ID
-        self.add_symbol('<reserved>')
+        self.add_symbol("<reserved>")
 
         self.eos_index = self.add_symbol(eos)
         assert self.eos_index == vocab_constants.EOS_ID
@@ -35,7 +35,7 @@ class Dictionary(dictionary.Dictionary):
         # Adds junk symbols to pad up to the number of special tokens.
         num_reserved = max_special_tokens - len(self.symbols)
         for i in range(num_reserved):
-            self.add_symbol(f'<reserved_{i}>')
+            self.add_symbol(f"<reserved_{i}>")
 
         self.nspecial = len(self.symbols)
         assert self.nspecial == max_special_tokens
@@ -47,14 +47,10 @@ class Dictionary(dictionary.Dictionary):
 class CharDictionary(Dictionary):
     """Character vocab with its additonal special tokens."""
 
-    def __init__(
-        self,
-        word_delim='<space>',
-        **kwargs,
-    ):
+    def __init__(self, word_delim="<space>", **kwargs):
         super().__init__(**kwargs)
         self.word_delim = word_delim
-        self.bow_index = self.add_symbol('<bow>')
-        self.eow_index = self.add_symbol('<eow>')
+        self.bow_index = self.add_symbol("<bow>")
+        self.eow_index = self.add_symbol("<eow>")
         self.word_delim_index = self.add_symbol(word_delim)
         self.nspecial += 3

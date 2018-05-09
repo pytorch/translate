@@ -14,67 +14,65 @@ from pytorch_translate.ensemble_export import (
 
 def get_parser_with_args():
     parser = argparse.ArgumentParser(
-        description=(
-            'Export PyTorch-trained FBTranslate models to Caffe2 components'
-        ),
+        description=("Export PyTorch-trained FBTranslate models to Caffe2 components")
     )
     parser.add_argument(
-        '--checkpoint',
-        action='append',
-        nargs='+',
-        help='PyTorch checkpoint file (at least one required)',
+        "--checkpoint",
+        action="append",
+        nargs="+",
+        help="PyTorch checkpoint file (at least one required)",
     )
     parser.add_argument(
-        '--encoder-output-file',
-        default='',
-        help='File name to which to save encoder ensemble network',
+        "--encoder-output-file",
+        default="",
+        help="File name to which to save encoder ensemble network",
     )
     parser.add_argument(
-        '--decoder-output-file',
-        default='',
-        help='File name to which to save decoder step ensemble network',
+        "--decoder-output-file",
+        default="",
+        help="File name to which to save decoder step ensemble network",
     )
     parser.add_argument(
-        '--source-vocab-file',
+        "--source-vocab-file",
         required=True,
-        help='File encoding PyTorch dictionary for source language',
+        help="File encoding PyTorch dictionary for source language",
     )
     parser.add_argument(
-        '--target-vocab-file',
+        "--target-vocab-file",
         required=True,
-        help='File encoding PyTorch dictionary for source language',
+        help="File encoding PyTorch dictionary for source language",
     )
     parser.add_argument(
-        '--beam-size',
+        "--beam-size",
         type=int,
         default=6,
-        help='Number of top candidates returned by each decoder step',
+        help="Number of top candidates returned by each decoder step",
     )
     parser.add_argument(
-        '--word-penalty',
+        "--word-penalty",
         type=float,
         default=0.0,
-        help='Value to add for each word (besides EOS)',
+        help="Value to add for each word (besides EOS)",
     )
     parser.add_argument(
-        '--unk-penalty',
+        "--unk-penalty",
         type=float,
         default=0.0,
-        help='Value to add for each word UNK token',
+        help="Value to add for each word UNK token",
     )
     parser.add_argument(
-        '--batched-beam',
-        action='store_true',
-        help='Decoder step has entire beam as input/output',
+        "--batched-beam",
+        action="store_true",
+        help="Decoder step has entire beam as input/output",
     )
     return parser
 
 
 def assert_required_args_are_set(args):
-    if args.encoder_output_file == args.decoder_output_file == '':
+    if args.encoder_output_file == args.decoder_output_file == "":
         print(
-            'No action taken. Need at least one of --encoder_output_file '
-            'and --decoder_output_file.'
+            "No action taken. Need at least one of --encoder_output_file "
+            "and --decoder_output_file."
         )
         return
 
@@ -94,10 +92,10 @@ def export(args):
         src_dict_filename=args.source_vocab_file,
         dst_dict_filename=args.target_vocab_file,
     )
-    if args.encoder_output_file != '':
+    if args.encoder_output_file != "":
         encoder_ensemble.save_to_db(args.encoder_output_file)
 
-    if args.decoder_output_file != '':
+    if args.decoder_output_file != "":
         if args.batched_beam:
             decoder_step_class = DecoderBatchedStepEnsemble
         else:
@@ -116,18 +114,15 @@ def export(args):
         src_dict = encoder_ensemble.models[0].src_dict
         token_list = [src_dict.unk()] * 4 + [src_dict.eos()]
         src_tokens = torch.LongTensor(
-            np.array(token_list, dtype='int64').reshape(-1, 1),
+            np.array(token_list, dtype="int64").reshape(-1, 1)
         )
-        src_lengths = torch.IntTensor(
-            np.array([len(token_list)], dtype='int32'),
-        )
+        src_lengths = torch.IntTensor(np.array([len(token_list)], dtype="int32"))
         pytorch_encoder_outputs = encoder_ensemble(src_tokens, src_lengths)
 
         decoder_step_ensemble.save_to_db(
-            args.decoder_output_file,
-            pytorch_encoder_outputs,
+            args.decoder_output_file, pytorch_encoder_outputs
         )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

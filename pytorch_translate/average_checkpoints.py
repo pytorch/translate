@@ -24,23 +24,23 @@ def average_checkpoints(inputs: Iterable[str]) -> Dict[str, Any]:
         state: Dict[str, Any] = torch.load(
             f,
             map_location=(
-                lambda s, _: torch.serialization.default_restore_location(
-                    s, 'cpu'))
+                lambda s, _: torch.serialization.default_restore_location(s, "cpu")
+            ),
         )
         # Copies over the settings from the first checkpoint
         # TODO: maybe also delete other keys from the new state?
         if len(new_state) == 0:
             new_state = state
 
-        model_params: collections.OrderedDict = state['model']
+        model_params: collections.OrderedDict = state["model"]
 
         model_params_keys = list(model_params.keys())
         if len(params_keys) == 0:
             params_keys = model_params_keys
         if params_keys != model_params_keys:
             raise KeyError(
-                f'For checkpoint {f}, expected list of params: {params_keys}, '
-                f'but found: {model_params_keys}'
+                f"For checkpoint {f}, expected list of params: {params_keys}, "
+                f"but found: {model_params_keys}"
             )
 
         for k in params_keys:
@@ -55,5 +55,5 @@ def average_checkpoints(inputs: Iterable[str]) -> Dict[str, Any]:
             summed_v = summed_v + x if summed_v is not None else x
         if summed_v is not None:
             averaged_params[k] = summed_v / len(v)
-    new_state['model'] = averaged_params
+    new_state["model"] = averaged_params
     return new_state

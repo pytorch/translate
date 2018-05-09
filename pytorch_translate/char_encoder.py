@@ -10,6 +10,7 @@ from pytorch_translate import rnn  # noqa
 
 
 class HighwayLayer(nn.Module):
+
     def __init__(
         self,
         input_dim,
@@ -28,9 +29,7 @@ class HighwayLayer(nn.Module):
         self.highway_gate.bias.data.fill_(gate_bias)
 
     def forward(self, x):
-        transform_output = self.highway_transform_activation(
-            self.highway_transform(x)
-        )
+        transform_output = self.highway_transform_activation(self.highway_transform(x))
         gate_output = self.highway_gate_activation(self.highway_gate(x))
 
         transformation_part = torch.mul(transform_output, gate_output)
@@ -39,7 +38,7 @@ class HighwayLayer(nn.Module):
 
 
 class CharEmbModel(nn.Module):
-    '''
+    """
     A Conv network to generate word embedding from character embeddings, from
     Character-Aware Neural Language Models, https://arxiv.org/abs/1508.06615.
 
@@ -62,7 +61,8 @@ class CharEmbModel(nn.Module):
         '
     To combine those to generate word embeddings per sentence, need to remember
     number of words in each sentence before breaking into words.
-    '''
+    """
+
     def __init__(
         self,
         dictionary,
@@ -79,20 +79,16 @@ class CharEmbModel(nn.Module):
         self.embed_char_tokens = nn.Embedding(vocab_size, char_embed_dim)
         in_channels = convolutions[0][0]
         self.dropout = dropout
-        self.convolutions = nn.ModuleList([
-            ConvTBC(
-                in_channels,
-                out_channels * 2,
-                kernel_size,
-            ) for (out_channels, kernel_size) in convolutions
-        ])
+        self.convolutions = nn.ModuleList(
+            [
+                ConvTBC(in_channels, out_channels * 2, kernel_size)
+                for (out_channels, kernel_size) in convolutions
+            ]
+        )
 
         self.fc_input = rnn.Linear(char_embed_dim, in_channels, dropout=self.dropout)
         conv_output_dim = sum(out_dim for (out_dim, _) in convolutions)
-        self.fc_output = rnn.Linear(
-            conv_output_dim,
-            word_embed_dim,
-        )
+        self.fc_output = rnn.Linear(conv_output_dim, word_embed_dim)
 
         self.highway_layers = nn.ModuleList(
             [HighwayLayer(conv_output_dim)] * num_highway_layers
@@ -101,54 +97,60 @@ class CharEmbModel(nn.Module):
         self.preserve_word = preserve_word
 
     def _prepare_char_batch(self, src_tokens, left_padded=True):
-        '''Transform sentence batch into word batch, given inputs like
+        """Transform sentence batch into word batch, given inputs like
         src_tokens: [batch_size, max_seq_len],
             Padded sequence of numberized characters, with words separated by
             self.dictionary.word_delim_index.
-        '''
+        """
         # Split sentence into words and flatten them
         word_delim_mask = src_tokens.eq(self.dictionary.word_delim_index)
         splitted_words = [
             np.split(src_sent, delim_mask.nonzero()[0])
-            for src_sent, delim_mask
-            in zip(src_tokens.numpy(), word_delim_mask.numpy())
+            for src_sent, delim_mask in zip(src_tokens.numpy(), word_delim_mask.numpy())
         ]
 
         # Remove sentence pads
         for sent in splitted_words:
             if left_padded:
-                sent[0] = np.array([
-                    char_token for char_token in sent[0]
-                    if char_token != self.dictionary.pad_index
-                ])
+                sent[0] = np.array(
+                    [
+                        char_token
+                        for char_token in sent[0]
+                        if char_token != self.dictionary.pad_index
+                    ]
+                )
             else:
-                sent[-1] = np.array([
-                    char_token for char_token in sent[-1]
-                    if char_token != self.dictionary.pad_index
-                ])
+                sent[-1] = np.array(
+                    [
+                        char_token
+                        for char_token in sent[-1]
+                        if char_token != self.dictionary.pad_index
+                    ]
+                )
         # Flat all words within each sentence,
         # use src_lengths to restore senteence later on
         flattened_words = np.array([sent for sent in splitted_words]).flatten()
         # Remove word delim token
         pure_words = [
-            word if word[0] != self.dictionary.word_delim_index
-            else word[1:] for word in flattened_words
+            word if word[0] != self.dictionary.word_delim_index else word[1:]
+            for word in flattened_words
         ]
 
         # Add BOW and EOW, and pad each word to max word length within this batch
         max_word_len = np.max([len(word) for word in pure_words])
-        words_batch = np.asarray([
-            np.pad(
-                np.hstack((
-                    [self.dictionary.bow_index],
-                    word,
-                    [self.dictionary.eow_index]
-                )),
-                (0, max_word_len - len(word)),
-                'constant',
-                constant_values=self.dictionary.pad_index,
-            )
-            for word in pure_words])
+        words_batch = np.asarray(
+            [
+                np.pad(
+                    np.hstack(
+                        ([self.dictionary.bow_index], word, [self.dictionary.eow_index])
+                    ),
+                    (0, max_word_len - len(word)),
+                    "constant",
+                    constant_values=self.dictionary.pad_index,
+                )
+                for word in pure_words
+            ]
+        )
 
         return torch.LongTensor(words_batch)
 
@@ -194,15 +196,18 @@ class CharEmbModel(nn.Module):
         # [batch_size, seq_len, word_emb_dim]
         # TODO: add pads if variable seq_len
         if self.preserve_word:
-            splits = torch.cumsum(
-                torch.Tensor([0] + src_lengths), dim=0
-            )[:-1]
+            splits = torch.cumsum(torch.Tensor([0] + src_lengths), dim=0)[:-1]
             split_along_dim = 0
-            reshaped_encoder_input = torch.cat([
-                encoder_input.narrow(
-                    int(split_along_dim), int(start), int(length)
-                ).unsqueeze(0) for start, length in zip(splits, src_lengths)
-            ])
+            reshaped_encoder_input = torch.cat(
+                [
+                    encoder_input.narrow(
+                        int(split_along_dim), int(start), int(length)
+                    ).unsqueeze(
+                        0
+                    )
+                    for start, length in zip(splits, src_lengths)
+                ]
+            )
             return reshaped_encoder_input
 
         return encoder_input
