@@ -261,7 +261,7 @@ def generate(args):
         # record inferred languages in args
         args.source_lang, args.target_lang = dataset.src, dataset.dst
 
-    print(f"| [{dataset.src}] dictionary: {dataset.src_dict} types")
+    print(f"| [{dataset.src}] dictionary: {len(dataset.src_dict)} types")
     print(f"| [{dataset.dst}] dictionary: {len(dataset.dst_dict)} types")
     print(f"| {args.gen_subset} {len(dataset.splits[args.gen_subset])} examples")
     scorer, num_sentences, gen_timer = _generate_score(
