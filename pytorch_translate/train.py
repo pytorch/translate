@@ -163,6 +163,17 @@ def get_parser_with_args():
         "This differs from --no-save and --no-epoch-checkpoints in that it "
         "still allows for intra-epoch checkpoints if --save-interval is set.",
     )
+    group.add_argument(
+        "--max-checkpoints-kept",
+        default=-1,
+        type=int,
+        metavar="N",
+        help="Keep at most the last N checkpoints file around. "
+        "A value < -1 keeps all. "
+        "When --generate-bleu-eval-avg-checkpoints is used and is > N, the "
+        "number of checkpoints kept around is automatically adjusted "
+        "to allow BLEU to work properly.",
+    )
 
     # Adds args for generating intermediate BLEU eval while training.
     # generate.add_args() adds args used by both train.py and the standalone
@@ -621,6 +632,67 @@ def save_checkpoint_maybe_continuous(filename, trainer, extra_state):
     extra_state.pop("param_totals")
 
 
+# The purpose of this class is to keep track of the list of checkpoints
+# currently alive and automatically delete those that are no more required
+# and that we do not want to keep around.
+# In a nutshell, this class remembers the last max_num_checkpoints
+# and delete (auto_clear == True) the oldest checkpoint each time a new one
+# is added past this number.
+class ManagedCheckpoints:
+
+    # - max_num_checkpoints: Maximum number of checkpoints we need at one point.
+    # - auto_clear: Control whether or not checkpoints should get deleted when
+    #   they are not in the last max_num_checkpoints appended to the
+    #   self anymore.
+    def __init__(self, max_num_checkpoints, auto_clear):
+        self.auto_clear = auto_clear
+        assert max_num_checkpoints > 0, "Empty listing is not supported"
+        self.kept_checkpoints = collections.deque(maxlen=max_num_checkpoints)
+
+    def append(self, checkpoint_filename):
+        # If we append a filename that we already manage, we would need
+        # to remove it from its current position otherwise it may get deleted
+        # by the time we reach the use for this append.
+        # E.g., Let us assume we have a max of 2 checkpoint.
+        # We insert last_checkpoint, use it, then insert last_checkpoint,
+        # use it, then insert it again. The first file gets delete, but it
+        # is actually the same as the current one, so we actually delete
+        # the current one. Then we try to use it and we will get an error
+        # for file not found.
+        # Although this is pretty easy to support this case, given we only
+        # append the same file names with no_epoch_checkpoints, we decided
+        # not to slow every other uses case for that.
+        # Instead we rely on the fact that when this happens, we actually
+        # don't automatically delete files (auto_clear == False).
+        assert (
+            not self.auto_clear or not self.kept_checkpoints.count(checkpoint_filename)
+        ), "Not yet implemented"
+        if (self.auto_clear
+                and len(self.kept_checkpoints) == self.kept_checkpoints.maxlen):
+            # We reach the max number of checkpoints we keep around.
+            # Delete the oldest one.
+            os.remove(self.kept_checkpoints.popleft())
+        # Save the new checkpoint.
+        self.kept_checkpoints.append(checkpoint_filename)
+
+    def get_last_n(self, num_elements):
+        assert 0 < num_elements <= self.kept_checkpoints.maxlen, (
+            f"Requested number of elements {num_elements} "
+            f"must be between 0 and maxlen {self.kept_checkpoints.maxlen}, "
+            f"exclusive"
+        )
+        # If we ask for more elements than what we currently have, return all
+        # of them.
+        # Reason why we don't assert unlike for maxlen is because maxlen points
+        # out a design issue (the reserved size is too small), whereas the case
+        # where we ask more elements than what is currently in the list happens
+        # when we print the average of X checkpoints for BLEU, but we haven't
+        # yet computed that many checkpoints. We could also assert in this case
+        # and fix the caller, but handling it here was just fine!
+        start = max(len(self.kept_checkpoints) - num_elements, 0)
+        return collections.deque(itertools.islice(self.kept_checkpoints, start, None))
+
+
 def save_checkpoint(trainer, args, extra_state):
     epoch = extra_state["epoch"]
     batch_offset = extra_state["batch_offset"]
@@ -640,8 +712,13 @@ def save_checkpoint(trainer, args, extra_state):
             raise argparse.ArgumentTypeError(
                 "--generate-bleu-eval-avg-checkpoints must be >= 1."
             )
-        save_checkpoint.last_checkpoints = collections.deque(
-            maxlen=args.generate_bleu_eval_avg_checkpoints
+        save_checkpoint.last_checkpoints = ManagedCheckpoints(
+            max(args.generate_bleu_eval_avg_checkpoints, args.max_checkpoints_kept),
+            # Don't auto_clear checkpoints for no_epoch_checkpoints, because
+            # we are only going to reuse the same file.
+            auto_clear=(
+                args.max_checkpoints_kept > 0 and not args.no_epoch_checkpoints
+            ),
         )
 
     # batch_offset being None means that we're at the end of an epoch.
@@ -671,7 +748,6 @@ def save_checkpoint(trainer, args, extra_state):
     # This ensures we'll always have at least one checkpoint in the list to use
     # for BLEU eval, even if we're not saving epoch checkpoints.
     if args.no_epoch_checkpoints:
-        save_checkpoint.last_checkpoints.clear()
         save_checkpoint.last_checkpoints.append(last_filename)
     if args.log_verbose:
         print(
@@ -767,16 +843,24 @@ def get_valid_stats(trainer):
 
 
 def _save_averaged_checkpoint(args, epoch, offset):
+    if not hasattr(_save_averaged_checkpoint, "last_avg_checkpoints"):
+        if args.max_checkpoints_kept == 0:
+            raise argparse.ArgumentTypeError("--max-checkpoints-kept must be != 0.")
+        _save_averaged_checkpoint.last_avg_checkpoints = ManagedCheckpoints(
+            max(args.max_checkpoints_kept, 1), auto_clear=args.max_checkpoints_kept > 0
+        )
+    last_checkpoints = save_checkpoint.last_checkpoints.get_last_n(
+        1 if args.no_epoch_checkpoints else args.generate_bleu_eval_avg_checkpoints
+    )
     if args.log_verbose:
         print(
-            f"Reading {len(save_checkpoint.last_checkpoints)} previous "
+            f"Reading {len(last_checkpoints)} previous "
             f"checkpoints for averaging in epoch {epoch}, offset {offset}.",
             flush=True,
         )
-    averaged_state = average_checkpoints.average_checkpoints(
-        save_checkpoint.last_checkpoints
-    )
+    averaged_state = average_checkpoints.average_checkpoints(last_checkpoints)
     filename = os.path.join(args.save_dir, f"averaged_checkpoint{epoch}_{offset}.pt")
+    _save_averaged_checkpoint.last_avg_checkpoints.append(filename)
     if args.log_verbose:
         print(
             f"Preparing to save averaged checkpoint for "
