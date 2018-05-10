@@ -10,12 +10,12 @@ tar -xvzf data.tar.gz
 rm -f data.tar.gz model.tar.gz
 python3 pytorch_translate/onnx_component_export.py \
     --checkpoint model/averaged_checkpoint_best_0.pt \
-    --encoder_output_file encoder.pb \
-    --decoder_output_file decoder.pb \
-    --src_dict model/dictionary-de.txt \
-    --dst_dict model/dictionary-en.txt \
-    --beam_size 6 \
-    --word_penalty 0.25 \
-    --unk_penalty -0.5 \
-    --batched_beam && \
+    --encoder-output-file encoder.pb \
+    --decoder-output-file decoder.pb \
+    --source-vocab-file model/dictionary-de.txt \
+    --target-vocab-file model/dictionary-en.txt \
+    --beam-size 6 \
+    --word-penalty 0.25 \
+    --unk-penalty -0.5 \
+    --batched-beam && \
   echo "Finished exporting encoder as ./encoder.pb and decoder as ./decoder.pb"

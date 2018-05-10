@@ -7,7 +7,7 @@ Translate is a library for machine translation written in PyTorch. It provides t
 ### Translate requires:
 * A Linux operating system with a CUDA compatible card
 * C++ compiler supporting ECMAScript syntax for `<regex>`, such as GCC 4.9 and above
-* A [CUDA installation](https://docs.nvidia.com/cuda/). We recommend CUDA 8 or CUDA 9
+* A [CUDA installation](https://docs.nvidia.com/cuda/). We recommend CUDA 8.0 or CUDA 9.0
 
 ### To install Translate from source:
 These instructions were mainly tested on CentOS 7.4.1708 with a Tesla M40 card
@@ -30,67 +30,38 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
   pushd translate
   ```
 
-- Build [PyTorch](https://pytorch.org/) from source (currently needed for ONNX compatibility):
+- Install the combined [PyTorch](https://pytorch.org/) and [Caffe2](http://caffe2.ai/) Conda [package](https://anaconda.org/caffe2):
   ```bash
-  # Set to 9 if you have CUDA 9.
-  TMP_CUDA_VERSION="8"
+  # Set to 8 or 9 depending on your CUDA version.
+  TMP_CUDA_VERSION="9"
 
   # Uninstall previous versions of PyTorch. Doing this twice is intentional.
   # Error messages about torch not being installed are benign.
   pip uninstall -y torch
   pip uninstall -y torch
 
-  # Install basic PyTorch dependencies.
-  conda install -y cffi cmake mkl mkl-include numpy pyyaml setuptools typing
+  # This may not be necessary if you already have the latest cuDNN library.
+  conda install -y cudnn
+
   # Add LAPACK support for the GPU.
   conda install -y -c pytorch "magma-cuda${TMP_CUDA_VERSION}0"
+
+  # Install the combined PyTorch+Caffe2 conda package.
+  conda install -y -c caffe2 "pytorch-caffe2-cuda${TMP_CUDA_VERSION}.0-cudnn7"
+  # Force re-install of numpy 1.14 since the current version of the
+  # PyTorch+Caffe2 package downgrades it.
+  conda install -y numpy==1.14 --no-deps
 
   # Install NCCL2.
   wget "https://s3.amazonaws.com/pytorch/nccl_2.1.15-1%2Bcuda${TMP_CUDA_VERSION}.0_x86_64.txz"
   TMP_NCCL_VERSION="nccl_2.1.15-1+cuda${TMP_CUDA_VERSION}.0_x86_64"
   tar -xvf "${TMP_NCCL_VERSION}.txz"
-  export NCCL_ROOT_DIR="$(pwd)/${TMP_NCCL_VERSION}"
-  export LD_LIBRARY_PATH="${NCCL_ROOT_DIR}/lib:${LD_LIBRARY_PATH}"
   rm "${TMP_NCCL_VERSION}.txz"
 
-  # Build PyTorch from source.
-  git clone --recursive https://github.com/pytorch/pytorch
-  pushd pytorch
-  # Pin to a specific commit for now to guard against breakage in HEAD.
-  git checkout d154d32
-  git submodule update --init
-  NCCL_ROOT_DIR="${NCCL_ROOT_DIR}" python3 setup.py install \
-    2>&1 | tee PYTORCH_OUT
-  ```
-
-- Build [Caffe2](http://caffe2.ai/) from source (under PyTorch):
-  ```bash
-  # Caffe2 relies on the past module.
-  yes | pip install future
-
+  # Set some environmental variables needed to link libraries correctly.
   export CONDA_PATH="$(dirname $(which conda))/.."
-
-  # Compile Caffe2 from source with ATen.
-  # If you need to specify a compiler other than the default one cmake is picking
-  # up, you can use the -DCMAKE_C_COMPILER and -DCMAKE_CXX_COMPILER flags.
-  mkdir build_caffe2 && pushd build_caffe2
-  cmake \
-    -DPYTHON_INCLUDE_DIR=$(python -c 'from distutils import sysconfig; print(sysconfig.get_python_inc())') \
-    -DPYTHON_EXECUTABLE=$(which python) \
-    -DUSE_ATEN=ON \
-    -DUSE_OPENCV=OFF \
-    -DCMAKE_PREFIX_PATH="${CONDA_PATH}" \
-    -DCMAKE_INSTALL_PREFIX="${CONDA_PATH}" .. \
-    2>&1 | tee CMAKE_OUT
-  make install -j8 2>&1 | tee MAKE_OUT
-
-  export ATEN_LIB="$(pwd)/caffe2/contrib/aten/aten/lib"
-  export LD_LIBRARY_PATH="${ATEN_LIB}:${CONDA_PATH}/lib:${LD_LIBRARY_PATH}"
-
-  # Return to the translate directory.
-  popd
-  popd
-  ```
+  export NCCL_ROOT_DIR="$(pwd)/${TMP_NCCL_VERSION}"
+  export LD_LIBRARY_PATH="${CONDA_PATH}/lib:${NCCL_ROOT_DIR}/lib:${LD_LIBRARY_PATH}"
 
 - Install [ONNX](https://onnx.ai/):
   ```bash
@@ -104,15 +75,12 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
   python3 setup.py build develop
   pushd pytorch_translate/cpp
 
-  # If you need to specify a compiler other than the default one cmake is picking
-  # up, you can use the -DCMAKE_C_COMPILER and -DCMAKE_CXX_COMPILER flags.
   mkdir build && pushd build
   cmake \
     -DCMAKE_PREFIX_PATH="${CONDA_PATH}/usr/local" \
     -DCMAKE_INSTALL_PREFIX="${CONDA_PATH}" .. \
     2>&1 | tee CMAKE_OUT
-  make 2>&2 | tee MAKE_OUT
-
+  make 2>&1 | tee MAKE_OUT
   # Return to the translate directory.
   popd
   popd
