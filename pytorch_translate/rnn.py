@@ -690,33 +690,39 @@ class AttentionLayer(nn.Module):
             decoder_state = self.input_proj(decoder_state)
         # compute attention
         attn_scores = (source_hids * decoder_state.unsqueeze(0)).sum(dim=2)
-        attn_scores = F.softmax(attn_scores.t(), dim=-1)  # bsz x srclen
 
         if self.src_length_masking:
-            # Since input of varying lengths, need to make sure the attn_scores
-            # for each sentence sum up to one
             max_srclen = source_hids.size()[0]
             assert max_srclen == src_lengths.data.max()
-            batch_size = attn_scores.size()[0]
-            src_indices = torch.arange(0, max_srclen).unsqueeze(0).type_as(
+            batch_size = source_hids.size()[1]
+            src_indices = torch.arange(0, max_srclen).unsqueeze(1).type_as(
                 src_lengths.data
             )
-            src_indices = src_indices.expand(batch_size, max_srclen)
+            src_indices = src_indices.expand(max_srclen, batch_size)
 
-            # expand from shape (batch_size,) to (batch_size, max_srclen)
-            src_lengths = src_lengths.unsqueeze(dim=1).expand(batch_size, max_srclen)
+            # expand from shape (batch_size,) to (max_srclen, batch_size)
+            src_lengths = src_lengths.unsqueeze(dim=0).expand(max_srclen, batch_size)
             src_mask = (src_indices < src_lengths.data).double().type_as(
                 source_hids.data
             ).detach()
-            masked_attn_scores = attn_scores * src_mask
-            score_denom = torch.sum(masked_attn_scores, dim=1).unsqueeze(dim=1).expand(
+            masked_attn_scores = torch.where(
+                src_mask > 0,
+                attn_scores,
+                torch.Tensor([float("-Inf")]).type_as(
+                    source_hids.data,
+                ),
+            )
+            # Since input of varying lengths, need to make sure the attn_scores
+            # for each sentence sum up to one
+            attn_scores = F.softmax(masked_attn_scores.t(), dim=-1)  # bsz x srclen
+            score_denom = torch.sum(attn_scores, dim=1).unsqueeze(dim=1).expand(
                 batch_size, max_srclen
             )
             normalized_masked_attn_scores = torch.div(
-                masked_attn_scores, score_denom
+                attn_scores, score_denom
             ).t()
         else:
-            normalized_masked_attn_scores = attn_scores.t()
+            normalized_masked_attn_scores = F.softmax(attn_scores.t(), dim=-1).t()
 
         # sum weighted sources
         attn_weighted_context = (
