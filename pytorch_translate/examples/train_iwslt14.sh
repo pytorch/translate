@@ -58,6 +58,6 @@ CUDA_VISIBLE_DEVICES=0 python3 pytorch_translate/train.py \
    --eval-target-text-file data/valid.tok.bpe.en \
    --source-max-vocab-size 14000 \
    --target-max-vocab-size 14000 \
-   --log-interval 5000 \
+   --log-interval 10 \
    --seed "${RANDOM}" \
    2>&1 | tee -a checkpoints/log

@@ -17,7 +17,7 @@ def get_parser_with_args():
         description=("Export PyTorch-trained FBTranslate models to Caffe2 components")
     )
     parser.add_argument(
-        "--checkpoint",
+        "--path", "--checkpoint",
         action="append",
         nargs="+",
         help="PyTorch checkpoint file (at least one required)",
