@@ -16,6 +16,7 @@ if you are unable to install this project for your specific configuration.
 
 - If you don't already have an existing [Anaconda](https://www.anaconda.com/download/)
 environment with Python 3.6, you can install one via [Miniconda3](https://conda.io/miniconda.html):
+
   ```bash
   wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh
   chmod +x miniconda.sh
@@ -25,12 +26,14 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
   ```
 
 - Clone the Translate repo:
+
   ```bash
   git clone https://github.com/pytorch/translate.git
   pushd translate
   ```
 
 - Install the combined [PyTorch](https://pytorch.org/) and [Caffe2](http://caffe2.ai/) Conda [package](https://anaconda.org/caffe2):
+
   ```bash
   # Set to 8 or 9 depending on your CUDA version.
   TMP_CUDA_VERSION="9"
@@ -62,14 +65,17 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
   export CONDA_PATH="$(dirname $(which conda))/.."
   export NCCL_ROOT_DIR="$(pwd)/${TMP_NCCL_VERSION}"
   export LD_LIBRARY_PATH="${CONDA_PATH}/lib:${NCCL_ROOT_DIR}/lib:${LD_LIBRARY_PATH}"
+  ```
 
 - Install [ONNX](https://onnx.ai/):
+
   ```bash
   git clone --recursive https://github.com/onnx/onnx.git
   yes | pip install ./onnx 2>&1 | tee ONNX_OUT
   ```
 
 - Build Translate:
+
   ```bash
   pip uninstall -y pytorch-translate
   python3 setup.py build develop
