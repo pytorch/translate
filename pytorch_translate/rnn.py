@@ -17,6 +17,8 @@ from fairseq.models import (
     register_model,
     register_model_architecture,
 )
+
+from pytorch_translate import char_rnn_encoder
 from pytorch_translate import rnn_cell  # noqa
 from pytorch_translate import vocab_reduction
 from pytorch_translate import word_dropout
@@ -182,6 +184,8 @@ class RNNModel(FairseqModel):
         vocab_reduction.add_args(parser)
         # Args for word dropout
         word_dropout.add_args(parser)
+        # Args for character RNN encoder
+        char_rnn_encoder.add_args(parser)
 
     @classmethod
     def build_model(cls, args, src_dict, dst_dict):
@@ -206,6 +210,7 @@ class RNNModel(FairseqModel):
             add_encoder_output_as_decoder_input=(
                 args.add_encoder_output_as_decoder_input
             ),
+            char_rnn_params=args.char_rnn_params,
         )
         decoder = RNNDecoder(
             src_dict=src_dict,
@@ -264,6 +269,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
         bidirectional=False,
         word_dropout_params=None,
         add_encoder_output_as_decoder_input=False,
+        char_rnn_params=None,
     ):
         assert cell_type == "lstm", 'sequence-lstm requires cell_type="lstm"'
 
@@ -277,18 +283,33 @@ class LSTMSequenceEncoder(FairseqEncoder):
         self.add_encoder_output_as_decoder_input = (add_encoder_output_as_decoder_input)
         num_embeddings = len(dictionary)
         self.padding_idx = dictionary.pad()
-        self.embed_tokens = Embedding(
-            num_embeddings=num_embeddings,
-            embedding_dim=embed_dim,
-            padding_idx=self.padding_idx,
-            freeze_embed=freeze_embed,
-        )
+
+        self.char_rnn_params = char_rnn_params
+        if self.char_rnn_params is not None:
+            self.char_rnn_encoder = char_rnn_encoder.CharRNN(
+                dictionary=self.dictionary,
+                embed_dim=embed_dim,
+                hidden_dim=char_rnn_params["char_rnn_units"],
+                num_layers=char_rnn_params["char_rnn_layers"],
+                bidirectional=True,
+                word_delimiter=char_rnn_params["word_delimiter"],
+            )
+            self.word_dim = char_rnn_params["char_rnn_units"]
+        else:
+            self.embed_tokens = Embedding(
+                num_embeddings=num_embeddings,
+                embedding_dim=embed_dim,
+                padding_idx=self.padding_idx,
+                freeze_embed=freeze_embed,
+            )
+            self.word_dim = embed_dim
+
         self.layers = nn.ModuleList([])
         for layer in range(num_layers):
             is_layer_bidirectional = self.bidirectional and layer == 0
             self.layers.append(
                 LSTMSequenceEncoder.LSTM(
-                    embed_dim if layer == 0 else hidden_dim,
+                    self.word_dim if layer == 0 else hidden_dim,
                     hidden_dim // 2 if is_layer_bidirectional else hidden_dim,
                     num_layers=1,
                     dropout=self.dropout_out,
@@ -315,14 +336,28 @@ class LSTMSequenceEncoder(FairseqEncoder):
             )
         if self.word_dropout_module is not None:
             src_tokens.data = self.word_dropout_module(src_tokens.data)
-        bsz, seqlen = src_tokens.size()
 
-        # embed tokens
-        x = self.embed_tokens(src_tokens)
-        x = F.dropout(x, p=self.dropout_in, training=self.training)
+        if self.char_rnn_params is not None:
+            # x.shape: (max_num_words, batch_size, word_dim)
+            x, src_lengths = self.char_rnn_encoder(src_tokens, src_lengths)
+            seqlen, bsz, _ = x.size()
 
-        # B x T x C -> T x B x C
-        x = x.transpose(0, 1)
+            # temporarily sort in descending word-length order
+            src_lengths, word_len_order = torch.sort(
+                src_lengths,
+                descending=True,
+            )
+            x = x[:, word_len_order, :]
+            _, inverted_word_len_order = torch.sort(word_len_order)
+        else:
+            bsz, seqlen = src_tokens.size()
+
+            # embed tokens
+            x = self.embed_tokens(src_tokens)
+            x = F.dropout(x, p=self.dropout_in, training=self.training)
+
+            # B x T x C -> T x B x C
+            x = x.transpose(0, 1)
 
         # Allows compatibility with Caffe2 inputs for tracing (int32)
         # as well as the current format of Fairseq-Py inputs (int64)
@@ -377,6 +412,13 @@ class LSTMSequenceEncoder(FairseqEncoder):
         unpacked_output, _ = pad_packed_sequence(
             packed_input, padding_value=padding_value
         )
+
+        if self.char_rnn_params is not None:
+            unpacked_output = unpacked_output[:, inverted_word_len_order, :]
+            final_hiddens = final_hiddens[:, inverted_word_len_order, :]
+            final_cells = final_cells[:, inverted_word_len_order, :]
+            src_lengths = src_lengths[inverted_word_len_order]
+            src_tokens = src_tokens[inverted_word_len_order, :]
 
         return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
 
@@ -537,6 +579,7 @@ class RNNEncoder(FairseqEncoder):
         residual_level=None,
         bidirectional=False,
         add_encoder_output_as_decoder_input=False,
+        char_rnn_params=None,
     ):
         super().__init__(dictionary)
         self.dictionary = dictionary
@@ -548,18 +591,33 @@ class RNNEncoder(FairseqEncoder):
         self.add_encoder_output_as_decoder_input = (add_encoder_output_as_decoder_input)
         num_embeddings = len(dictionary)
         self.padding_idx = dictionary.pad()
-        self.embed_tokens = Embedding(
-            num_embeddings=num_embeddings,
-            embedding_dim=embed_dim,
-            padding_idx=self.padding_idx,
-            freeze_embed=freeze_embed,
-        )
+
+        self.char_rnn_params = char_rnn_params
+        if self.char_rnn_params is not None:
+            self.char_rnn_encoder = char_rnn_encoder.CharRNN(
+                dictionary=self.dictionary,
+                embed_dim=embed_dim,
+                hidden_dim=char_rnn_params["char_rnn_units"],
+                num_layers=char_rnn_params["char_rnn_layers"],
+                bidirectional=True,
+                word_delimiter=char_rnn_params["word_delimiter"],
+            )
+            self.word_dim = char_rnn_params["char_rnn_units"]
+        else:
+            self.embed_tokens = Embedding(
+                num_embeddings=num_embeddings,
+                embedding_dim=embed_dim,
+                padding_idx=self.padding_idx,
+                freeze_embed=freeze_embed,
+            )
+            self.word_dim = embed_dim
+
         self.cell_type = cell_type
         self.layers = nn.ModuleList([])
         for layer in range(num_layers):
             self.layers.append(
                 RNNLayer(
-                    embed_dim if layer == 0 else hidden_dim,
+                    self.word_dim if layer == 0 else hidden_dim,
                     hidden_dim,
                     self.cell_type,
                     True if bidirectional and layer == 0 else False,
@@ -587,12 +645,16 @@ class RNNEncoder(FairseqEncoder):
             src_tokens.data = self.word_dropout_module(src_tokens.data)
         bsz, seqlen = src_tokens.size()
 
-        # embed tokens
-        x = self.embed_tokens(src_tokens)
-        x = F.dropout(x, p=self.dropout_in, training=self.training)
+        if self.char_rnn_params is not None:
+            # x.shape: (max_num_words, batch_size, word_dim)
+            x, src_lengths = self.char_rnn_encoder(src_tokens, src_lengths)
+        else:
+            # embed tokens
+            x = self.embed_tokens(src_tokens)
+            x = F.dropout(x, p=self.dropout_in, training=self.training)
 
-        # B x T x C -> T x B x C
-        x = x.transpose(0, 1)
+            # B x T x C -> T x B x C
+            x = x.transpose(0, 1)
 
         # Generate packed seq to deal with varying source seq length
         packed_input, batch_sizes = pack_padded_sequence(x, src_lengths)
@@ -600,6 +662,7 @@ class RNNEncoder(FairseqEncoder):
         next_hiddens = []
         for i, rnn_layer in enumerate(self.layers):
             current_hidden_size = self.hidden_dim // 2 if rnn_layer.is_bidirectional else self.hidden_dim
+
             if self.cell_type in ["lstm", "milstm", "layer_norm_lstm"]:
                 prev_hidden = (
                     x.data.new(bsz, current_hidden_size).zero_(),
@@ -1030,6 +1093,7 @@ def base_architecture(args):
     args.add_encoder_output_as_decoder_input = getattr(
         args, "add_encoder_output_as_decoder_input", False
     )
+    char_rnn_encoder.set_arg_defaults(args)
 
 
 @register_model_architecture("rnn", "rnn_big_test")
