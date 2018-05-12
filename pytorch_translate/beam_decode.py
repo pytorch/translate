@@ -149,7 +149,11 @@ class SequenceGenerator(torch.nn.Module):
         tokens = src_tokens.data.new(bsz * beam_size, maxlen + 2).fill_(self.pad)
         tokens_buf = tokens.clone()
         tokens[:, 0] = self.eos
-        attn = scores.new(bsz * beam_size, src_tokens.size(1), maxlen + 2)
+
+        # may differ from input length
+        src_encoding_len = encoder_outs[0][0].size(0)
+
+        attn = scores.new(bsz * beam_size, src_encoding_len, maxlen + 2)
         attn_buf = attn.clone()
 
         # list of completed sentences
