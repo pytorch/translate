@@ -154,6 +154,12 @@ def get_translation_candidates(
                 prob = float(prob)
                 source_index = src_dict.index(source_word)
                 target_index = dst_dict.index(target_word)
+                if (
+                    source_index not in src_dict.lexicon_indices and
+                    target_index in dst_dict.lexicon_indices
+                ):
+                    continue
+
                 if source_index is not None and target_index is not None:
                     if source_index != current_source_index:
                         # We've finished processing the possible translation
