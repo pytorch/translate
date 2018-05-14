@@ -1,5 +1,16 @@
 cmake_minimum_required(VERSION 2.8.12 FATAL_ERROR)
 
+# We need at least GCC 4.9 for regex support, and the PyTorch+Caffe2
+# combined conda package was compiled with GCC 4.9.2.
+set(GCC_MIN_VERSION 4.9.2)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS GCC_MIN_VERSION)
+    message(FATAL_ERROR "You're using GCC version ${CMAKE_CXX_COMPILER_VERSION}, but at least version ${GCC_MIN_VERSION} is required.")
+  endif()
+else()
+  message(WARNING "You're using ${CMAKE_CXX_COMPILER_ID} compiler, which may not work correctly. Compilation has only been tested with GCC >= ${GCC_MIN_VERSION}.")
+endif()
+
 # Find the Caffe2 package.
 # Caffe2 exports the required targets, so find_package should work for
 # the standard Caffe2 installation. If you encounter problems with finding
