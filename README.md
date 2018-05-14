@@ -6,7 +6,7 @@ Translate is a library for machine translation written in PyTorch. It provides t
 
 ### Translate Requires:
 * A Linux operating system with a CUDA compatible card
-* C++ compiler supporting ECMAScript syntax for `<regex>`, such as GCC 4.9 and above
+* GNU C++ compiler version 4.9.2 and above
 * A [CUDA installation](https://docs.nvidia.com/cuda/). We recommend CUDA 8.0 or CUDA 9.0
 
 ### Use Our Docker Image:
