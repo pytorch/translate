@@ -316,7 +316,7 @@ def setup_training(args):
         args.source_lang, args.target_lang = dataset.src, dataset.dst
 
     print(f"| [{dataset.src}] dictionary: {len(dataset.src_dict)} types")
-    print(f"| [{dataset.dst}] dictionary: {dataset.dst_dict} types")
+    print(f"| [{dataset.dst}] dictionary: {len(dataset.dst_dict)} types")
 
     for split in splits:
         print(f"| {split} {len(dataset.splits[split])} examples")
