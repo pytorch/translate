@@ -69,6 +69,14 @@ def set_arg_defaults(args):
             delattr(args, "max_translation_candidates_per_word")
 
 
+def get_top_words(dst_dict, num_top_words):
+    top_words = set(range(num_top_words))
+    for lexicon_index in dst_dict.lexicon_indices:
+        if lexicon_index in top_words:
+            top_words.remove(lexicon_index)
+    return top_words
+
+
 def select_top_candidate_per_word(
     source_index,
     target_indices_with_prob,
@@ -102,7 +110,7 @@ def get_translation_candidates(
     src_dict,
     dst_dict,
     lexical_dictionaries,
-    num_top_words,
+    top_words,
     max_translation_candidates_per_word,
 ):
     """
@@ -154,11 +162,6 @@ def get_translation_candidates(
                 prob = float(prob)
                 source_index = src_dict.index(source_word)
                 target_index = dst_dict.index(target_word)
-                if (
-                    source_index not in src_dict.lexicon_indices and
-                    target_index in dst_dict.lexicon_indices
-                ):
-                    continue
 
                 if source_index is not None and target_index is not None:
                     if source_index != current_source_index:
@@ -179,7 +182,7 @@ def get_translation_candidates(
                         current_target_indices = []
 
                     if (
-                        target_index >= num_top_words
+                        target_index not in top_words
                         and (
                             source_index, target_index
                         ) not in translation_candidates_set
@@ -210,15 +213,26 @@ class VocabReduction(nn.Module):
         self.dst_dict = dst_dict
         self.vocab_reduction_params = vocab_reduction_params
 
+        top_words = get_top_words(
+            self.dst_dict,
+            self.vocab_reduction_params["num_top_words"],
+        )
+
         translation_candidates = get_translation_candidates(
             self.src_dict,
             self.dst_dict,
+            top_words,
             self.vocab_reduction_params["lexical_dictionaries"],
-            self.vocab_reduction_params["num_top_words"],
             self.vocab_reduction_params["max_translation_candidates_per_word"],
         )
+
         self.translation_candidates = nn.Parameter(
-            torch.Tensor(translation_candidates).long(), requires_grad=False
+            torch.Tensor(translation_candidates).long(), requires_grad=False,
+        )
+
+        top_words_ordered = sorted(list(top_words))
+        self.top_words = nn.Parameter(
+            torch.Tensor(top_words_ordered).long(), requires_grad=False,
         )
 
     def forward(self, src_tokens, decoder_input_tokens=None):
@@ -236,8 +250,7 @@ class VocabReduction(nn.Module):
         )
         vocab_list.append(reduced_vocab.cpu())
 
-        top_words = torch.arange(self.vocab_reduction_params["num_top_words"]).long()
-        vocab_list.append(top_words.cpu())
+        vocab_list.append(self.top_words.cpu())
 
         all_translation_tokens = torch.cat(vocab_list, dim=0)
         possible_translation_tokens = torch.unique(
