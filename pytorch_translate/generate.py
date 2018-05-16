@@ -32,6 +32,9 @@ def _generate_score(models, args, dataset, dataset_split):
         )
 
     # Initialize generator
+    model_weights = None
+    if args.model_weights:
+        model_weights = [float(w.strip()) for w in args.model_weights.split(",")]
     translator = beam_decode.SequenceGenerator(
         models,
         beam_size=args.beam,
@@ -40,6 +43,7 @@ def _generate_score(models, args, dataset, dataset_split):
         len_penalty=args.lenpen,
         unk_penalty=args.unkpen,
         word_reward=args.word_reward,
+        model_weights=model_weights,
     )
     if use_cuda:
         translator.cuda()
@@ -163,6 +167,14 @@ def add_args(parser):
             "--unkpen penalize UNKs more."
         ),
     )
+    group.add_argument(
+        "--model-weights",
+        default="",
+        help=(
+            "Interpolation weights for ensembles. Comma-separated list of "
+            "floats with length equal to the number of models in the ensemble."
+        ),
+    )
 
 
 def get_parser_with_args():
@@ -229,6 +241,45 @@ def assert_test_corpus_and_vocab_files_specified(args):
     ), "Please specify a valid file for --target-text-file"
 
 
+def load_diverse_ensemble_for_inference(filenames, src_dict, dst_dict):
+    """Load an ensemble of diverse models for inference.
+
+    This method is similar to fairseq.utils.load_ensemble_for_inference
+    but allows to load diverse models with non-uniform args.
+
+    Args:
+        filenames: List of file names to checkpoints
+        src_dict: Source dictionary
+        dst_dict: Target dictionary
+
+    Return:
+        models, args: Tuple of lists. models contains the loaded models, args
+        the corresponding configurations.
+    """
+    from fairseq import models
+
+    # load model architectures and weights
+    states = []
+    for filename in filenames:
+        if not os.path.exists(filename):
+            raise IOError("Model file not found: {}".format(filename))
+        states.append(
+            torch.load(
+                filename,
+                map_location=lambda s, l: torch.serialization.default_restore_location(
+                    s, "cpu"
+                ),
+            )
+        )
+    # build ensemble
+    ensemble = []
+    for state in states:
+        model = models.build_model(state["args"], src_dict, dst_dict)
+        model.load_state_dict(state["model"])
+        ensemble.append(model)
+    return ensemble, [s["args"] for s in states]
+
+
 def generate(args):
     assert_test_corpus_and_vocab_files_specified(args)
     assert args.path is not None, "--path required for generation!"
@@ -245,16 +296,23 @@ def generate(args):
     dataset = data.LanguageDatasets(
         src=args.source_lang, dst=args.target_lang, src_dict=src_dict, dst_dict=dst_dict
     )
-    models, model_args = utils.load_ensemble_for_inference(
+    models, model_args = load_diverse_ensemble_for_inference(
         args.path, dataset.src_dict, dataset.dst_dict
+    )
+    append_eos_to_source = model_args[0].append_eos_to_source
+    reverse_source = model_args[0].reverse_source
+    assert all(
+        a.append_eos_to_source == append_eos_to_source
+        and a.reverse_source == reverse_source
+        for a in model_args
     )
     dataset.splits[args.gen_subset] = pytorch_translate_data.make_language_pair_dataset(
         source_file=args.source_text_file,
         target_file=args.target_text_file,
         source_dict=src_dict,
         target_dict=dst_dict,
-        append_eos=model_args.append_eos_to_source,
-        reverse_source=model_args.reverse_source,
+        append_eos=append_eos_to_source,
+        reverse_source=reverse_source,
     )
 
     if args.source_lang is None or args.target_lang is None:

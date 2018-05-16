@@ -20,6 +20,7 @@ class SequenceGenerator(torch.nn.Module):
         lexicon_penalty=0,
         retain_dropout=False,
         word_reward=0,
+        model_weights=None,
     ):
         """Generates translations of a given source sentence.
 
@@ -33,6 +34,8 @@ class SequenceGenerator(torch.nn.Module):
             word_reward: add this value to score each token except EOS
                 (an alternative method to len_penalty for encouraging longer
                 output)
+            model_weights: None or list of Python floats of the same length as
+                `models` with ensemble interpolation weights.
         """
         self.models = models
         self.pad = models[0].dst_dict.pad()
@@ -56,6 +59,11 @@ class SequenceGenerator(torch.nn.Module):
         self.lexicon_indices = models[0].dst_dict.lexicon_indices_list()
         self.retain_dropout = retain_dropout
         self.word_reward = word_reward
+        if model_weights is not None:
+            assert len(models) == len(model_weights)
+            self.model_weights = model_weights
+        else:
+            self.model_weights = [1.0 / len(models)] * len(models)
 
     def cuda(self):
         for model in self.models:
@@ -491,7 +499,9 @@ class SequenceGenerator(torch.nn.Module):
 
         avg_probs = None
         avg_attn = None
-        for model, encoder_out in zip(self.models, encoder_outs):
+        for model_weight, model, encoder_out in zip(
+            self.model_weights, self.models, encoder_outs
+        ):
             with utils.maybe_no_grad():
                 decoder_out = list(
                     model.decoder(tokens, encoder_out, incremental_states[model])
@@ -502,7 +512,9 @@ class SequenceGenerator(torch.nn.Module):
                     possible_translation_tokens = decoder_out[2]
                 else:
                     possible_translation_tokens = None
-            probs = model.get_normalized_probs(decoder_out, log_probs=False).data
+            probs = model_weight * model.get_normalized_probs(
+                decoder_out, log_probs=False
+            ).data
             if avg_probs is None:
                 avg_probs = probs
             else:
@@ -513,7 +525,6 @@ class SequenceGenerator(torch.nn.Module):
                     avg_attn = attn
                 else:
                     avg_attn.add_(attn)
-        avg_probs.div_(len(self.models))
         avg_probs.log_()
         if avg_attn is not None:
             avg_attn.div_(len(self.models))
