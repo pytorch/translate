@@ -234,15 +234,32 @@ def load_existing_checkpoint(save_dir, restore_file, trainer):
     checkpoint_path = os.path.join(save_dir, restore_file)
     extra_state = trainer.load_checkpoint(checkpoint_path)
     if extra_state is not None:
-        print(f"| loaded checkpoint {checkpoint_path} (epoch {extra_state['epoch']})")
+        print(
+            f"| loaded checkpoint {checkpoint_path} (epoch {extra_state['epoch']})\n"
+            f"| extra_state {extra_state}"
+        )
         # batch_offset being None denotes this was a checkpoint saved at
         # the end of an epoch (after the last batch).
         if extra_state["batch_offset"] is None:
             trainer.lr_step(extra_state["epoch"])
             extra_state["epoch"] += 1
             extra_state["batch_offset"] = 0
+
+        # check availability for checkpoint backward compatiblity
+        if "start_time" not in extra_state:
+            extra_state["start_time"] = time.time()
+
+        if "last_bleu_eval" not in extra_state:
+            extra_state["last_bleu_eval"] = 0
+
     else:
-        extra_state = {"epoch": 1, "batch_offset": 0, "val_loss": None}
+        extra_state = {
+            "epoch": 1,
+            "batch_offset": 0,
+            "val_loss": None,
+            "start_time": time.time(),
+            "last_bleu_eval": 0,
+        }
     return extra_state
 
 
@@ -357,8 +374,6 @@ def single_process_main(args):
 
 
 def train(args, extra_state, trainer, dataset):
-    start_time = time.time()
-
     # offset for current epoch (may be different from checkpoint offset)
     starting_offset = extra_state["batch_offset"]
 
@@ -378,7 +393,6 @@ def train(args, extra_state, trainer, dataset):
             dataset=dataset,
         )
 
-        last_bleu_eval = 0
         for i, sample in enumerate(itr, start=starting_offset):
             log_output = trainer.train_step(sample)
 
@@ -422,10 +436,11 @@ def train(args, extra_state, trainer, dataset):
                 # We can only do BLEU eval when we have a new checkpoint to load.
                 do_save
                 and args.generate_bleu_eval_interval > 0
-                and num_updates - last_bleu_eval >= args.generate_bleu_eval_interval
+                and num_updates - extra_state["last_bleu_eval"]
+                >= args.generate_bleu_eval_interval
             )
             if do_eval_bleu:
-                last_bleu_eval = num_updates
+                extra_state["last_bleu_eval"] = num_updates
 
             extra_state["batch_offset"] = i + 1
 
@@ -462,7 +477,6 @@ def train(args, extra_state, trainer, dataset):
 
         # batch_offset being None denotes the end of an epoch.
         extra_state["batch_offset"] = None
-
         (
             val_loss, val_ppl, val_bleu, stop_training_end_of_epoch
         ) = validate_save_and_evaluate_bleu(
@@ -488,17 +502,19 @@ def train(args, extra_state, trainer, dataset):
 
         lr = trainer.lr_step(extra_state["epoch"], val_loss)
         extra_state["epoch"] += 1
+        extra_state["batch_offset"] = 0
         starting_offset = 0
 
-        if is_training_over_time_limit(start_time, args.stop_time_hr):
+        if is_training_over_time_limit(extra_state["start_time"], args.stop_time_hr):
             break
 
     train_meter.stop()
     print(f"| done training in {train_meter.sum:.1f} seconds")
-    if hasattr(evaluate_bleu, "best") and hasattr(evaluate_bleu, "best_epoch"):
+
+    if "evaluate_bleu" in extra_state:
         print(
-            f"| Best BLEU score of {evaluate_bleu.best} was from "
-            f"epoch {evaluate_bleu.best_epoch}"
+            f"| Best BLEU score of {extra_state['evaluate_bleu']['best']} was from "
+            f"epoch {extra_state['evaluate_bleu']['best_epoch']}"
         )
 
 
@@ -667,8 +683,10 @@ class ManagedCheckpoints:
         assert (
             not self.auto_clear or not self.kept_checkpoints.count(checkpoint_filename)
         ), "Not yet implemented"
-        if (self.auto_clear
-                and len(self.kept_checkpoints) == self.kept_checkpoints.maxlen):
+        if (
+            self.auto_clear
+            and len(self.kept_checkpoints) == self.kept_checkpoints.maxlen
+        ):
             # We reach the max number of checkpoints we keep around.
             # Delete the oldest one.
             os.remove(self.kept_checkpoints.popleft())
@@ -701,18 +719,16 @@ def save_checkpoint(trainer, args, extra_state):
     if args.log_verbose:
         print(
             f"Preparing to save checkpoints for epoch {epoch}, "
-            f"offset {batch_offset}.",
-            flush=True,
+            f"offset {batch_offset}. ",
+            flush=True
         )
 
-    # This uses a function-local variable as basically a namescoped global
-    # variable, like save_checkpoint.best below.
-    if not hasattr(save_checkpoint, "last_checkpoints"):
+    if "last_checkpoints" not in extra_state:
         if args.generate_bleu_eval_avg_checkpoints < 1:
             raise argparse.ArgumentTypeError(
                 "--generate-bleu-eval-avg-checkpoints must be >= 1."
             )
-        save_checkpoint.last_checkpoints = ManagedCheckpoints(
+        extra_state["last_checkpoints"] = ManagedCheckpoints(
             max(args.generate_bleu_eval_avg_checkpoints, args.max_checkpoints_kept),
             # Don't auto_clear checkpoints for no_epoch_checkpoints, because
             # we are only going to reuse the same file.
@@ -726,11 +742,15 @@ def save_checkpoint(trainer, args, extra_state):
         if not args.no_epoch_checkpoints:
             epoch_filename = os.path.join(args.save_dir, f"checkpoint{epoch}.pt")
             save_checkpoint_maybe_continuous(epoch_filename, trainer, extra_state)
-            save_checkpoint.last_checkpoints.append(epoch_filename)
+            extra_state["last_checkpoints"].append(epoch_filename)
 
         assert val_loss is not None
-        if not hasattr(save_checkpoint, "best") or val_loss < save_checkpoint.best:
-            save_checkpoint.best = val_loss
+
+        if (
+            "checkpoint_lowest_loss" not in extra_state
+            or val_loss < extra_state["checkpoint_lowest_loss"]
+        ):
+            extra_state["checkpoint_lowest_loss"] = val_loss
             best_filename = os.path.join(args.save_dir, "checkpoint_best.pt")
             save_checkpoint_maybe_continuous(best_filename, trainer, extra_state)
 
@@ -740,7 +760,7 @@ def save_checkpoint(trainer, args, extra_state):
             args.save_dir, f"checkpoint{epoch}_{batch_offset}.pt"
         )
         save_checkpoint_maybe_continuous(epoch_filename, trainer, extra_state)
-        save_checkpoint.last_checkpoints.append(epoch_filename)
+        extra_state["last_checkpoints"].append(epoch_filename)
 
     last_filename = os.path.join(args.save_dir, "checkpoint_last.pt")
     save_checkpoint_maybe_continuous(last_filename, trainer, extra_state)
@@ -748,7 +768,7 @@ def save_checkpoint(trainer, args, extra_state):
     # This ensures we'll always have at least one checkpoint in the list to use
     # for BLEU eval, even if we're not saving epoch checkpoints.
     if args.no_epoch_checkpoints:
-        save_checkpoint.last_checkpoints.append(last_filename)
+        extra_state["last_checkpoints"].append(epoch_filename)
     if args.log_verbose:
         print(
             f"Finished saving checkpoints for epoch {epoch}, "
@@ -757,8 +777,9 @@ def save_checkpoint(trainer, args, extra_state):
         )
 
 
-def validate(args, trainer, dataset, subset, epoch):
+def validate(args, trainer, dataset, subset, extra_state):
     """Evaluate the model on the validation set and return the average loss."""
+    epoch = extra_state["epoch"]
     # Initialize dataloader
     max_positions_valid = (
         trainer.get_model().max_encoder_positions(),
@@ -808,24 +829,25 @@ def validate(args, trainer, dataset, subset, epoch):
 
     val_loss = stats["valid_loss"]
     val_ppl = stats["valid_ppl"]
-    if not hasattr(validate, "lowest_loss") or val_loss < validate.lowest_loss:
-        validate.lowest_loss = val_loss
-        validate.num_since_best = 0
-    elif not hasattr(validate, "num_since_best"):
-        validate.num_since_best = 1
+
+    if (
+        "validate" not in extra_state
+        or val_loss < extra_state["validate"]["lowest_loss"]
+    ):
+        extra_state["validate"] = {"lowest_loss": val_loss, "num_since_best": 0}
     else:
-        validate.num_since_best += 1
+        extra_state["validate"]["num_since_best"] += 1
 
     stop_due_to_val_loss = False
     if (
         args.stop_no_best_validate_loss >= 0
-        and validate.num_since_best > args.stop_no_best_validate_loss
+        and extra_state["validate"]["num_since_best"] > args.stop_no_best_validate_loss
     ):
         stop_due_to_val_loss = True
         print(
             f"Stopping training due to validation score stagnation - last best "
-            f"validation loss of {validate.lowest_loss} (current loss: {val_loss})"
-            f"was {validate.num_since_best} validations ago."
+            f"validation loss of {extra_state['validate']['lowest_loss']} (current loss: {val_loss})"
+            f"was {extra_state['validate']['num_since_best']} validations ago."
         )
     return val_loss, val_ppl, stop_due_to_val_loss
 
@@ -842,14 +864,16 @@ def get_valid_stats(trainer):
     return stats
 
 
-def _save_averaged_checkpoint(args, epoch, offset):
+def _save_averaged_checkpoint(args, extra_state):
+    epoch, offset = extra_state["epoch"], extra_state["batch_offset"]
     if not hasattr(_save_averaged_checkpoint, "last_avg_checkpoints"):
         if args.max_checkpoints_kept == 0:
             raise argparse.ArgumentTypeError("--max-checkpoints-kept must be != 0.")
         _save_averaged_checkpoint.last_avg_checkpoints = ManagedCheckpoints(
             max(args.max_checkpoints_kept, 1), auto_clear=args.max_checkpoints_kept > 0
         )
-    last_checkpoints = save_checkpoint.last_checkpoints.get_last_n(
+
+    last_checkpoints = extra_state["last_checkpoints"].get_last_n(
         1 if args.no_epoch_checkpoints else args.generate_bleu_eval_avg_checkpoints
     )
     if args.log_verbose:
@@ -893,8 +917,9 @@ def calculate_bleu_on_subset(args, dataset, epoch, offset, dataset_split):
     return scorer.score()
 
 
-def evaluate_bleu(args, dataset, epoch, offset):
-    filename = _save_averaged_checkpoint(args, epoch, offset)
+def evaluate_bleu(args, dataset, extra_state):
+    epoch, offset = extra_state["epoch"], extra_state["batch_offset"]
+    filename = _save_averaged_checkpoint(args, extra_state)
     args.path = [filename]
     val_bleu = calculate_bleu_on_subset(
         args=args,
@@ -903,28 +928,30 @@ def evaluate_bleu(args, dataset, epoch, offset):
         offset=offset,
         dataset_split=args.valid_subset,
     )
-    if not hasattr(evaluate_bleu, "best") or val_bleu > evaluate_bleu.best:
-        evaluate_bleu.best = val_bleu
-        evaluate_bleu.best_epoch = epoch
+
+    if (
+        "evaluate_bleu" not in extra_state
+        or val_bleu > extra_state["evaluate_bleu"]["best"]
+    ):
+        extra_state["evaluate_bleu"] = {
+            "best": val_bleu, "best_epoch": epoch, "num_since_best": 0
+        }
         best_filename = os.path.join(args.save_dir, "averaged_checkpoint_best.pt")
         shutil.copy2(filename, best_filename)
-        evaluate_bleu.num_since_best = 0
-    elif not hasattr(evaluate_bleu, "num_since_best"):
-        evaluate_bleu.num_since_best = 1
     else:
-        evaluate_bleu.num_since_best += 1
+        extra_state["evaluate_bleu"]["num_since_best"] += 1
 
     stop_due_to_val_bleu = False
     if (
         args.stop_no_best_bleu_eval >= 0
-        and evaluate_bleu.num_since_best > args.stop_no_best_bleu_eval
+        and extra_state["evaluate_bleu"]["num_since_best"] > args.stop_no_best_bleu_eval
     ):
         stop_due_to_val_bleu = True
         print(
             f"Stopping training due to BLEU score stagnation on valid set - "
-            f"last best BLEU score of {evaluate_bleu.best} "
+            f"last best BLEU score of {extra_state['evaluate_bleu']['best']} "
             f"(current score: {val_bleu}) was"
-            f"{evaluate_bleu.num_since_best} evals ago."
+            f"{extra_state['evaluate_bleu']['num_since_best']} evals ago."
         )
     return val_bleu, stop_due_to_val_bleu
 
@@ -948,7 +975,7 @@ def validate_save_and_evaluate_bleu(
             trainer=trainer,
             dataset=dataset,
             subset=args.valid_subset,
-            epoch=extra_state["epoch"],
+            extra_state=extra_state,
         )
     extra_state["val_loss"] = val_loss
 
@@ -959,10 +986,7 @@ def validate_save_and_evaluate_bleu(
         save_checkpoint(trainer=trainer, args=args, extra_state=extra_state)
         if do_eval_bleu:
             val_bleu, stop_due_to_val_bleu = evaluate_bleu(
-                args=args,
-                dataset=dataset,
-                epoch=extra_state["epoch"],
-                offset=extra_state["batch_offset"],
+                args=args, dataset=dataset, extra_state=extra_state
             )
 
     return (val_loss, val_ppl, val_bleu, stop_due_to_val_loss or stop_due_to_val_bleu)
