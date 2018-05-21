@@ -144,11 +144,9 @@ class SequenceGenerator(torch.nn.Module):
             else:
                 incremental_states[model] = None
 
-            # compute the encoder output for each beam
-            encoder_out = model.encoder(
-                src_tokens.repeat(1, beam_size).view(-1, srclen),
-                src_lengths.repeat(beam_size),
-            )
+            # expand outputs for each example beam_size times
+            encoder_out = model.encoder(src_tokens, src_lengths)
+            encoder_out = model.encoder.expand_encoder_output(encoder_out, beam_size)
             encoder_outs.append(encoder_out)
 
         # initialize buffers
