@@ -6,7 +6,7 @@ import numpy as np
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence
 
-from pytorch_translate import rnn  # noqa
+from pytorch_translate import rnn, common_layers  # noqa
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +146,7 @@ class CharRNN(nn.Module):
         self.dictionary = dictionary
         num_embeddings = len(dictionary)
         self.padding_idx = dictionary.pad()
-        self.embed_chars = rnn.Embedding(
+        self.embed_chars = common_layers.Embedding(
             num_embeddings=num_embeddings,
             embedding_dim=embed_dim,
             padding_idx=self.padding_idx,
