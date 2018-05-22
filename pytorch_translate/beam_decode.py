@@ -25,6 +25,8 @@ class SequenceGenerator(torch.nn.Module):
         """Generates translations of a given source sentence.
 
         Args:
+            models: List of FairseqModel objects. Each one must implement
+                expand_encoder_output() method to replicate encoder outputs.
             min/maxlen: The length of the generated output will be bounded by
                 minlen and maxlen (not including the end-of-sentence marker).
             stop_early: Stop generation immediately after we finalize beam_size
@@ -144,11 +146,9 @@ class SequenceGenerator(torch.nn.Module):
             else:
                 incremental_states[model] = None
 
-            # compute the encoder output for each beam
-            encoder_out = model.encoder(
-                src_tokens.repeat(1, beam_size).view(-1, srclen),
-                src_lengths.repeat(beam_size),
-            )
+            # expand outputs for each example beam_size times
+            encoder_out = model.encoder(src_tokens, src_lengths)
+            encoder_out = model.expand_encoder_output(encoder_out, beam_size)
             encoder_outs.append(encoder_out)
 
         # initialize buffers
