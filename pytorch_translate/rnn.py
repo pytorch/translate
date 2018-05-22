@@ -878,6 +878,15 @@ class RNNDecoder(FairseqIncrementalDecoder):
         elif cell_type == "layer_norm_lstm":
             cell_class = rnn_cell.LayerNormLSTMCell
 
+        if hidden_dim != encoder_hidden_dim:
+            hidden_init_fc_list = []
+            cell_init_fc_list = []
+            for _ in range(num_layers):
+                hidden_init_fc_list.append(Linear(encoder_hidden_dim, hidden_dim))
+                cell_init_fc_list.append(Linear(encoder_hidden_dim, hidden_dim))
+            self.hidden_init_fc_list = nn.ModuleList(hidden_init_fc_list)
+            self.cell_init_fc_list = nn.ModuleList(cell_init_fc_list)
+
         layers = []
         for layer in range(num_layers):
             if layer == 0:
@@ -1084,6 +1093,12 @@ class RNNDecoder(FairseqIncrementalDecoder):
             # Simply return the final state of each layer
             prev_hiddens = [final_hiddens[i] for i in range(num_layers)]
         prev_cells = [final_cells[i] for i in range(num_layers)]
+
+        if hasattr(self, "hidden_init_fc_list"):
+            for i in range(num_layers):
+                prev_hiddens[i] = self.hidden_init_fc_list[i](prev_hiddens[i])
+                prev_cells[i] = self.cell_init_fc_list[i](prev_cells[i])
+
         return prev_hiddens, prev_cells
 
 
