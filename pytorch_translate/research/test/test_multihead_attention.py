@@ -140,3 +140,154 @@ class MultiheadAttentionTest(unittest.TestCase):
             unseen_mask=True,
             use_src_lengths=True,
         )
+
+    def _split_heads_ref(self, X, dims, nheads, d_head):
+        X_split = np.reshape(X, dims[:2] + [nheads, d_head])
+        X_split_transposed = np.transpose(X_split, [0, 2, 1, 3])
+        reference = np.reshape(
+            X_split_transposed, [dims[0], nheads, dims[1], d_head]
+        )
+        return reference
+
+    def test_split_heads(self):
+        for _ in range(100):
+
+            batch_and_seq_len = [random.randint(2, 10) for r in range(2)]
+            d_head = random.randint(3, 10)
+            nheads = random.randint(3, 10)
+            d_model = d_head * nheads
+            dims = batch_and_seq_len + [d_model]
+            X = np.random.rand(*dims).astype(np.float32)
+
+            X_tensor = torch.from_numpy(X).float()
+
+            result = multihead_attention.split_heads(X_tensor, nheads).numpy()
+
+            reference = self._split_heads_ref(X, dims, nheads, d_head)
+            np.testing.assert_allclose(result, reference, atol=1e-5)
+
+    def _combine_heads_ref(self, X, dims, nheads, d_head):
+        X_transposed = np.transpose(X, [0, 2, 1, 3])
+        reference = np.reshape(X_transposed, dims[:2] + [nheads * d_head])
+        return reference
+
+    def test_combine_heads(self):
+        for _ in range(100):
+            batch_and_seq_len = [random.randint(2, 10) for r in range(2)]
+            d_head = random.randint(3, 10)
+            nheads = random.randint(3, 10)
+            d_model = d_head * nheads
+            dims = batch_and_seq_len + [d_model]
+            X = np.random.rand(*dims).astype(np.float32)
+
+            X_split_heads = self._split_heads_ref(X, dims, nheads, d_head)
+            X_split_heads_tensor = torch.from_numpy(X_split_heads).float()
+            result = multihead_attention.combine_heads(X_split_heads_tensor)
+
+            reference = self._combine_heads_ref(X_split_heads, dims, nheads, d_head)
+
+            # Makes sure combine_heads is an exact inverse of split_heads_output
+            np.testing.assert_allclose(result, X, atol=1e-5)
+            np.testing.assert_allclose(result, reference, atol=1e-5)
+
+    def _fc(self, X, X_name, module):
+        X_fc_b = 0
+        for name, param in module.named_parameters():
+            if X_name + '_fc.weight' in name:
+                X_fc_w = param.data.numpy()
+            elif X_name + '_fc.bias' in name:
+                X_fc_b = param.data.numpy()
+        return np.matmul(X, np.transpose(X_fc_w)) + X_fc_b
+
+    def _multihead_attn_test_helper(self, unseen_mask, use_src_lengths):
+        for _ in range(100):
+            batch_and_seq_len = [random.randint(2, 10) for r in range(2)]
+            d_head = random.randint(3, 10)
+            nheads = random.randint(3, 10)
+            d_model = d_head * nheads
+            dims = batch_and_seq_len + [d_model]
+
+            src_lengths = None
+            src_lengths_tensor = None
+            if use_src_lengths:
+                src_lengths, src_lengths_tensor = self._generate_src_lengths(
+                    batch_size=batch_and_seq_len[0],
+                    seq_len=batch_and_seq_len[1],
+                )
+
+            Q = np.random.rand(*dims).astype(np.float32)
+            K = np.random.rand(*dims).astype(np.float32)
+            V = np.random.rand(*dims).astype(np.float32)
+
+            Q_tensor = torch.from_numpy(Q).float()
+            K_tensor = torch.from_numpy(K).float()
+            V_tensor = torch.from_numpy(V).float()
+
+            multihead_attn_module = multihead_attention.MultiheadAttention(
+                nheads=nheads,
+                d_model=d_model,
+            )
+
+            result = multihead_attn_module(
+                query=Q_tensor,
+                key=K_tensor,
+                value=V_tensor,
+                unseen_mask=unseen_mask,
+                src_lengths=src_lengths_tensor,
+            ).detach().numpy()
+
+            Q_fc = self._fc(Q, 'Q', multihead_attn_module)
+            K_fc = self._fc(K, 'K', multihead_attn_module)
+            V_fc = self._fc(V, 'V', multihead_attn_module)
+
+            Q_split = self._split_heads_ref(Q_fc, dims, nheads, d_head)
+            K_split = self._split_heads_ref(K_fc, dims, nheads, d_head)
+            V_split = self._split_heads_ref(V_fc, dims, nheads, d_head)
+
+            attn_heads = self._scaled_dot_attn_ref(
+                Q=Q_split,
+                K=K_split,
+                V=V_split,
+                dims=Q_split.shape,
+                unseen_mask=unseen_mask,
+                src_lengths=src_lengths,
+            )
+
+            combined_attn_heads = self._combine_heads_ref(
+                X=attn_heads,
+                dims=dims,
+                nheads=nheads,
+                d_head=d_head,
+            )
+
+            reference = self._fc(
+                combined_attn_heads,
+                'output',
+                multihead_attn_module,
+            )
+
+            np.testing.assert_allclose(result, reference, atol=1e-5)
+
+    def test_multihead_attn_no_masking(self):
+        self._multihead_attn_test_helper(
+            unseen_mask=False,
+            use_src_lengths=None,
+        )
+
+    def test_multihead_attn_with_unseen_mask(self):
+        self._multihead_attn_test_helper(
+            unseen_mask=True,
+            use_src_lengths=None,
+        )
+
+    def test_multihead_attn_with_src_lengths(self):
+        self._multihead_attn_test_helper(
+            unseen_mask=True,
+            use_src_lengths=True,
+        )
+
+    def test_multihead_attn_both_masks(self):
+        self._multihead_attn_test_helper(
+            unseen_mask=True,
+            use_src_lengths=True,
+        )
