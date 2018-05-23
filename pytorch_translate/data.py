@@ -26,6 +26,7 @@ def make_language_pair_dataset(
     target_dict: pytorch_translate_dictionary.Dictionary,
     append_eos: Optional[bool] = False,
     reverse_source: Optional[bool] = True,
+    no_progress_bar: Optional[bool] = False,
 ) -> data.LanguagePairDataset:
     return data.LanguagePairDataset(
         src=indexed_dataset.IndexedRawTextDataset(
@@ -33,6 +34,7 @@ def make_language_pair_dataset(
             dictionary=source_dict,
             append_eos=append_eos,
             reverse_order=reverse_source,
+            no_progress_bar=no_progress_bar,
         ),
         dst=indexed_dataset.IndexedRawTextDataset(
             path=target_file,
@@ -47,6 +49,7 @@ def make_language_pair_dataset(
             # even if the source sentence is fed to the model backwards,
             # we still want the model to start outputting from the first word.
             reverse_order=False,
+            no_progress_bar=no_progress_bar,
         ),
         pad_idx=source_dict.pad(),
         eos_idx=source_dict.eos(),
@@ -97,6 +100,7 @@ def load_raw_text_dataset(
             target_dict=target_dict,
             append_eos=args.append_eos_to_source,
             reverse_source=args.reverse_source,
+            no_progress_bar=args.no_progress_bar,
         )
     return dataset
 
