@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from fairseq.modules import ConvTBC
-from pytorch_translate import rnn  # noqa
+from pytorch_translate import common_layers  # noqa
 
 
 class HighwayLayer(nn.Module):
@@ -86,9 +86,9 @@ class CharEmbModel(nn.Module):
             ]
         )
 
-        self.fc_input = rnn.Linear(char_embed_dim, in_channels, dropout=self.dropout)
+        self.fc_input = common_layers.Linear(char_embed_dim, in_channels)
         conv_output_dim = sum(out_dim for (out_dim, _) in convolutions)
-        self.fc_output = rnn.Linear(conv_output_dim, word_embed_dim)
+        self.fc_output = common_layers.Linear(conv_output_dim, word_embed_dim)
 
         self.highway_layers = nn.ModuleList(
             [HighwayLayer(conv_output_dim)] * num_highway_layers
@@ -202,9 +202,7 @@ class CharEmbModel(nn.Module):
                 [
                     encoder_input.narrow(
                         int(split_along_dim), int(start), int(length)
-                    ).unsqueeze(
-                        0
-                    )
+                    ).unsqueeze(0)
                     for start, length in zip(splits, src_lengths)
                 ]
             )

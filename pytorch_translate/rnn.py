@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, PackedSequence, pad_packed_sequence
 import torch.onnx.operators
-
+from pytorch_translate import rnn_cell  # noqa
 
 from fairseq import utils
 from fairseq.data import LanguagePairDataset
@@ -19,9 +19,10 @@ from fairseq.models import (
 )
 
 from pytorch_translate import char_rnn_encoder
-from pytorch_translate import rnn_cell  # noqa
 from pytorch_translate import vocab_reduction
 from pytorch_translate import word_dropout
+from pytorch_translate.ngram import NGramDecoder
+from pytorch_translate.common_layers import Embedding, RNNLayer, AttentionLayer, Linear
 
 
 def torch_find(index, query, vocab_size):
@@ -179,6 +180,26 @@ class RNNModel(FairseqModel):
             action="store_true",
             help="use nn.LSTM implementation for encoder",
         )
+        parser.add_argument(
+            "--ngram-decoder",
+            default=None,
+            type=int,
+            help=(
+                "If this is positive, we use an n-gram based feedforward "
+                "network in the decoder rather than recurrence. The decoder is "
+                "still conditioned on the source side via attention."
+            ),
+        )
+        parser.add_argument(
+            "--ngram-activation-type",
+            default="relu",
+            type=str,
+            metavar="EXPR",
+            help=(
+                "Activation in FF layers of the ngram decoder, defaults to "
+                "relu, values: relu, tanh"
+            ),
+        )
 
         # Args for vocab reduction
         vocab_reduction.add_args(parser)
@@ -212,26 +233,53 @@ class RNNModel(FairseqModel):
             ),
             char_rnn_params=args.char_rnn_params,
         )
-        decoder = RNNDecoder(
-            src_dict=src_dict,
-            dst_dict=dst_dict,
-            vocab_reduction_params=args.vocab_reduction_params,
-            encoder_hidden_dim=args.encoder_hidden_dim,
-            embed_dim=args.decoder_embed_dim,
-            freeze_embed=args.decoder_freeze_embed,
-            out_embed_dim=args.decoder_out_embed_dim,
-            cell_type=args.cell_type,
-            num_layers=args.decoder_layers,
-            hidden_dim=args.decoder_hidden_dim,
-            attention_type=args.attention_type,
-            dropout_in=args.decoder_dropout_in,
-            dropout_out=args.decoder_dropout_out,
-            residual_level=args.residual_level,
-            averaging_encoder=args.averaging_encoder,
-            add_encoder_output_as_decoder_input=(
-                args.add_encoder_output_as_decoder_input
-            ),
-        )
+        if args.ngram_decoder is not None:
+            if args.ngram_activation_type == "relu":
+                activation_fn = nn.ReLU
+            elif args.ngram_activation_type == "tanh":
+                activation_fn = nn.Tanh
+            else:
+                raise Exception(
+                    "ngram_activation_type '%s' not implemented"
+                    % args.ngram_activation_type
+                )
+            decoder = NGramDecoder(
+                src_dict=src_dict,
+                dst_dict=dst_dict,
+                n=args.ngram_decoder,
+                encoder_hidden_dim=args.encoder_hidden_dim,
+                embed_dim=args.decoder_embed_dim,
+                freeze_embed=args.decoder_freeze_embed,
+                out_embed_dim=args.decoder_out_embed_dim,
+                num_layers=args.decoder_layers,
+                hidden_dim=args.decoder_hidden_dim,
+                attention_type=args.attention_type,
+                dropout_in=args.decoder_dropout_in,
+                dropout_out=args.decoder_dropout_out,
+                residual_level=args.residual_level,
+                activation_fn=activation_fn,
+            )
+        else:
+            decoder = RNNDecoder(
+                src_dict=src_dict,
+                dst_dict=dst_dict,
+                vocab_reduction_params=args.vocab_reduction_params,
+                encoder_hidden_dim=args.encoder_hidden_dim,
+                embed_dim=args.decoder_embed_dim,
+                freeze_embed=args.decoder_freeze_embed,
+                out_embed_dim=args.decoder_out_embed_dim,
+                cell_type=args.cell_type,
+                num_layers=args.decoder_layers,
+                hidden_dim=args.decoder_hidden_dim,
+                attention_type=args.attention_type,
+                dropout_in=args.decoder_dropout_in,
+                dropout_out=args.decoder_dropout_out,
+                residual_level=args.residual_level,
+                averaging_encoder=args.averaging_encoder,
+                add_encoder_output_as_decoder_input=(
+                    args.add_encoder_output_as_decoder_input
+                ),
+            )
         return cls(encoder, decoder)
 
     def get_targets(self, sample, net_output):
@@ -459,139 +507,6 @@ class LSTMSequenceEncoder(FairseqEncoder):
         return int(1e5)  # an arbitrary large number
 
 
-class VariableLengthRecurrent(nn.Module):
-    """
-    This class acts as a generator of autograd for varying seq lengths with
-    different padding behaviors, such as right padding, and order of seq lengths,
-    such as descending order.
-
-    The logic is mostly inspired from torch/nn/_functions/rnn.py, so it may be
-    merged in the future.
-    """
-
-    def __init__(self, rnn_cell, reverse=False):
-        super().__init__()
-        self.rnn_cell = rnn_cell
-        self.reverse = reverse
-
-    def forward(self, x, hidden, batch_size_per_step):
-        self.batch_size_per_step = batch_size_per_step
-        self.starting_batch_size = (
-            batch_size_per_step[-1] if self.reverse else batch_size_per_step[0]
-        )
-
-        output = []
-        input_offset = x.size(0) if self.reverse else 0
-
-        hiddens = []
-        flat_hidden = not isinstance(hidden, tuple)
-        if flat_hidden:
-            hidden = (hidden,)
-        initial_hidden = hidden
-
-        if self.reverse:
-            hidden = tuple(h[: self.batch_size_per_step[-1]] for h in hidden)
-
-        last_batch_size = self.starting_batch_size
-
-        # Iterate over time steps with varying batch_size
-        for i in range(len(self.batch_size_per_step)):
-            if self.reverse:
-                step_batch_size = self.batch_size_per_step[-1 - i]
-                step_input = x[(input_offset - step_batch_size) : input_offset]
-                input_offset -= step_batch_size
-            else:
-                step_batch_size = self.batch_size_per_step[i]
-                step_input = x[input_offset : (input_offset + step_batch_size)]
-                input_offset += step_batch_size
-
-            new_pads = last_batch_size - step_batch_size
-            if new_pads > 0:
-                # First slice out the pieces for pads
-                hiddens.insert(0, tuple(h[-new_pads:] for h in hidden))
-                # Only pass the non-pad part of hidden states
-                hidden = tuple(h[:-new_pads] for h in hidden)
-            if new_pads < 0:
-                hidden = tuple(
-                    torch.cat((h, ih[last_batch_size:step_batch_size]), 0)
-                    for h, ih in zip(hidden, initial_hidden)
-                )
-
-            last_batch_size = step_batch_size
-            if flat_hidden:
-                hidden = (self.rnn_cell(step_input, hidden[0]),)
-            else:
-                hidden = self.rnn_cell(step_input, hidden)
-            output.append(hidden[0])
-
-        if not self.reverse:
-            hiddens.insert(0, hidden)
-            hidden = tuple(torch.cat(h, 0) for h in zip(*hiddens))
-
-        assert output[0].size(0) == self.starting_batch_size
-
-        if flat_hidden:
-            hidden = hidden[0]
-        if self.reverse:
-            output.reverse()
-
-        output = torch.cat(output, 0)
-        return hidden, output
-
-
-class RNNLayer(nn.Module):
-    """
-    A wrapper of rnn cells, with their corresponding forward function.
-    If bidirectional, halve the hidden_size for each cell.
-    """
-
-    def __init__(
-        self, input_size, hidden_size, cell_type="lstm", is_bidirectional=False
-    ):
-        super().__init__()
-        self.is_bidirectional = is_bidirectional
-        num_directions = 2 if is_bidirectional else 1
-
-        if cell_type == "lstm":
-            cell_class = rnn_cell.LSTMCell
-        elif cell_type == "milstm":
-            cell_class = rnn_cell.MILSTMCell
-        elif cell_type == "layer_norm_lstm":
-            cell_class = rnn_cell.LayerNormLSTMCell
-        else:
-            raise Exception(f"{cell_type} not implemented")
-
-        self.fwd_cell = cell_class(input_size, hidden_size // num_directions)
-        if is_bidirectional:
-            self.bwd_cell = cell_class(input_size, hidden_size // num_directions)
-
-        self.fwd_func = VariableLengthRecurrent(rnn_cell=self.fwd_cell, reverse=False)
-        if is_bidirectional:
-            self.bwd_func = VariableLengthRecurrent(
-                rnn_cell=self.bwd_cell, reverse=True
-            )
-
-    def forward(self, x, hidden, batch_size_per_step):
-        fwd_hidden, fwd_output = self.fwd_func.forward(x, hidden, batch_size_per_step)
-        if self.is_bidirectional:
-            bwd_hidden, bwd_output = self.bwd_func.forward(
-                x, hidden, batch_size_per_step
-            )
-            # concat hidden and outputs
-            combined_hidden = [fwd_hidden, bwd_hidden]
-            bi_hiddens, bi_cells = zip(*combined_hidden)
-            next_hidden = (
-                torch.cat(bi_hiddens, bi_hiddens[0].dim() - 1),
-                torch.cat(bi_cells, bi_cells[0].dim() - 1),
-            )
-            output = torch.cat([fwd_output, bwd_output], x.dim() - 1)
-        else:
-            next_hidden = fwd_hidden
-            output = fwd_output
-
-        return next_hidden, output
-
-
 class RNNEncoder(FairseqEncoder):
     """RNN encoder."""
 
@@ -741,93 +656,6 @@ class RNNEncoder(FairseqEncoder):
         return int(1e5)  # an arbitrary large number
 
 
-class AttentionLayer(nn.Module):
-    SUPPORTED_ATTENTION_TYPES = ["dot"]
-
-    def __init__(self, decoder_hidden_state_dim, encoder_output_dim, attention_type):
-        super().__init__()
-
-        self.decoder_hidden_state_dim = decoder_hidden_state_dim
-        self.encoder_output_dim = encoder_output_dim
-
-        assert attention_type in AttentionLayer.SUPPORTED_ATTENTION_TYPES
-        self.attention_type = attention_type
-
-        if decoder_hidden_state_dim != encoder_output_dim:
-            self.input_proj = Linear(
-                decoder_hidden_state_dim, encoder_output_dim, bias=True
-            )
-
-        # can be externally set to avoid this step for single-example inference
-        self.src_length_masking = True
-
-    def forward(self, decoder_state, source_hids, src_lengths):
-        """
-        Input
-            decoder_state: bsz x decoder_hidden_state_dim
-            source_hids: srclen x bsz x encoder_output_dim
-            src_lengths: bsz x 1, actual sequence lengths
-        Output
-            output: bsz x encoder_output_dim
-            attn_scores: max_srclen x bsz
-        """
-        if self.attention_type == "dot":
-            output, attn_scores = self.dot_attention(
-                decoder_state, source_hids, src_lengths
-            )
-        else:
-            raise ValueError(f"Attention type {self.attention_type} is not supported")
-        return output, attn_scores
-
-    def dot_attention(self, decoder_state, source_hids, src_lengths):
-        # decoder_state: bsz x encoder_output_dim
-        if self.decoder_hidden_state_dim != self.encoder_output_dim:
-            decoder_state = self.input_proj(decoder_state)
-        # compute attention
-        attn_scores = (source_hids * decoder_state.unsqueeze(0)).sum(dim=2)
-
-        if self.src_length_masking:
-            max_srclen = source_hids.size()[0]
-            assert max_srclen == src_lengths.data.max()
-            batch_size = source_hids.size()[1]
-            src_indices = (
-                torch.arange(0, max_srclen).unsqueeze(1).type_as(src_lengths.data)
-            )
-            src_indices = src_indices.expand(max_srclen, batch_size)
-
-            # expand from shape (batch_size,) to (max_srclen, batch_size)
-            src_lengths = src_lengths.unsqueeze(dim=0).expand(max_srclen, batch_size)
-            src_mask = (
-                (src_indices < src_lengths.data)
-                .double()
-                .type_as(source_hids.data)
-                .detach()
-            )
-            masked_attn_scores = torch.where(
-                src_mask > 0,
-                attn_scores,
-                torch.Tensor([float("-Inf")]).type_as(source_hids.data),
-            )
-            # Since input of varying lengths, need to make sure the attn_scores
-            # for each sentence sum up to one
-            attn_scores = F.softmax(masked_attn_scores.t(), dim=-1)  # bsz x srclen
-            score_denom = (
-                torch.sum(attn_scores, dim=1)
-                .unsqueeze(dim=1)
-                .expand(batch_size, max_srclen)
-            )
-            normalized_masked_attn_scores = torch.div(attn_scores, score_denom).t()
-        else:
-            normalized_masked_attn_scores = F.softmax(attn_scores.t(), dim=-1).t()
-
-        # sum weighted sources
-        attn_weighted_context = (
-            source_hids * normalized_masked_attn_scores.unsqueeze(2)
-        ).sum(dim=0)
-
-        return attn_weighted_context, normalized_masked_attn_scores
-
-
 class RNNDecoder(FairseqIncrementalDecoder):
     """RNN decoder."""
 
@@ -904,7 +732,7 @@ class RNNDecoder(FairseqIncrementalDecoder):
             encoder_output_dim=encoder_hidden_dim,
             attention_type=attention_type,
         )
-        self.combined_output_and_context_dim = encoder_hidden_dim + hidden_dim
+        self.combined_output_and_context_dim = self.attention.context_dim + hidden_dim
 
         self.initial_attn_context = nn.Parameter(
             torch.Tensor(encoder_hidden_dim).zero_()
@@ -1103,23 +931,6 @@ class RNNDecoder(FairseqIncrementalDecoder):
         return prev_hiddens, prev_cells
 
 
-def Embedding(num_embeddings, embedding_dim, padding_idx, freeze_embed):
-    m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
-    m.weight.data.uniform_(-0.1, 0.1)
-    if freeze_embed:
-        m.weight.requires_grad = False
-    return m
-
-
-def Linear(in_features, out_features, bias=True, dropout=0):
-    """Weight-normalized Linear layer (input: N x T x C)"""
-    m = nn.Linear(in_features, out_features, bias=bias)
-    m.weight.data.uniform_(-0.1, 0.1)
-    if bias:
-        m.bias.data.uniform_(-0.1, 0.1)
-    return m
-
-
 @register_model_architecture("rnn", "rnn")
 def base_architecture(args):
     # default architecture
@@ -1139,7 +950,9 @@ def base_architecture(args):
     args.averaging_encoder = getattr(args, "averaging_encoder", False)
     args.encoder_freeze_embed = getattr(args, "encoder_freeze_embed", False)
     args.decoder_freeze_embed = getattr(args, "decoder_freeze_embed", False)
+    args.ngram_decoder = getattr(args, "ngram_decoder", None)
     args.cell_type = getattr(args, "cell_type", "lstm")
+    args.ngram_activation_type = getattr(args, "ngram_activation_type", "relu")
     vocab_reduction.set_arg_defaults(args)
     word_dropout.set_arg_defaults(args)
     args.sequence_lstm = getattr(args, "sequence_lstm", False)
