@@ -137,26 +137,6 @@ def _generate_score(models, args, dataset, dataset_split):
 def add_args(parser):
     group = parser.add_argument_group("Generation")
     group.add_argument(
-        "--append-eos-to-source",
-        action="store_true",
-        default=False,
-        help=(
-            "Apppend EOS to source sentences (instead of just target). When "
-            "running generate.py we ignore this command line argument and use "
-            "the same --append-eos-to-source value from training."
-        ),
-    )
-    group.add_argument(
-        "--reverse-source",
-        action="store_true",
-        default=True,
-        help=(
-            "Feed source sentence to model in reverse order. When running "
-            "generate.py we ignore this command line argument and use the same "
-            "--reverse-source value from training."
-        ),
-    )
-    group.add_argument(
         "--word-reward",
         type=float,
         default=0.0,
@@ -306,9 +286,9 @@ def generate(args):
         and a.reverse_source == reverse_source
         for a in model_args
     )
-    dataset.splits[args.gen_subset] = pytorch_translate_data.make_language_pair_dataset(
-        source_file=args.source_text_file,
-        target_file=args.target_text_file,
+    dataset.splits[args.gen_subset] = pytorch_translate_data.make_language_pair_dataset_from_text(
+        source_text_file=args.source_text_file,
+        target_text_file=args.target_text_file,
         source_dict=src_dict,
         target_dict=dst_dict,
         append_eos=append_eos_to_source,
