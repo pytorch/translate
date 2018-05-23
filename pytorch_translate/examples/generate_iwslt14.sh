@@ -19,7 +19,6 @@ python3 pytorch_translate/generate.py \
        --unkpen 0.5 \
        --lenpen 0 \
        --word-reward 0.25 \
-       --reverse-source \
        --beam 6 \
        --remove-bpe \
        --quiet
@@ -39,7 +38,6 @@ python3 pytorch_translate/generate.py \
        --unkpen 0.5 \
        --lenpen 0 \
        --word-reward 0.25 \
-       --reverse-source \
        --beam 6 \
        --remove-bpe \
        --quiet

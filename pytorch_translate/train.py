@@ -21,7 +21,9 @@ from fairseq.trainer import Trainer
 
 from pytorch_translate import average_checkpoints
 from pytorch_translate import data as pytorch_translate_data
+from pytorch_translate import dictionary as pytorch_translate_dictionary
 from pytorch_translate import generate
+from pytorch_translate import preprocess
 from pytorch_translate import rnn  # noqa
 from pytorch_translate.research.word_prediction import word_prediction_criterion  # noqa
 from pytorch_translate.research.word_prediction import word_prediction_model  # noqa
@@ -82,77 +84,9 @@ def get_parser_with_args():
         "in the first place. A value of < 0 disables this.",
     )
 
-    # Args related to dataset.
-    group = parser.add_argument_group("Dataset and data loading")
-    group.add_argument(
-        "--source-vocab-file",
-        default="",
-        metavar="FILE",
-        help="Path to text file representing the fairseq Dictionary to use. "
-        "If left empty, the dict is auto-generated from source training data.",
-    )
-    group.add_argument(
-        "--source-max-vocab-size",
-        default=-1,
-        type=int,
-        metavar="N",
-        help="If a new vocab file needs to be generated, restrict it to the "
-        "top N most common words. If we re-use an existing vocab file, this "
-        "flag will have no effect. A value of < 0 means no max size.",
-    )
-    group.add_argument(
-        "--target-vocab-file",
-        default="",
-        metavar="FILE",
-        help="Path to text file representing the fairseq Dictionary to use. "
-        "If left empty, the dict is auto-generated from target training data.",
-    )
-    group.add_argument(
-        "--target-max-vocab-size",
-        default=-1,
-        type=int,
-        metavar="N",
-        help="If a new vocab file needs to be generated, restrict it to the "
-        "top N most common words. If we re-use an existing vocab file, this "
-        "flag will have no effect. A value of < 0 means no max size.",
-    )
-    group.add_argument(
-        "--train-source-text-file",
-        default="",
-        metavar="FILE",
-        help="Path to raw text file containing source training examples. "
-        "This overrides what would be loaded from the data dir.",
-    )
-    group.add_argument(
-        "--train-target-text-file",
-        default="",
-        metavar="FILE",
-        help="Path to raw text file containing target training examples. "
-        "This overrides what would be loaded from the data dir.",
-    )
-    group.add_argument(
-        "--eval-source-text-file",
-        default="",
-        metavar="FILE",
-        help="Path to raw text file containing source eval examples for "
-        "calculating validation loss and BLEU eval scores. "
-        "This overrides what would be loaded from the data dir.",
-    )
-    group.add_argument(
-        "--eval-target-text-file",
-        default="",
-        metavar="FILE",
-        help="Path to raw text file containing target eval examples for "
-        "calculating validation loss and BLEU eval scores. "
-        "This overrides what would be loaded from the data dir.",
-    )
-    group.add_argument(
-        "--penalized-target-tokens-file",
-        default="",
-        metavar="FILE",
-        help="Path to text file of tokens to receive a penalty in decoding."
-        "If left empty, no penalty will be applied",
-    )
+    # Adds args related to input data files (preprocessing, numberizing, and
+    # binarizing text files; creating vocab files)
+    preprocess.add_args(parser)
 
     # Adds args related to checkpointing.
     group = parser.add_argument_group("Checkpointing")
@@ -216,18 +150,6 @@ def get_parser_with_args():
     return parser
 
 
-def parse_args_and_arch(parser):
-    args = options.parse_args_and_arch(parser)
-    # Prevents generate from printing individual translated sentences when
-    # calculating BLEU score.
-    args.quiet = True
-
-    assert_corpora_files_specified(args)
-
-    print(args)
-    return args
-
-
 def load_existing_checkpoint(save_dir, restore_file, trainer):
     # Load the latest checkpoint if one is available
     os.makedirs(save_dir, exist_ok=True)
@@ -263,25 +185,35 @@ def load_existing_checkpoint(save_dir, restore_file, trainer):
     return extra_state
 
 
-def assert_corpora_files_specified(args):
-    assert not args.data, (
-        "Specifying a data directory is disabled in FBTranslate since the "
-        "fairseq data class is not supported. Please specify "
-        "--train-source-text-file, --train-target-text-file, "
-        "--eval-source-text-file, and  --eval-target-text-file instead."
-    )
-    assert (
-        args.train_source_text_file and os.path.isfile(args.train_source_text_file)
-    ), "Please specify a valid file for --train-source-text-file"
-    assert (
-        args.train_target_text_file and os.path.isfile(args.train_target_text_file)
-    ), "Please specify a valid file for --train-target-text-file"
-    assert (
-        args.eval_source_text_file and os.path.isfile(args.eval_source_text_file)
-    ), "Please specify a valid file for --eval-source-text-file"
-    assert (
-        args.eval_target_text_file and os.path.isfile(args.eval_target_text_file)
-    ), "Please specify a valid file for --eval-target-text-file"
+def validate_and_set_default_args(args):
+    # Prevents generate from printing individual translated sentences when
+    # calculating BLEU score.
+    args.quiet = True
+
+    if args.data:
+        raise ValueError(
+            "Specifying a data directory is disabled in FBTranslate since the "
+            "fairseq data class is not supported. Please specify input text "
+            "files (--{train, eval}-{source, target}-text-file) "
+            "or binarized input files "
+            "(--{train, eval}-{source, target}-binary-prefix) instead."
+        )
+
+    if args.source_lang is None:
+        args.source_lang = "src"
+    if args.target_lang is None:
+        args.target_lang = "tgt"
+
+    if not args.source_vocab_file:
+        args.source_vocab_file = pytorch_translate_dictionary.default_dictionary_path(
+            save_dir=args.save_dir, dialect=args.source_lang
+        )
+    if not args.target_vocab_file:
+        args.target_vocab_file = pytorch_translate_dictionary.default_dictionary_path(
+            save_dir=args.save_dir, dialect=args.target_lang
+        )
+
+    preprocess.validate_args(args)
 
 
 def setup_training(args):
@@ -294,32 +226,28 @@ def setup_training(args):
     # Load dataset
     splits = [args.train_subset, args.valid_subset]
 
-    if args.source_lang is None:
-        args.source_lang = "src"
-    if args.target_lang is None:
-        args.target_lang = "tgt"
+    validate_and_set_default_args(args)
 
-    assert_corpora_files_specified(args)
     train_corpus = pytorch_translate_data.ParallelCorpusConfig(
         source=pytorch_translate_data.CorpusConfig(
-            dialect=args.source_lang, data_file=args.train_source_text_file
+            dialect=args.source_lang, data_file=args.train_source_binary_prefix
         ),
         target=pytorch_translate_data.CorpusConfig(
-            dialect=args.target_lang, data_file=args.train_target_text_file
+            dialect=args.target_lang, data_file=args.train_target_binary_prefix
         ),
     )
     eval_corpus = pytorch_translate_data.ParallelCorpusConfig(
         source=pytorch_translate_data.CorpusConfig(
-            dialect=args.source_lang, data_file=args.eval_source_text_file
+            dialect=args.source_lang, data_file=args.eval_source_binary_prefix
         ),
         target=pytorch_translate_data.CorpusConfig(
-            dialect=args.target_lang, data_file=args.eval_target_text_file
+            dialect=args.target_lang, data_file=args.eval_target_binary_prefix
         ),
     )
 
     if args.log_verbose:
-        print("Starting to load raw text files.", flush=True)
-    dataset = pytorch_translate_data.load_raw_text_dataset(
+        print("Starting to load binarized data files.", flush=True)
+    dataset = pytorch_translate_data.load_binarized_dataset(
         train_corpus=train_corpus,
         eval_corpus=eval_corpus,
         train_split=args.train_subset,
@@ -1038,28 +966,10 @@ def run(args, error_queue):
 
 
 def main(args):
-    # Build vocab from the training corpus. We do this outside of train clones
-    # to prevent the clones from having to wait on the master clone building the
-    # vocab.
-    if args.source_lang is None:
-        args.source_lang = "src"
-    if args.target_lang is None:
-        args.target_lang = "tgt"
-
-    args.source_vocab_file = pytorch_translate_data.build_vocab_if_nonexistent(
-        vocab_file=args.source_vocab_file,
-        corpus_file=args.train_source_text_file,
-        dialect=args.source_lang,
-        save_dir=args.save_dir,
-        max_vocab_size=args.source_max_vocab_size,
-    )
-    args.target_vocab_file = pytorch_translate_data.build_vocab_if_nonexistent(
-        vocab_file=args.target_vocab_file,
-        corpus_file=args.train_target_text_file,
-        dialect=args.target_lang,
-        save_dir=args.save_dir,
-        max_vocab_size=args.target_max_vocab_size,
-    )
+    # We preprocess the data (generating vocab files and binarized data files
+    # if needed) outside of the train clones to prevent them from having to
+    # wait while the master clone is doing this.
+    preprocess.preprocess_corpora(args)
 
     # Set distributed training parameters for a single node.
     args.distributed_world_size = torch.cuda.device_count()
@@ -1088,5 +998,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = get_parser_with_args()
-    args = parse_args_and_arch(parser)
+    args = options.parse_args_and_arch(parser)
+    validate_and_set_default_args(args)
+    print(args)
     main(args)
