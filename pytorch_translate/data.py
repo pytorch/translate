@@ -19,9 +19,9 @@ class ParallelCorpusConfig(NamedTuple):
     target: CorpusConfig
 
 
-def make_language_pair_dataset(
-    source_file: str,
-    target_file: str,
+def make_language_pair_dataset_from_text(
+    source_text_file: str,
+    target_text_file: str,
     source_dict: pytorch_translate_dictionary.Dictionary,
     target_dict: pytorch_translate_dictionary.Dictionary,
     append_eos: Optional[bool] = False,
@@ -29,13 +29,13 @@ def make_language_pair_dataset(
 ) -> data.LanguagePairDataset:
     return data.LanguagePairDataset(
         src=indexed_dataset.IndexedRawTextDataset(
-            path=source_file,
+            path=source_text_file,
             dictionary=source_dict,
             append_eos=append_eos,
             reverse_order=reverse_source,
         ),
         dst=indexed_dataset.IndexedRawTextDataset(
-            path=target_file,
+            path=target_text_file,
             dictionary=target_dict,
             # We always append EOS to the target sentence since we still want
             # the model to output an indication the sentence has finished, even
@@ -53,7 +53,7 @@ def make_language_pair_dataset(
     )
 
 
-def load_raw_text_dataset(
+def load_binarized_dataset(
     train_corpus: ParallelCorpusConfig,
     eval_corpus: ParallelCorpusConfig,
     train_split: str,
@@ -70,94 +70,24 @@ def load_raw_text_dataset(
         dst_dict=target_dict,
     )
 
-    prev_source_dialect = None
-    prev_target_dialect = None
-
     for split, corpus in [(train_split, train_corpus), (eval_split, eval_corpus)]:
-        # Sanity check that all language directions are consistent until this
-        # has been updated to support multilingual corpora.
-        if prev_source_dialect is None and prev_target_dialect is None:
-            prev_source_dialect = corpus.source.dialect
-            prev_target_dialect = corpus.target.dialect
-        elif (
-            prev_source_dialect != corpus.source.dialect
-            or prev_target_dialect != corpus.target.dialect
+        if (
+            not indexed_dataset.IndexedInMemoryDataset.exists(corpus.source.data_file)
+            or not indexed_dataset.IndexedInMemoryDataset.exists(
+                corpus.target.data_file
+            )
         ):
             raise ValueError(
-                f"We currently only support monolingual directions - expected "
-                f"{prev_source_dialect}->{prev_target_dialect} for all corpora, "
-                f"but found {corpus.source.dialect}->{corpus.target.dialect} for "
-                f"split {split}"
+                f"One or both of source file: {corpus.source.data_file} and "
+                f"target file: {corpus.target.data_file} for split {split} "
+                f"was not found."
             )
 
-        dataset.splits[split] = make_language_pair_dataset(
-            source_file=corpus.source.data_file,
-            target_file=corpus.target.data_file,
-            source_dict=source_dict,
-            target_dict=target_dict,
-            append_eos=args.append_eos_to_source,
-            reverse_source=args.reverse_source,
+        dataset.splits[split] = data.LanguagePairDataset(
+            src=indexed_dataset.IndexedInMemoryDataset(corpus.source.data_file),
+            dst=indexed_dataset.IndexedInMemoryDataset(corpus.target.data_file),
+            pad_idx=source_dict.pad(),
+            eos_idx=source_dict.eos(),
         )
+
     return dataset
-
-
-def build_vocab_from_corpus(
-    corpus_file: str,
-    dialect: str,
-    save_dir: str,
-    max_vocab_size: int,
-    tokens_with_penalty: Optional[str] = None,
-):
-    vocab_file = os.path.join(save_dir, f"dictionary-{dialect}.txt")
-    d = pytorch_translate_dictionary.Dictionary()
-    with open(corpus_file, "r") as f:
-        for line in f:
-            tokens = line.split()
-            for t in tokens:
-                token_index = d.add_symbol(t)
-
-    # Set indices to receive penalty
-    if tokens_with_penalty:
-        # Assume input tokens are unique
-        lexicon = []
-        with open(tokens_with_penalty, "r", encoding="utf-8") as f:
-            for line in f:
-                tokens = line.strip().split()
-                if len(tokens) == 1:
-                    lexicon.append(tokens[0])
-
-        for token, token_index in d.indices.items():
-            if token in lexicon:
-                d.lexicon_indices.add(token_index)
-
-    d.finalize()
-    d.save(vocab_file, threshold=0, nwords=max_vocab_size)
-    print(f"Generated new vocab file saved at {vocab_file}.")
-    if max_vocab_size < 0:
-        print("No maximum vocab sized enforced.")
-    else:
-        print(f"Maximum vocab size {max_vocab_size}")
-
-    return vocab_file
-
-
-def build_vocab_if_nonexistent(
-    vocab_file: str,
-    corpus_file: str,
-    dialect: str,
-    save_dir: str,
-    max_vocab_size: int,
-    tokens_with_penalty: str = None,
-):
-    if vocab_file and os.path.isfile(vocab_file):
-        return vocab_file
-    # Vocab file is either unspecified or does not exist
-    if vocab_file and not os.path.isfile(vocab_file):
-        print(f"Vocab file {vocab_file} does not exist.")
-    return build_vocab_from_corpus(
-        corpus_file=corpus_file,
-        dialect=dialect,
-        save_dir=save_dir,
-        max_vocab_size=max_vocab_size,
-        tokens_with_penalty=tokens_with_penalty,
-    )

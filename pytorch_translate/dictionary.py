@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 
-from fairseq import dictionary
+import os
+from typing import Dict, List, Optional, Set
+
+from fairseq import dictionary, tokenizer
 from pytorch_translate import vocab_constants
+
+
+def default_dictionary_path(save_dir: str, dialect: str) -> str:
+    return os.path.join(save_dir, f"dictionary-{dialect}.txt")
 
 
 class Dictionary(dictionary.Dictionary):
@@ -9,16 +16,16 @@ class Dictionary(dictionary.Dictionary):
 
     def __init__(
         self,
-        pad="<pad>",
-        eos="</s>",
-        unk="<unk>",
-        max_special_tokens=vocab_constants.MAX_SPECIAL_TOKENS,
-    ):
+        pad: str = "<pad>",
+        eos: str = "</s>",
+        unk: str = "<unk>",
+        max_special_tokens: int = vocab_constants.MAX_SPECIAL_TOKENS,
+    ) -> None:
         self.unk_word, self.pad_word, self.eos_word = unk, pad, eos
-        self.symbols = []
-        self.count = []
-        self.indices = {}
-        self.lexicon_indices = set()
+        self.symbols: List[str] = []
+        self.count: List[int] = []
+        self.indices: Dict[str, int] = {}
+        self.lexicon_indices: Set[int] = set()
 
         self.pad_index = self.add_symbol(pad)
         assert self.pad_index == vocab_constants.PAD_ID
@@ -40,8 +47,75 @@ class Dictionary(dictionary.Dictionary):
         self.nspecial = len(self.symbols)
         assert self.nspecial == max_special_tokens
 
-    def lexicon_indices_list(self):
+    def lexicon_indices_list(self) -> List[int]:
         return list(self.lexicon_indices)
+
+    @classmethod
+    def build_vocab_file(
+        cls,
+        corpus_file: str,
+        vocab_file: str,
+        max_vocab_size: int,
+        tokens_with_penalty: Optional[str] = None,
+    ) -> "Dictionary":  # https://www.python.org/dev/peps/pep-0484/#forward-references
+        d = cls()
+        tokenizer.Tokenizer.add_file_to_dictionary(
+            filename=corpus_file, dict=d, tokenize=tokenizer.tokenize_line
+        )
+
+        # Set indices to receive penalty
+        if tokens_with_penalty:
+            # Assume input tokens are unique
+            lexicon = []
+            with open(tokens_with_penalty, "r", encoding="utf-8") as f:
+                for line in f:
+                    tokens = line.strip().split()
+                    if len(tokens) == 1:
+                        lexicon.append(tokens[0])
+
+            for token, token_index in d.indices.items():
+                if token in lexicon:
+                    d.lexicon_indices.add(token_index)
+
+        d.finalize()
+        d.save(vocab_file, threshold=0, nwords=max_vocab_size)
+        print(f"Generated new vocab file saved at {vocab_file}.")
+        if max_vocab_size < 0:
+            print("No maximum vocab sized enforced.")
+        else:
+            print(f"Maximum vocab size {max_vocab_size}")
+
+        # Re-load the dictionary since the max vocab size is only enforced in
+        # the vocab file written by save().
+        return cls.load(vocab_file)
+
+    @classmethod
+    def build_vocab_file_if_nonexistent(
+        cls,
+        corpus_file: str,
+        vocab_file: str,
+        max_vocab_size: int,
+        tokens_with_penalty: Optional[str] = None,
+    ) -> "Dictionary":  # https://www.python.org/dev/peps/pep-0484/#forward-references
+        if os.path.isfile(vocab_file):
+            d = cls()
+            d.load(vocab_file)
+            print(
+                f"Re-using existing vocab file {vocab_file}. Specified "
+                f"max vocab size of {max_vocab_size} may not be enforced."
+            )
+            return d
+
+        print(
+            f"Vocab file {vocab_file} does not exist. "
+            "Creating new vocab file at that path."
+        )
+        return cls.build_vocab_file(
+            corpus_file=corpus_file,
+            vocab_file=vocab_file,
+            max_vocab_size=max_vocab_size,
+            tokens_with_penalty=tokens_with_penalty,
+        )
 
 
 class CharDictionary(Dictionary):
