@@ -243,7 +243,8 @@ class RNNModel(FairseqModel):
             )
         return targets
 
-    def expand_encoder_output(self, encoder_out, n):
+    @staticmethod
+    def expand_encoder_output(encoder_out, n):
         """
         Expand all outputs to replicate each instance from batch in place n
         times (as for beam search)
