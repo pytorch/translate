@@ -16,7 +16,7 @@ def add_args(parser):
         "--source-vocab-file",
         default="",
         metavar="FILE",
-        help="Path to text file representing the fairseq Dictionary to use. "
+        help="Path to text file representing the dictionary of tokens to use. "
         "If the file does not exist, the dict is auto-generated from source "
         "training data and saved as that file.",
     )
@@ -28,6 +28,19 @@ def add_args(parser):
         help="If a new vocab file needs to be generated, restrict it to the "
         "top N most common words. If we re-use an existing vocab file, this "
         "flag will have no effect. A value of < 0 means no max size.",
+    )
+    group.add_argument(
+        "--char-source-vocab-file",
+        default="",
+        metavar="FILE",
+        help="Same as --source-vocab-file except using characters.",
+    )
+    group.add_argument(
+        "--char-source-max-vocab-size",
+        default=-1,
+        type=int,
+        metavar="N",
+        help="Same as --source-max-vocab-size except using characters.",
     )
     group.add_argument(
         "--target-vocab-file",
@@ -214,6 +227,15 @@ def preprocess_corpora(args):
         max_vocab_size=args.source_max_vocab_size,
         tokens_with_penalty=None,
     )
+    if args.char_source_vocab_file:
+        # TODO: assign results and pass to new and improved binarize_text_file
+        pytorch_translate_dictionary.Dictionary.build_vocab_file_if_nonexistent(
+            corpus_file=args.train_source_text_file,
+            vocab_file=args.char_source_vocab_file,
+            max_vocab_size=args.char_source_max_vocab_size,
+            tokens_with_penalty=None,
+            is_char_vocab=True,
+        )
     if args.train_source_text_file:
         args.train_source_binary_prefix = binarize_text_file(
             text_file=args.train_source_text_file,
