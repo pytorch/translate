@@ -7,8 +7,32 @@ from fairseq import dictionary, tokenizer
 from pytorch_translate import vocab_constants
 
 
+TAGS = [
+    "@PLAIN",
+    "@FBENTITY",
+    "@DIGITS",
+    "@EMOTICON",
+    "@USERNAME",
+    "@URL",
+    "@MULTIPUNCT",
+    "@PERSON",
+    "@NOTRANSLATE",
+]
+
+
 def default_dictionary_path(save_dir: str, dialect: str) -> str:
     return os.path.join(save_dir, f"dictionary-{dialect}.txt")
+
+
+def char_tokenize(line):
+    words = tokenizer.tokenize_line(line)
+    chars = []
+    for word in words:
+        if word in TAGS:
+            chars.append(word)
+        else:
+            chars.extend(c for c in word)
+    return chars
 
 
 class Dictionary(dictionary.Dictionary):
@@ -57,10 +81,13 @@ class Dictionary(dictionary.Dictionary):
         vocab_file: str,
         max_vocab_size: int,
         tokens_with_penalty: Optional[str] = None,
+        is_char_vocab: bool = False,
     ) -> "Dictionary":  # https://www.python.org/dev/peps/pep-0484/#forward-references
         d = cls()
+
+        tokenize = char_tokenize if is_char_vocab else tokenizer.tokenize_line
         tokenizer.Tokenizer.add_file_to_dictionary(
-            filename=corpus_file, dict=d, tokenize=tokenizer.tokenize_line
+            filename=corpus_file, dict=d, tokenize=tokenize
         )
 
         # Set indices to receive penalty
@@ -96,6 +123,7 @@ class Dictionary(dictionary.Dictionary):
         vocab_file: str,
         max_vocab_size: int,
         tokens_with_penalty: Optional[str] = None,
+        is_char_vocab: bool = False,
     ) -> "Dictionary":  # https://www.python.org/dev/peps/pep-0484/#forward-references
         if os.path.isfile(vocab_file):
             d = cls()
@@ -115,6 +143,7 @@ class Dictionary(dictionary.Dictionary):
             vocab_file=vocab_file,
             max_vocab_size=max_vocab_size,
             tokens_with_penalty=tokens_with_penalty,
+            is_char_vocab=is_char_vocab,
         )
 
 
