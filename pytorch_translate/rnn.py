@@ -415,7 +415,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
         if LanguagePairDataset.LEFT_PAD_SOURCE:
             # convert left-padding to right-padding
             src_tokens.data = utils.convert_padding_direction(
-                src_tokens.data, src_lengths.data, self.padding_idx, left_to_right=True
+                src_tokens.data, self.padding_idx, left_to_right=True
             )
         if self.word_dropout_module is not None:
             src_tokens.data = self.word_dropout_module(src_tokens.data)
@@ -584,7 +584,7 @@ class RNNEncoder(FairseqEncoder):
         if LanguagePairDataset.LEFT_PAD_SOURCE:
             # convert left-padding to right-padding
             src_tokens.data = utils.convert_padding_direction(
-                src_tokens.data, src_lengths.data, self.padding_idx, left_to_right=True
+                src_tokens.data, self.padding_idx, left_to_right=True
             )
         if self.word_dropout_module is not None:
             src_tokens.data = self.word_dropout_module(src_tokens.data)
