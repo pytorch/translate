@@ -231,18 +231,18 @@ def setup_training(args):
 
     train_corpus = pytorch_translate_data.ParallelCorpusConfig(
         source=pytorch_translate_data.CorpusConfig(
-            dialect=args.source_lang, data_file=args.train_source_binary_prefix
+            dialect=args.source_lang, data_file=args.train_source_binary_path
         ),
         target=pytorch_translate_data.CorpusConfig(
-            dialect=args.target_lang, data_file=args.train_target_binary_prefix
+            dialect=args.target_lang, data_file=args.train_target_binary_path
         ),
     )
     eval_corpus = pytorch_translate_data.ParallelCorpusConfig(
         source=pytorch_translate_data.CorpusConfig(
-            dialect=args.source_lang, data_file=args.eval_source_binary_prefix
+            dialect=args.source_lang, data_file=args.eval_source_binary_path
         ),
         target=pytorch_translate_data.CorpusConfig(
-            dialect=args.target_lang, data_file=args.eval_target_binary_prefix
+            dialect=args.target_lang, data_file=args.eval_target_binary_path
         ),
     )
 

@@ -5,6 +5,7 @@ import os
 import tempfile
 
 from fairseq import indexed_dataset, tokenizer
+from pytorch_translate import data as pytorch_translate_data
 from pytorch_translate import dictionary as pytorch_translate_dictionary
 from pytorch_translate import utils
 
@@ -87,28 +88,26 @@ def add_args(parser):
         "calculating validation loss and BLEU eval scores.",
     )
     group.add_argument(
-        "--train-source-binary-prefix",
+        "--train-source-binary-path",
         default="",
-        help="Path prefix for the output binary and index files containing "
-        "source training examples.",
+        help="Path for the binary file containing source training examples.",
     )
     group.add_argument(
-        "--train-target-binary-prefix",
+        "--train-target-binary-path",
         default="",
-        help="Path prefix for the output binary and index files containing "
-        "target training examples.",
+        help="Path for the binary file containing target training examples.",
     )
     group.add_argument(
-        "--eval-source-binary-prefix",
+        "--eval-source-binary-path",
         default="",
-        help="Path prefix for the output binary and index files containing "
-        "source eval examples for calculating validation loss and BLEU scores.",
+        help="Path for the binary file containing source eval examples for "
+        "calculating validation loss and BLEU scores.",
     )
     group.add_argument(
-        "--eval-target-binary-prefix",
+        "--eval-target-binary-path",
         default="",
-        help="Path prefix for the output binary and index files containing "
-        "target eval examples for calculating validation loss and BLEU scores.",
+        help="Path for the binary file containing target eval examples for "
+        "calculating validation loss and BLEU scores.",
     )
 
     group.add_argument(
@@ -139,13 +138,13 @@ def add_args(parser):
 
 def validate_args(args):
     if not (
-        (args.train_source_text_file or args.train_source_binary_prefix)
-        and (args.train_target_text_file or args.train_target_binary_prefix)
-        and (args.eval_source_text_file or args.eval_source_binary_prefix)
-        and (args.eval_target_text_file or args.eval_target_binary_prefix)
+        (args.train_source_text_file or args.train_source_binary_path)
+        and (args.train_target_text_file or args.train_target_binary_path)
+        and (args.eval_source_text_file or args.eval_source_binary_path)
+        and (args.eval_target_text_file or args.eval_target_binary_path)
     ):
         raise ValueError(
-            "At least one of --*_text_file or --*_binary_prefix flags must be "
+            "At least one of --*_text_file or --*_binary_path flags must be "
             "specified for each of --{train, eval}_{source, target}_*"
         )
 
@@ -174,45 +173,25 @@ def validate_args(args):
 def binarize_text_file(
     text_file: str,
     dictionary: pytorch_translate_dictionary.Dictionary,
-    output_prefix: str,
+    output_path: str,
     append_eos: bool,
     reverse_order: bool,
 ) -> str:
-    if not output_prefix:
-        fd, output_prefix = tempfile.mkstemp()
-        # We only need a unique file name prefix, since the helper functions
-        # take care of actually creating the file.
+    if not output_path:
+        fd, output_path = tempfile.mkstemp()
+        # We only need the file name.
         os.close(fd)
 
-    print(
-        f"Outputting binarized version of {text_file} to "
-        f"{indexed_dataset.data_file_path(output_prefix)} and "
-        f"{indexed_dataset.index_file_path(output_prefix)}"
-    )
-    builder = indexed_dataset.IndexedDatasetBuilder(
-        indexed_dataset.data_file_path(output_prefix)
-    )
+    # numpy silently appends this suffix if it is not present, so this ensures
+    # that the correct path is returned
+    if not output_path.endswith(".npz"):
+        output_path += ".npz"
 
-    def consumer(tensor):
-        builder.add_item(tensor)
+    dataset = pytorch_translate_data.InMemoryNumpyDataset()
+    dataset.parse(text_file, dictionary, reverse_order, append_eos)
+    dataset.save(output_path)
 
-    counters = tokenizer.Tokenizer.binarize(
-        filename=text_file,
-        dict=dictionary,
-        consumer=consumer,
-        append_eos=append_eos,
-        reverse_order=reverse_order,
-    )
-    print(
-        f"Binarizing {text_file}: {counters['nseq']} sents, "
-        f"{counters['ntok']} tokens, "
-        f"{100 * counters['nunk'] / counters['ntok']:.3}% replaced by "
-        f"{dictionary.unk_word}."
-    )
-
-    builder.finalize(indexed_dataset.index_file_path(output_prefix))
-
-    return output_prefix
+    return output_path
 
 
 def preprocess_corpora(args):
@@ -237,18 +216,18 @@ def preprocess_corpora(args):
             is_char_vocab=True,
         )
     if args.train_source_text_file:
-        args.train_source_binary_prefix = binarize_text_file(
+        args.train_source_binary_path = binarize_text_file(
             text_file=args.train_source_text_file,
             dictionary=source_dict,
-            output_prefix=args.train_source_binary_prefix,
+            output_path=args.train_source_binary_path,
             append_eos=args.append_eos_to_source,
             reverse_order=args.reverse_source,
         )
     if args.eval_source_text_file:
-        args.eval_source_binary_prefix = binarize_text_file(
+        args.eval_source_binary_path = binarize_text_file(
             text_file=args.eval_source_text_file,
             dictionary=source_dict,
-            output_prefix=args.eval_source_binary_prefix,
+            output_path=args.eval_source_binary_path,
             append_eos=args.append_eos_to_source,
             reverse_order=args.reverse_source,
         )
@@ -262,10 +241,10 @@ def preprocess_corpora(args):
     # For target sentences, we always append EOS tokens, and never reverse
     # their order.
     if args.train_target_text_file:
-        args.train_target_binary_prefix = binarize_text_file(
+        args.train_target_binary_path = binarize_text_file(
             text_file=args.train_target_text_file,
             dictionary=target_dict,
-            output_prefix=args.train_target_binary_prefix,
+            output_path=args.train_target_binary_path,
             # We always append EOS to the target sentence since we still want
             # the model to output an indication the sentence has finished, even
             # if we don't append the EOS symbol to the source sentence
@@ -278,10 +257,10 @@ def preprocess_corpora(args):
             reverse_order=False,
         )
     if args.eval_target_text_file:
-        args.eval_target_binary_prefix = binarize_text_file(
+        args.eval_target_binary_path = binarize_text_file(
             text_file=args.eval_target_text_file,
             dictionary=target_dict,
-            output_prefix=args.eval_target_binary_prefix,
+            output_path=args.eval_target_binary_path,
             append_eos=True,
             reverse_order=False,
         )
