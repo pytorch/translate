@@ -126,8 +126,7 @@ class Dictionary(dictionary.Dictionary):
         is_char_vocab: bool = False,
     ) -> "Dictionary":  # https://www.python.org/dev/peps/pep-0484/#forward-references
         if os.path.isfile(vocab_file):
-            d = cls()
-            d.load(vocab_file)
+            d = cls.load(vocab_file)
             print(
                 f"Re-using existing vocab file {vocab_file}. Specified "
                 f"max vocab size of {max_vocab_size} may not be enforced."
