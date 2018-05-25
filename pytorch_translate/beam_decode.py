@@ -134,7 +134,9 @@ class SequenceGenerator(torch.nn.Module):
 
         # the max beam size is the dictionary size - 1, since we never select pad
         beam_size = beam_size if beam_size is not None else self.beam_size
-        beam_size = min(beam_size, self.vocab_size - 1)
+        assert beam_size < self.vocab_size, (
+            "Beam size must be smaller than target vocabulary"
+        )
 
         encoder_outs = []
         incremental_states = {}
