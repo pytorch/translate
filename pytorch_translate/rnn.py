@@ -2,6 +2,7 @@
 
 import numpy as np
 import torch
+from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, PackedSequence, pad_packed_sequence
@@ -92,12 +93,6 @@ class RNNModel(FairseqModel):
                 "whether use mean encoder hidden states as decoder initial "
                 "states or not"
             ),
-        )
-        parser.add_argument(
-            "--add-encoder-outputs-as-decoder-input",
-            default=False,
-            action="store_true",
-            help=("whether use max encoder hidden states as constant decoder " "input"),
         )
         parser.add_argument(
             "--decoder-embed-dim",
@@ -228,9 +223,6 @@ class RNNModel(FairseqModel):
             residual_level=args.residual_level,
             bidirectional=bool(args.encoder_bidirectional),
             word_dropout_params=args.word_dropout_params,
-            add_encoder_output_as_decoder_input=(
-                args.add_encoder_output_as_decoder_input
-            ),
             char_rnn_params=args.char_rnn_params,
         )
         if args.ngram_decoder is not None:
@@ -276,9 +268,6 @@ class RNNModel(FairseqModel):
                 dropout_out=args.decoder_dropout_out,
                 residual_level=args.residual_level,
                 averaging_encoder=args.averaging_encoder,
-                add_encoder_output_as_decoder_input=(
-                    args.add_encoder_output_as_decoder_input
-                ),
             )
         return cls(encoder, decoder)
 
@@ -351,7 +340,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
         residual_level=None,
         bidirectional=False,
         word_dropout_params=None,
-        add_encoder_output_as_decoder_input=False,
+        padding_value=0,
         char_rnn_params=None,
     ):
         assert cell_type == "lstm", 'sequence-lstm requires cell_type="lstm"'
@@ -363,10 +352,9 @@ class LSTMSequenceEncoder(FairseqEncoder):
         self.residual_level = residual_level
         self.hidden_dim = hidden_dim
         self.bidirectional = bidirectional
-        self.add_encoder_output_as_decoder_input = add_encoder_output_as_decoder_input
         num_embeddings = len(dictionary)
         self.padding_idx = dictionary.pad()
-
+        self.padding_value = padding_value
         self.char_rnn_params = char_rnn_params
         if self.char_rnn_params is not None:
             self.char_rnn_encoder = char_rnn_encoder.CharRNN(
@@ -488,9 +476,9 @@ class LSTMSequenceEncoder(FairseqEncoder):
         )
 
         #  [max_seqlen, batch_size, hidden_dim]
-        padding_value = -np.inf if self.add_encoder_output_as_decoder_input else 0
         unpacked_output, _ = pad_packed_sequence(
-            packed_input, padding_value=padding_value
+            packed_input,
+            padding_value=self.padding_value,
         )
 
         if self.char_rnn_params is not None:
@@ -523,7 +511,8 @@ class RNNEncoder(FairseqEncoder):
         dropout_out=0.1,
         residual_level=None,
         bidirectional=False,
-        add_encoder_output_as_decoder_input=False,
+        pretrained_embed=None,
+        padding_value=0,
         char_rnn_params=None,
     ):
         super().__init__(dictionary)
@@ -532,11 +521,11 @@ class RNNEncoder(FairseqEncoder):
         self.dropout_out = dropout_out
         self.residual_level = residual_level
         self.hidden_dim = hidden_dim
+        self.output_units = hidden_dim  # fairseq LSTM compatibility
         self.bidirectional = bidirectional
-        self.add_encoder_output_as_decoder_input = add_encoder_output_as_decoder_input
         num_embeddings = len(dictionary)
         self.padding_idx = dictionary.pad()
-
+        self.padding_value = padding_value
         self.char_rnn_params = char_rnn_params
         if self.char_rnn_params is not None:
             self.char_rnn_encoder = char_rnn_encoder.CharRNN(
@@ -549,12 +538,15 @@ class RNNEncoder(FairseqEncoder):
             )
             self.word_dim = char_rnn_params["char_rnn_units"]
         else:
-            self.embed_tokens = Embedding(
-                num_embeddings=num_embeddings,
-                embedding_dim=embed_dim,
-                padding_idx=self.padding_idx,
-                freeze_embed=freeze_embed,
-            )
+            if pretrained_embed is None:
+                self.embed_tokens = Embedding(
+                    num_embeddings=num_embeddings,
+                    embedding_dim=embed_dim,
+                    padding_idx=self.padding_idx,
+                    freeze_embed=freeze_embed,
+                )
+            else:
+                self.embed_tokens = pretrained_embed
             self.word_dim = embed_dim
 
         self.cell_type = cell_type
@@ -644,9 +636,8 @@ class RNNEncoder(FairseqEncoder):
         )
 
         #  [max_seqlen, batch_size, hidden_dim]
-        padding_value = -np.inf if self.add_encoder_output_as_decoder_input else 0
         unpacked_output, _ = pad_packed_sequence(
-            PackedSequence(packed_input, batch_sizes), padding_value=padding_value
+            PackedSequence(packed_input, batch_sizes), padding_value=self.padding_value
         )
 
         return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
@@ -676,12 +667,10 @@ class RNNDecoder(FairseqIncrementalDecoder):
         attention_type="dot",
         residual_level=None,
         averaging_encoder=False,
-        add_encoder_output_as_decoder_input=False,
     ):
         super().__init__(dst_dict)
         self.encoder_hidden_dim = encoder_hidden_dim
         self.embed_dim = embed_dim
-        self.add_encoder_output_as_decoder_input = add_encoder_output_as_decoder_input
         self.hidden_dim = hidden_dim
         self.out_embed_dim = out_embed_dim
         self.dropout_in = dropout_in
@@ -715,28 +704,33 @@ class RNNDecoder(FairseqIncrementalDecoder):
                 cell_init_fc_list.append(Linear(encoder_hidden_dim, hidden_dim))
             self.hidden_init_fc_list = nn.ModuleList(hidden_init_fc_list)
             self.cell_init_fc_list = nn.ModuleList(cell_init_fc_list)
+        self.initial_attn_context = nn.Parameter(
+            torch.Tensor(encoder_hidden_dim).zero_(),
+        )
+
+        if attention_type is not None:
+            self.attention = AttentionLayer(
+                decoder_hidden_state_dim=hidden_dim,
+                encoder_output_dim=encoder_hidden_dim,
+                attention_type=attention_type,
+            )
+            self.combined_output_and_context_dim = encoder_hidden_dim + hidden_dim
+        else:
+            self.attention = None
+            self.combined_output_and_context_dim = hidden_dim
 
         layers = []
         for layer in range(num_layers):
             if layer == 0:
-                cell_input_dim = encoder_hidden_dim + embed_dim
-                if self.add_encoder_output_as_decoder_input:
-                    cell_input_dim += encoder_hidden_dim
+                if self.attention is not None:
+                    cell_input_dim = encoder_hidden_dim + embed_dim
+                else:
+                    cell_input_dim = embed_dim
             else:
                 cell_input_dim = hidden_dim
-            layers.append(cell_class(input_dim=cell_input_dim, hidden_dim=hidden_dim))
+            layers.append(
+                cell_class(input_dim=cell_input_dim, hidden_dim=hidden_dim))
         self.layers = nn.ModuleList(layers)
-
-        self.attention = AttentionLayer(
-            decoder_hidden_state_dim=hidden_dim,
-            encoder_output_dim=encoder_hidden_dim,
-            attention_type=attention_type,
-        )
-        self.combined_output_and_context_dim = self.attention.context_dim + hidden_dim
-
-        self.initial_attn_context = nn.Parameter(
-            torch.Tensor(encoder_hidden_dim).zero_()
-        )
 
         if self.combined_output_and_context_dim != out_embed_dim:
             self.additional_fc = Linear(
@@ -776,13 +770,6 @@ class RNNDecoder(FairseqIncrementalDecoder):
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
 
-        if self.add_encoder_output_as_decoder_input:
-            # [1, batch_size, hidden_size]
-            encoder_outs_maxpool, _ = torch.max(encoder_outs, dim=0, keepdim=True)
-            encoder_outs_maxpool = encoder_outs_maxpool.repeat(seqlen, 1, 1)
-            # T x B x (C + encoder_hidden_dim)
-            x = torch.cat((x, encoder_outs_maxpool), dim=2)
-
         # initialize previous states (or get from cache during incremental generation)
         cached_state = utils.get_incremental_state(
             self, incremental_state, "cached_state"
@@ -798,7 +785,10 @@ class RNNDecoder(FairseqIncrementalDecoder):
         outs = []
         for j in range(seqlen):
             # input feeding: concatenate context vector from previous time step
-            step_input = torch.cat((x[j, :, :], input_feed), dim=1)
+            if self.attention is not None:
+                step_input = torch.cat((x[j, :, :], input_feed), dim=1)
+            else:
+                step_input = x[j, :, :]
             previous_layer_input = step_input
             for i, rnn in enumerate(self.layers):
                 # recurrent cell
@@ -810,7 +800,7 @@ class RNNDecoder(FairseqIncrementalDecoder):
                 )
 
                 if self.residual_level is not None and i >= self.residual_level:
-                    # TODO(T25321141) add an assert related to sizes here
+                    # TODO add an assert related to sizes here
                     step_input = layer_output + previous_layer_input
                 else:
                     step_input = layer_output
@@ -820,17 +810,29 @@ class RNNDecoder(FairseqIncrementalDecoder):
                 prev_hiddens[i] = hidden
                 prev_cells[i] = cell
 
-            out, step_attn_scores = self.attention(hidden, encoder_outs, src_lengths)
+            if self.attention is not None:
+                out, step_attn_scores = self.attention(
+                    hidden,
+                    encoder_outs,
+                    src_lengths,
+                )
+                input_feed = out
+            else:
+                combined_output_and_context = hidden
+                step_attn_scores = Variable(
+                    torch.ones(src_lengths.shape[0], src_lengths.data.max()).type_as(
+                        encoder_outs.data,
+                    ),
+                    requires_grad=False,
+                ).t()
             attn_scores_per_step.append(step_attn_scores.unsqueeze(1))
+            attn_scores = torch.cat(attn_scores_per_step, dim=1)
+            # srclen x tgtlen x bsz -> bsz x tgtlen x srclen
+            attn_scores = attn_scores.transpose(0, 2)
             combined_output_and_context = torch.cat((hidden, out), dim=1)
 
-            # input feeding
-            input_feed = out
-
-            # save final output (1 x B x C)
-            outs.append(combined_output_and_context.unsqueeze(0))
-
-        attn_scores = torch.cat(attn_scores_per_step, dim=1)
+            # save final output
+            outs.append(combined_output_and_context)
 
         # cache previous states (no-op except during incremental generation)
         utils.set_incremental_state(
@@ -840,13 +842,15 @@ class RNNDecoder(FairseqIncrementalDecoder):
             (prev_hiddens, prev_cells, input_feed),
         )
 
-        x = torch.cat(outs, dim=0)
+        # collect outputs across time steps
+        x = torch.cat(outs, dim=0).view(
+            seqlen,
+            bsz,
+            self.combined_output_and_context_dim,
+        )
 
         # T x B x C -> B x T x C
         x = x.transpose(1, 0)
-
-        # srclen x tgtlen x bsz -> bsz x tgtlen x srclen
-        attn_scores = attn_scores.transpose(0, 2)
 
         # bottleneck layer
         if hasattr(self, "additional_fc"):

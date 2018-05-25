@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import torch
+from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -8,7 +9,7 @@ from pytorch_translate import rnn_cell  # noqa
 
 
 class AttentionLayer(nn.Module):
-    SUPPORTED_ATTENTION_TYPES = ["dot"]
+    SUPPORTED_ATTENTION_TYPES = ["dot", "max", "mean"]
 
     def __init__(
         self,
@@ -49,9 +50,56 @@ class AttentionLayer(nn.Module):
             output, attn_scores = self.dot_attention(
                 decoder_state, source_hids, src_lengths
             )
+        elif self.attention_type == 'mean' or self.attention_type == 'max':
+            output, attn_scores = self.pooling(
+                self.attention_type,
+                source_hids,
+                src_lengths,
+            )
         else:
             raise ValueError(f"Attention type {self.attention_type} is not supported")
         return output, attn_scores
+
+    def pooling(self, pool_type, source_hids, src_lengths):
+        assert self.decoder_hidden_state_dim == self.encoder_output_dim
+        max_srclen = source_hids.size()[0]
+        assert max_srclen == src_lengths.data.max()
+        batch_size = source_hids.size()[1]
+        src_indices = torch.arange(
+            0,
+            max_srclen,
+        ).unsqueeze(0).type_as(src_lengths.data)
+        src_indices = src_indices.expand(batch_size, max_srclen)
+
+        # expand from shape (batch_size,) to (batch_size, max_srclen)
+        src_lengths = src_lengths.unsqueeze(dim=1).expand(
+            batch_size,
+            max_srclen,
+        )
+        src_mask = Variable(
+            (src_indices < src_lengths.data).double().type_as(
+                source_hids.data,
+            ),
+            requires_grad=False,
+        ).t().unsqueeze(2)
+        denom = src_lengths.t().unsqueeze(2).type_as(source_hids)
+        if pool_type == "mean":
+            masked_hiddens = source_hids * src_mask
+            context = (masked_hiddens / denom).sum(dim=0)
+        elif pool_type == "max":
+            masked_hiddens = source_hids - 10e6 * (1 - src_mask)
+            context = masked_hiddens.max(dim=0)
+        else:
+            raise ValueError(
+                'Pooling type {} is not supported'.format(pool_type)
+            )
+        attn_scores = Variable(
+            torch.ones(src_mask.shape[1], src_mask.shape[0]).type_as(
+                source_hids.data,
+            ),
+            requires_grad=False,
+        ).t()
+        return context, attn_scores
 
     def dot_attention(self, decoder_state, source_hids, src_lengths):
         # decoder_state: bsz x encoder_output_dim
