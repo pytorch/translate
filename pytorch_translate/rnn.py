@@ -19,7 +19,6 @@ from fairseq.models import (
     register_model_architecture,
 )
 
-from pytorch_translate import char_rnn_encoder
 from pytorch_translate import vocab_reduction
 from pytorch_translate import word_dropout
 from pytorch_translate.ngram import NGramDecoder
@@ -200,8 +199,6 @@ class RNNModel(FairseqModel):
         vocab_reduction.add_args(parser)
         # Args for word dropout
         word_dropout.add_args(parser)
-        # Args for character RNN encoder
-        char_rnn_encoder.add_args(parser)
 
     @classmethod
     def build_model(cls, args, src_dict, dst_dict):
@@ -223,7 +220,6 @@ class RNNModel(FairseqModel):
             residual_level=args.residual_level,
             bidirectional=bool(args.encoder_bidirectional),
             word_dropout_params=args.word_dropout_params,
-            char_rnn_params=args.char_rnn_params,
         )
         if args.ngram_decoder is not None:
             if args.ngram_activation_type == "relu":
@@ -341,7 +337,6 @@ class LSTMSequenceEncoder(FairseqEncoder):
         bidirectional=False,
         word_dropout_params=None,
         padding_value=0,
-        char_rnn_params=None,
     ):
         assert cell_type == "lstm", 'sequence-lstm requires cell_type="lstm"'
 
@@ -355,25 +350,14 @@ class LSTMSequenceEncoder(FairseqEncoder):
         num_embeddings = len(dictionary)
         self.padding_idx = dictionary.pad()
         self.padding_value = padding_value
-        self.char_rnn_params = char_rnn_params
-        if self.char_rnn_params is not None:
-            self.char_rnn_encoder = char_rnn_encoder.CharRNN(
-                dictionary=self.dictionary,
-                embed_dim=embed_dim,
-                hidden_dim=char_rnn_params["char_rnn_units"],
-                num_layers=char_rnn_params["char_rnn_layers"],
-                bidirectional=True,
-                word_delimiter=char_rnn_params["word_delimiter"],
-            )
-            self.word_dim = char_rnn_params["char_rnn_units"]
-        else:
-            self.embed_tokens = Embedding(
-                num_embeddings=num_embeddings,
-                embedding_dim=embed_dim,
-                padding_idx=self.padding_idx,
-                freeze_embed=freeze_embed,
-            )
-            self.word_dim = embed_dim
+
+        self.embed_tokens = Embedding(
+            num_embeddings=num_embeddings,
+            embedding_dim=embed_dim,
+            padding_idx=self.padding_idx,
+            freeze_embed=freeze_embed,
+        )
+        self.word_dim = embed_dim
 
         self.layers = nn.ModuleList([])
         for layer in range(num_layers):
@@ -408,24 +392,14 @@ class LSTMSequenceEncoder(FairseqEncoder):
         if self.word_dropout_module is not None:
             src_tokens.data = self.word_dropout_module(src_tokens.data)
 
-        if self.char_rnn_params is not None:
-            # x.shape: (max_num_words, batch_size, word_dim)
-            x, src_lengths = self.char_rnn_encoder(src_tokens, src_lengths)
-            seqlen, bsz, _ = x.size()
+        bsz, seqlen = src_tokens.size()
 
-            # temporarily sort in descending word-length order
-            src_lengths, word_len_order = torch.sort(src_lengths, descending=True)
-            x = x[:, word_len_order, :]
-            _, inverted_word_len_order = torch.sort(word_len_order)
-        else:
-            bsz, seqlen = src_tokens.size()
+        # embed tokens
+        x = self.embed_tokens(src_tokens)
+        x = F.dropout(x, p=self.dropout_in, training=self.training)
 
-            # embed tokens
-            x = self.embed_tokens(src_tokens)
-            x = F.dropout(x, p=self.dropout_in, training=self.training)
-
-            # B x T x C -> T x B x C
-            x = x.transpose(0, 1)
+        # B x T x C -> T x B x C
+        x = x.transpose(0, 1)
 
         # Allows compatibility with Caffe2 inputs for tracing (int32)
         # as well as the current format of Fairseq-Py inputs (int64)
@@ -481,13 +455,6 @@ class LSTMSequenceEncoder(FairseqEncoder):
             padding_value=self.padding_value,
         )
 
-        if self.char_rnn_params is not None:
-            unpacked_output = unpacked_output[:, inverted_word_len_order, :]
-            final_hiddens = final_hiddens[:, inverted_word_len_order, :]
-            final_cells = final_cells[:, inverted_word_len_order, :]
-            src_lengths = src_lengths[inverted_word_len_order]
-            src_tokens = src_tokens[inverted_word_len_order, :]
-
         return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
 
     def max_positions(self):
@@ -513,7 +480,6 @@ class RNNEncoder(FairseqEncoder):
         bidirectional=False,
         pretrained_embed=None,
         padding_value=0,
-        char_rnn_params=None,
     ):
         super().__init__(dictionary)
         self.dictionary = dictionary
@@ -526,28 +492,17 @@ class RNNEncoder(FairseqEncoder):
         num_embeddings = len(dictionary)
         self.padding_idx = dictionary.pad()
         self.padding_value = padding_value
-        self.char_rnn_params = char_rnn_params
-        if self.char_rnn_params is not None:
-            self.char_rnn_encoder = char_rnn_encoder.CharRNN(
-                dictionary=self.dictionary,
-                embed_dim=embed_dim,
-                hidden_dim=char_rnn_params["char_rnn_units"],
-                num_layers=char_rnn_params["char_rnn_layers"],
-                bidirectional=True,
-                word_delimiter=char_rnn_params["word_delimiter"],
+
+        if pretrained_embed is None:
+            self.embed_tokens = Embedding(
+                num_embeddings=num_embeddings,
+                embedding_dim=embed_dim,
+                padding_idx=self.padding_idx,
+                freeze_embed=freeze_embed,
             )
-            self.word_dim = char_rnn_params["char_rnn_units"]
         else:
-            if pretrained_embed is None:
-                self.embed_tokens = Embedding(
-                    num_embeddings=num_embeddings,
-                    embedding_dim=embed_dim,
-                    padding_idx=self.padding_idx,
-                    freeze_embed=freeze_embed,
-                )
-            else:
-                self.embed_tokens = pretrained_embed
-            self.word_dim = embed_dim
+            self.embed_tokens = pretrained_embed
+        self.word_dim = embed_dim
 
         self.cell_type = cell_type
         self.layers = nn.ModuleList([])
@@ -582,16 +537,12 @@ class RNNEncoder(FairseqEncoder):
             src_tokens.data = self.word_dropout_module(src_tokens.data)
         bsz, seqlen = src_tokens.size()
 
-        if self.char_rnn_params is not None:
-            # x.shape: (max_num_words, batch_size, word_dim)
-            x, src_lengths = self.char_rnn_encoder(src_tokens, src_lengths)
-        else:
-            # embed tokens
-            x = self.embed_tokens(src_tokens)
-            x = F.dropout(x, p=self.dropout_in, training=self.training)
+        # embed tokens
+        x = self.embed_tokens(src_tokens)
+        x = F.dropout(x, p=self.dropout_in, training=self.training)
 
-            # B x T x C -> T x B x C
-            x = x.transpose(0, 1)
+        # B x T x C -> T x B x C
+        x = x.transpose(0, 1)
 
         # Generate packed seq to deal with varying source seq length
         packed_input, batch_sizes = pack_padded_sequence(x, src_lengths)
@@ -960,10 +911,9 @@ def base_architecture(args):
     vocab_reduction.set_arg_defaults(args)
     word_dropout.set_arg_defaults(args)
     args.sequence_lstm = getattr(args, "sequence_lstm", False)
-    args.add_encoder_output_as_decoder_input = getattr(
+    args.add_encodercoder_output_as_decoder_input = getattr(
         args, "add_encoder_output_as_decoder_input", False
     )
-    char_rnn_encoder.set_arg_defaults(args)
 
 
 @register_model_architecture("rnn", "rnn_big_test")

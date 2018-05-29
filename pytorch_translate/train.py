@@ -20,6 +20,7 @@ from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
 
 from pytorch_translate import average_checkpoints
+from pytorch_translate import char_source_model  # noqa
 from pytorch_translate import data as pytorch_translate_data
 from pytorch_translate import dictionary as pytorch_translate_dictionary
 from pytorch_translate import generate
@@ -214,6 +215,11 @@ def validate_and_set_default_args(args):
             save_dir=args.save_dir, dialect=args.target_lang
         )
 
+    if args.arch == "char_source" and not args.char_source_vocab_file:
+        args.char_source_vocab_file = pytorch_translate_dictionary.default_char_dictionary_path(
+            save_dir=args.save_dir, dialect=args.source_lang
+        )
+
     preprocess.validate_args(args)
 
 
@@ -248,12 +254,14 @@ def setup_training(args):
 
     if args.log_verbose:
         print("Starting to load binarized data files.", flush=True)
+    use_char_source = args.arch == "char_source"
     dataset = pytorch_translate_data.load_binarized_dataset(
         train_corpus=train_corpus,
         eval_corpus=eval_corpus,
         train_split=args.train_subset,
         eval_split=args.valid_subset,
         args=args,
+        use_char_source=use_char_source,
     )
     if args.log_verbose:
         print("Finished loading dataset", flush=True)
