@@ -35,6 +35,7 @@ def _generate_score(models, args, dataset, dataset_split):
     model_weights = None
     if args.model_weights:
         model_weights = [float(w.strip()) for w in args.model_weights.split(",")]
+    use_char_source = (args.arch == "char_source")
     translator = beam_decode.SequenceGenerator(
         models,
         beam_size=args.beam,
@@ -44,6 +45,7 @@ def _generate_score(models, args, dataset, dataset_split):
         unk_penalty=args.unkpen,
         word_reward=args.word_reward,
         model_weights=model_weights,
+        use_char_source=use_char_source,
     )
     if use_cuda:
         translator.cuda()
