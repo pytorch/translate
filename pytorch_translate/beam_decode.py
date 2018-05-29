@@ -21,6 +21,7 @@ class SequenceGenerator(torch.nn.Module):
         retain_dropout=False,
         word_reward=0,
         model_weights=None,
+        use_char_source=False,
     ):
         """Generates translations of a given source sentence.
 
@@ -38,6 +39,8 @@ class SequenceGenerator(torch.nn.Module):
                 output)
             model_weights: None or list of Python floats of the same length as
                 `models` with ensemble interpolation weights.
+            use_char_source: if True, encoder inputs consist of (src_tokens,
+                src_lengths, char_inds, word_lengths)
         """
         self.models = models
         self.pad = models[0].dst_dict.pad()
@@ -50,8 +53,8 @@ class SequenceGenerator(torch.nn.Module):
         self.beam_size = beam_size
         self.minlen = minlen
         max_decoder_len = min(m.max_decoder_positions() for m in self.models)
-        self.maxlen = max_decoder_len if maxlen is None else min(
-            maxlen, max_decoder_len
+        self.maxlen = (
+            max_decoder_len if maxlen is None else min(maxlen, max_decoder_len)
         )
         self.stop_early = stop_early
         self.normalize_scores = normalize_scores
@@ -66,6 +69,7 @@ class SequenceGenerator(torch.nn.Module):
             self.model_weights = model_weights
         else:
             self.model_weights = [1.0 / len(models)] * len(models)
+        self.use_char_source = use_char_source
 
     def cuda(self):
         for model in self.models:
@@ -97,12 +101,20 @@ class SequenceGenerator(torch.nn.Module):
             s = utils.make_variable(sample, volatile=True, cuda=cuda)
             input = s["net_input"]
             srclen = input["src_tokens"].size(1)
+            if self.use_char_source:
+                encoder_input = (
+                    input["src_tokens"],
+                    input["src_lengths"],
+                    input["char_inds"],
+                    input["word_lengths"],
+                )
+            else:
+                encoder_input = (input["src_tokens"], input["src_lengths"])
             if timer is not None:
                 timer.start()
             with utils.maybe_no_grad():
                 hypos = self.generate(
-                    input["src_tokens"],
-                    input["src_lengths"],
+                    encoder_input,
                     beam_size=beam_size,
                     maxlen=int(maxlen_a * srclen + maxlen_b),
                     prefix_tokens=s["target"][:, :prefix_size]
@@ -117,26 +129,25 @@ class SequenceGenerator(torch.nn.Module):
                 ref = utils.strip_pad(s["target"].data[i, :], self.pad)
                 yield id, src, ref, hypos[i]
 
-    def generate(
-        self, src_tokens, src_lengths, beam_size=None, maxlen=None, prefix_tokens=None
-    ):
+    def generate(self, encoder_input, beam_size=None, maxlen=None, prefix_tokens=None):
         """Generate a batch of translations."""
         with utils.maybe_no_grad():
-            return self._generate(
-                src_tokens, src_lengths, beam_size, maxlen, prefix_tokens
-            )
+            return self._generate(encoder_input, beam_size, maxlen, prefix_tokens)
 
-    def _generate(
-        self, src_tokens, src_lengths, beam_size=None, maxlen=None, prefix_tokens=None
-    ):
+    def _generate(self, encoder_input, beam_size=None, maxlen=None, prefix_tokens=None):
+        if self.use_char_source:
+            (src_tokens, src_lengths, char_inds, word_lengths) = encoder_input
+        else:
+            (src_tokens, src_lengths) = encoder_input
+
         bsz, srclen = src_tokens.size()
         maxlen = min(maxlen, self.maxlen) if maxlen is not None else self.maxlen
 
         # the max beam size is the dictionary size - 1, since we never select pad
         beam_size = beam_size if beam_size is not None else self.beam_size
-        assert beam_size < self.vocab_size, (
-            "Beam size must be smaller than target vocabulary"
-        )
+        assert (
+            beam_size < self.vocab_size
+        ), "Beam size must be smaller than target vocabulary"
 
         encoder_outs = []
         incremental_states = {}
@@ -148,8 +159,17 @@ class SequenceGenerator(torch.nn.Module):
             else:
                 incremental_states[model] = None
 
+            if self.use_char_source:
+                encoder_out = model.encoder(
+                    src_tokens,
+                    src_lengths,
+                    char_inds,
+                    word_lengths,
+                )
+            else:
+                encoder_out = model.encoder(src_tokens, src_lengths)
+
             # expand outputs for each example beam_size times
-            encoder_out = model.encoder(src_tokens, src_lengths)
             encoder_out = model.expand_encoder_output(encoder_out, beam_size)
             encoder_outs.append(encoder_out)
 
@@ -333,13 +353,11 @@ class SequenceGenerator(torch.nn.Module):
                     cand_scores = torch.gather(
                         probs_slice,
                         dim=1,
-                        index=prefix_tokens[:, step].view(-1, 1).data,
-                    ).expand(
-                        -1, cand_size
+                        index=prefix_tokens[:, step].view(-1, 1),
+                    ).expand(-1, cand_size)
+                    cand_indices = (
+                        prefix_tokens[:, step].view(-1, 1).expand(bsz, cand_size).data
                     )
-                    cand_indices = prefix_tokens[:, step].view(-1, 1).expand(
-                        bsz, cand_size
-                    ).data
                     cand_beams.resize_as_(cand_indices).fill_(0)
                 else:
                     # take the best 2 x beam_size predictions. We'll choose the first
@@ -357,11 +375,11 @@ class SequenceGenerator(torch.nn.Module):
                     torch.div(cand_indices, possible_tokens_size, out=cand_beams)
                     cand_indices.fmod_(possible_tokens_size)
                     if possible_translation_tokens is not None:
-                        possible_translation_tokens = possible_translation_tokens.view(
-                            1, possible_tokens_size
-                        ).expand(
-                            cand_indices.size(0), possible_tokens_size
-                        ).data
+                        possible_translation_tokens = (
+                            possible_translation_tokens.view(1, possible_tokens_size)
+                            .expand(cand_indices.size(0), possible_tokens_size)
+                            .data
+                        )
                         cand_indices = torch.gather(
                             possible_translation_tokens,
                             dim=1,
@@ -514,9 +532,10 @@ class SequenceGenerator(torch.nn.Module):
                     possible_translation_tokens = decoder_out[2]
                 else:
                     possible_translation_tokens = None
-            probs = model_weight * model.get_normalized_probs(
-                decoder_out, log_probs=False
-            ).data
+            probs = (
+                model_weight
+                * model.get_normalized_probs(decoder_out, log_probs=False).data
+            )
             if avg_probs is None:
                 avg_probs = probs
             else:

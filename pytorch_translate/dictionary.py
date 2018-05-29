@@ -24,6 +24,10 @@ def default_dictionary_path(save_dir: str, dialect: str) -> str:
     return os.path.join(save_dir, f"dictionary-{dialect}.txt")
 
 
+def default_char_dictionary_path(save_dir: str, dialect: str) -> str:
+    return os.path.join(save_dir, f"char-dictionary-{dialect}.txt")
+
+
 def char_tokenize(line):
     words = tokenizer.tokenize_line(line)
     chars = []

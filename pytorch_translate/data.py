@@ -8,6 +8,7 @@ import torch
 from fairseq import data, indexed_dataset, tokenizer
 from typing import NamedTuple, Optional
 
+from pytorch_translate import char_data
 from pytorch_translate import dictionary as pytorch_translate_dictionary
 
 
@@ -125,6 +126,7 @@ def load_binarized_dataset(
     train_split: str,
     eval_split: str,
     args: argparse.Namespace,
+    use_char_source: bool = False,
 ) -> data.LanguageDatasets:
     source_dict = pytorch_translate_dictionary.Dictionary.load(args.source_vocab_file)
     target_dict = pytorch_translate_dictionary.Dictionary.load(args.target_vocab_file)
@@ -142,11 +144,24 @@ def load_binarized_dataset(
         if not os.path.exists(corpus.target.data_file):
             raise ValueError(f"{corpus.target.data_file} for {split} not found!")
 
-        dataset.splits[split] = data.LanguagePairDataset(
-            src=InMemoryNumpyDataset.create_from_file(corpus.source.data_file),
-            dst=InMemoryNumpyDataset.create_from_file(corpus.target.data_file),
-            pad_idx=source_dict.pad(),
-            eos_idx=source_dict.eos(),
-        )
+        dst_dataset = InMemoryNumpyDataset.create_from_file(corpus.target.data_file)
+        if use_char_source:
+            src_dataset = char_data.InMemoryNumpyWordCharDataset.create_from_file(
+                corpus.source.data_file
+            )
+            dataset.splits[split] = char_data.LanguagePairSourceCharDataset(
+                src=src_dataset,
+                dst=dst_dataset,
+                pad_idx=source_dict.pad(),
+                eos_idx=source_dict.eos(),
+            )
+        else:
+            src_dataset = InMemoryNumpyDataset.create_from_file(corpus.source.data_file)
+            dataset.splits[split] = data.LanguagePairDataset(
+                src=src_dataset,
+                dst=dst_dataset,
+                pad_idx=source_dict.pad(),
+                eos_idx=source_dict.eos(),
+            )
 
     return dataset

@@ -3,10 +3,11 @@
 import argparse
 import os
 import tempfile
+from typing import Optional
 
-from fairseq import indexed_dataset, tokenizer
+from pytorch_translate import char_data
 from pytorch_translate import data as pytorch_translate_data
-from pytorch_translate import dictionary as pytorch_translate_dictionary
+from pytorch_translate.dictionary import Dictionary
 from pytorch_translate import utils
 
 
@@ -172,10 +173,12 @@ def validate_args(args):
 
 def binarize_text_file(
     text_file: str,
-    dictionary: pytorch_translate_dictionary.Dictionary,
+    dictionary: Dictionary,
     output_path: str,
     append_eos: bool,
     reverse_order: bool,
+    use_char_data: bool = False,
+    char_dictionary: Optional[Dictionary] = None,
 ) -> str:
     if not output_path:
         fd, output_path = tempfile.mkstemp()
@@ -187,8 +190,18 @@ def binarize_text_file(
     if not output_path.endswith(".npz"):
         output_path += ".npz"
 
-    dataset = pytorch_translate_data.InMemoryNumpyDataset()
-    dataset.parse(text_file, dictionary, reverse_order, append_eos)
+    if use_char_data:
+        dataset = char_data.InMemoryNumpyWordCharDataset()
+        dataset.parse(
+            path=text_file,
+            word_dict=dictionary,
+            char_dict=char_dictionary,
+            reverse_order=reverse_order,
+            append_eos=append_eos,
+        )
+    else:
+        dataset = pytorch_translate_data.InMemoryNumpyDataset()
+        dataset.parse(text_file, dictionary, reverse_order, append_eos)
     dataset.save(output_path)
 
     return output_path
@@ -200,15 +213,18 @@ def preprocess_corpora(args):
     # Additional text preprocessing options could be added here before
     # binarizing.
 
-    source_dict = pytorch_translate_dictionary.Dictionary.build_vocab_file_if_nonexistent(
+    source_dict = Dictionary.build_vocab_file_if_nonexistent(
         corpus_file=args.train_source_text_file,
         vocab_file=args.source_vocab_file,
         max_vocab_size=args.source_max_vocab_size,
         tokens_with_penalty=None,
     )
-    if args.char_source_vocab_file:
-        # TODO: assign results and pass to new and improved binarize_text_file
-        pytorch_translate_dictionary.Dictionary.build_vocab_file_if_nonexistent(
+    use_char_source = (args.char_source_vocab_file != "") or (
+        getattr(args, "arch", "") == "char_source"
+    )
+    char_source_dict = None
+    if use_char_source:
+        char_source_dict = Dictionary.build_vocab_file_if_nonexistent(
             corpus_file=args.train_source_text_file,
             vocab_file=args.char_source_vocab_file,
             max_vocab_size=args.char_source_max_vocab_size,
@@ -222,6 +238,8 @@ def preprocess_corpora(args):
             output_path=args.train_source_binary_path,
             append_eos=args.append_eos_to_source,
             reverse_order=args.reverse_source,
+            use_char_data=use_char_source,
+            char_dictionary=char_source_dict,
         )
     if args.eval_source_text_file:
         args.eval_source_binary_path = binarize_text_file(
@@ -230,9 +248,11 @@ def preprocess_corpora(args):
             output_path=args.eval_source_binary_path,
             append_eos=args.append_eos_to_source,
             reverse_order=args.reverse_source,
+            use_char_data=use_char_source,
+            char_dictionary=char_source_dict,
         )
 
-    target_dict = pytorch_translate_dictionary.Dictionary.build_vocab_file_if_nonexistent(
+    target_dict = Dictionary.build_vocab_file_if_nonexistent(
         corpus_file=args.train_target_text_file,
         vocab_file=args.target_vocab_file,
         max_vocab_size=args.target_max_vocab_size,
