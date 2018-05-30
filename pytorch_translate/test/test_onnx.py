@@ -61,7 +61,7 @@ class TestONNX(unittest.TestCase):
 
         for i in range(len(pytorch_encoder_outputs)):
             caffe2_out_value = caffe2_encoder_outputs[i]
-            pytorch_out_value = pytorch_encoder_outputs[i].data.numpy()
+            pytorch_out_value = pytorch_encoder_outputs[i].detach().numpy()
             np.testing.assert_allclose(
                 caffe2_out_value,
                 pytorch_out_value,
@@ -129,7 +129,7 @@ class TestONNX(unittest.TestCase):
 
         for i in range(len(pytorch_encoder_outputs)):
             caffe2_out_value = caffe2_encoder_outputs[i]
-            pytorch_out_value = pytorch_encoder_outputs[i].data.numpy()
+            pytorch_out_value = pytorch_encoder_outputs[i].detach().numpy()
             np.testing.assert_allclose(
                 caffe2_out_value,
                 pytorch_out_value,
@@ -196,7 +196,7 @@ class TestONNX(unittest.TestCase):
 
         for i in range(len(pytorch_decoder_outputs)):
             caffe2_out_value = caffe2_decoder_outputs[i]
-            pytorch_out_value = pytorch_decoder_outputs[i].data.numpy()
+            pytorch_out_value = pytorch_decoder_outputs[i].detach().numpy()
             np.testing.assert_allclose(
                 caffe2_out_value,
                 pytorch_out_value,
@@ -314,7 +314,7 @@ class TestONNX(unittest.TestCase):
 
         for i in range(len(pytorch_next_step_outputs)):
             caffe2_out_value = caffe2_next_step_outputs[i]
-            pytorch_out_value = pytorch_next_step_outputs[i].data.numpy()
+            pytorch_out_value = pytorch_next_step_outputs[i].detach().numpy()
             np.testing.assert_allclose(
                 caffe2_out_value,
                 pytorch_out_value,

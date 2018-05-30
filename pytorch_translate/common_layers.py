@@ -63,12 +63,12 @@ class AttentionLayer(nn.Module):
     def pooling(self, pool_type, source_hids, src_lengths):
         assert self.decoder_hidden_state_dim == self.encoder_output_dim
         max_src_len = source_hids.size()[0]
-        assert max_src_len == src_lengths.data.max()
+        assert max_src_len == src_lengths.max()
         batch_size = source_hids.size()[1]
         src_indices = torch.arange(
             0,
             max_src_len,
-        ).unsqueeze(0).type_as(src_lengths.data)
+        ).unsqueeze(0).type_as(src_lengths)
         src_indices = src_indices.expand(batch_size, max_src_len)
 
         # expand from shape (batch_size,) to (batch_size, max_src_len)
@@ -77,8 +77,8 @@ class AttentionLayer(nn.Module):
             max_src_len,
         )
         src_mask = Variable(
-            (src_indices < src_lengths.data).double().type_as(
-                source_hids.data,
+            (src_indices < src_lengths).double().type_as(
+                source_hids,
             ),
             requires_grad=False,
         ).t().unsqueeze(2)
@@ -95,7 +95,7 @@ class AttentionLayer(nn.Module):
             )
         attn_scores = Variable(
             torch.ones(src_mask.shape[1], src_mask.shape[0]).type_as(
-                source_hids.data,
+                source_hids,
             ),
             requires_grad=False,
         ).t()
@@ -110,22 +110,22 @@ class AttentionLayer(nn.Module):
 
         if self.src_length_masking:
             max_src_len = source_hids.size()[0]
-            assert max_src_len == src_lengths.data.max()
+            assert max_src_len == src_lengths.max()
             batch_size = source_hids.size()[1]
             src_indices = torch.arange(0, max_src_len).unsqueeze(1).type_as(
-                src_lengths.data
+                src_lengths
             )
             src_indices = src_indices.expand(max_src_len, batch_size)
 
             # expand from shape (batch_size,) to (max_src_len, batch_size)
             src_lengths = src_lengths.unsqueeze(dim=0).expand(max_src_len, batch_size)
-            src_mask = (src_indices < src_lengths.data).double().type_as(
-                source_hids.data
+            src_mask = (src_indices < src_lengths).double().type_as(
+                source_hids
             ).detach()
             masked_attn_scores = torch.where(
                 src_mask > 0,
                 attn_scores,
-                torch.Tensor([float("-Inf")]).type_as(source_hids.data),
+                torch.Tensor([float("-Inf")]).type_as(source_hids),
             )
             # Since input of varying lengths, need to make sure the attn_scores
             # for each sentence sum up to one

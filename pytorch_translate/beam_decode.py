@@ -6,7 +6,6 @@ from fairseq.models import FairseqIncrementalDecoder
 
 
 class SequenceGenerator(torch.nn.Module):
-
     def __init__(
         self,
         models,
@@ -123,10 +122,10 @@ class SequenceGenerator(torch.nn.Module):
                 )
             if timer is not None:
                 timer.stop(s["ntokens"])
-            for i, id in enumerate(s["id"].data):
-                src = input["src_tokens"].data[i, :]
+            for i, id in enumerate(s["id"]):
+                src = input["src_tokens"][i, :]
                 # remove padding from ref
-                ref = utils.strip_pad(s["target"].data[i, :], self.pad)
+                ref = utils.strip_pad(s["target"][i, :], self.pad)
                 yield id, src, ref, hypos[i]
 
     def generate(self, encoder_input, beam_size=None, maxlen=None, prefix_tokens=None):
@@ -161,10 +160,7 @@ class SequenceGenerator(torch.nn.Module):
 
             if self.use_char_source:
                 encoder_out = model.encoder(
-                    src_tokens,
-                    src_lengths,
-                    char_inds,
-                    word_lengths,
+                    src_tokens, src_lengths, char_inds, word_lengths
                 )
             else:
                 encoder_out = model.encoder(src_tokens, src_lengths)
@@ -174,9 +170,9 @@ class SequenceGenerator(torch.nn.Module):
             encoder_outs.append(encoder_out)
 
         # initialize buffers
-        scores = src_tokens.data.new(bsz * beam_size, maxlen + 1).float().fill_(0)
+        scores = src_tokens.new(bsz * beam_size, maxlen + 1).float().fill_(0)
         scores_buf = scores.clone()
-        tokens = src_tokens.data.new(bsz * beam_size, maxlen + 2).fill_(self.pad)
+        tokens = src_tokens.new(bsz * beam_size, maxlen + 2).fill_(self.pad)
         tokens_buf = tokens.clone()
         tokens[:, 0] = self.eos
 
@@ -351,12 +347,10 @@ class SequenceGenerator(torch.nn.Module):
                 if prefix_tokens is not None and step < prefix_tokens.size(1):
                     probs_slice = probs.view(bsz, -1, probs.size(-1))[:, 0, :]
                     cand_scores = torch.gather(
-                        probs_slice,
-                        dim=1,
-                        index=prefix_tokens[:, step].view(-1, 1),
+                        probs_slice, dim=1, index=prefix_tokens[:, step].view(-1, 1)
                     ).expand(-1, cand_size)
                     cand_indices = (
-                        prefix_tokens[:, step].view(-1, 1).expand(bsz, cand_size).data
+                        prefix_tokens[:, step].view(-1, 1).expand(bsz, cand_size)
                     )
                     cand_beams.resize_as_(cand_indices).fill_(0)
                 else:
@@ -375,11 +369,9 @@ class SequenceGenerator(torch.nn.Module):
                     torch.div(cand_indices, possible_tokens_size, out=cand_beams)
                     cand_indices.fmod_(possible_tokens_size)
                     if possible_translation_tokens is not None:
-                        possible_translation_tokens = (
-                            possible_translation_tokens.view(1, possible_tokens_size)
-                            .expand(cand_indices.size(0), possible_tokens_size)
-                            .data
-                        )
+                        possible_translation_tokens = possible_translation_tokens.view(
+                            1, possible_tokens_size
+                        ).expand(cand_indices.size(0), possible_tokens_size)
                         cand_indices = torch.gather(
                             possible_translation_tokens,
                             dim=1,
@@ -532,16 +524,15 @@ class SequenceGenerator(torch.nn.Module):
                     possible_translation_tokens = decoder_out[2]
                 else:
                     possible_translation_tokens = None
-            probs = (
-                model_weight
-                * model.get_normalized_probs(decoder_out, log_probs=False).data
+            probs = model_weight * model.get_normalized_probs(
+                decoder_out, log_probs=False
             )
             if avg_probs is None:
                 avg_probs = probs
             else:
                 avg_probs.add_(probs)
             if attn is not None:
-                attn = attn[:, -1, :].data
+                attn = attn[:, -1, :]
                 if avg_attn is None:
                     avg_attn = attn
                 else:

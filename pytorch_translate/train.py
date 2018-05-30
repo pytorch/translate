@@ -281,7 +281,7 @@ def setup_training(args):
     print(f"| model {args.arch}, criterion {criterion.__class__.__name__}")
     print(
         f"| num. model params: \
-        {sum(p.data.numel() for p in model.parameters())}"
+        {sum(p.numel() for p in model.parameters())}"
     )
 
     # Build trainer
