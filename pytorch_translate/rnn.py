@@ -272,7 +272,7 @@ class RNNModel(FairseqModel):
         possible_translation_tokens = net_output[-1]
         if possible_translation_tokens is not None:
             targets = torch_find(
-                possible_translation_tokens.data, targets.data, len(self.dst_dict)
+                possible_translation_tokens, targets, len(self.dst_dict)
             )
         return targets
 
@@ -386,11 +386,11 @@ class LSTMSequenceEncoder(FairseqEncoder):
     def forward(self, src_tokens, src_lengths):
         if LanguagePairDataset.LEFT_PAD_SOURCE:
             # convert left-padding to right-padding
-            src_tokens.data = utils.convert_padding_direction(
-                src_tokens.data, self.padding_idx, left_to_right=True
+            src_tokens = utils.convert_padding_direction(
+                src_tokens, self.padding_idx, left_to_right=True
             )
         if self.word_dropout_module is not None:
-            src_tokens.data = self.word_dropout_module(src_tokens.data)
+            src_tokens = self.word_dropout_module(src_tokens)
 
         bsz, seqlen = src_tokens.size()
 
@@ -415,11 +415,11 @@ class LSTMSequenceEncoder(FairseqEncoder):
         final_hiddens, final_cells = [], []
         for i, rnn_layer in enumerate(self.layers):
             if self.bidirectional and i == 0:
-                h0 = x.data.new(2, bsz, self.hidden_dim // 2).zero_()
-                c0 = x.data.new(2, bsz, self.hidden_dim // 2).zero_()
+                h0 = x.new(2, bsz, self.hidden_dim // 2).zero_()
+                c0 = x.new(2, bsz, self.hidden_dim // 2).zero_()
             else:
-                h0 = x.data.new(1, bsz, self.hidden_dim).zero_()
-                c0 = x.data.new(1, bsz, self.hidden_dim).zero_()
+                h0 = x.new(1, bsz, self.hidden_dim).zero_()
+                c0 = x.new(1, bsz, self.hidden_dim).zero_()
 
             # apply LSTM along entire sequence
             current_output, (h_last, c_last) = rnn_layer(packed_input, (h0, c0))
@@ -530,11 +530,11 @@ class RNNEncoder(FairseqEncoder):
     def forward(self, src_tokens, src_lengths):
         if LanguagePairDataset.LEFT_PAD_SOURCE:
             # convert left-padding to right-padding
-            src_tokens.data = utils.convert_padding_direction(
-                src_tokens.data, self.padding_idx, left_to_right=True
+            src_tokens = utils.convert_padding_direction(
+                src_tokens, self.padding_idx, left_to_right=True
             )
         if self.word_dropout_module is not None:
-            src_tokens.data = self.word_dropout_module(src_tokens.data)
+            src_tokens = self.word_dropout_module(src_tokens)
         bsz, seqlen = src_tokens.size()
 
         # embed tokens
@@ -555,8 +555,8 @@ class RNNEncoder(FairseqEncoder):
 
             if self.cell_type in ["lstm", "milstm", "layer_norm_lstm"]:
                 prev_hidden = (
-                    x.data.new(bsz, current_hidden_size).zero_(),
-                    x.data.new(bsz, current_hidden_size).zero_(),
+                    x.new(bsz, current_hidden_size).zero_(),
+                    x.new(bsz, current_hidden_size).zero_(),
                 )
             else:
                 raise Exception(f"{self.cell_type} not implemented")
@@ -771,8 +771,8 @@ class RNNDecoder(FairseqIncrementalDecoder):
             else:
                 combined_output_and_context = hidden
                 step_attn_scores = Variable(
-                    torch.ones(src_lengths.shape[0], src_lengths.data.max()).type_as(
-                        encoder_outs.data,
+                    torch.ones(src_lengths.shape[0], src_lengths.max()).type_as(
+                        encoder_outs,
                     ),
                     requires_grad=False,
                 ).t()

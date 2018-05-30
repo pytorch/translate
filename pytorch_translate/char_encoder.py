@@ -162,7 +162,7 @@ class CharEmbModel(nn.Module):
         # else: apply conv-pool-highway directly on sentence batch, generate
         # segment embeddings per sentence
         if self.preserve_word:
-            src_char_tokens = self._prepare_char_batch(src_tokens.data, left_padded)
+            src_char_tokens = self._prepare_char_batch(src_tokens, left_padded)
         else:
             src_char_tokens = src_tokens
 

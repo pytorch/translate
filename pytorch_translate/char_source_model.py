@@ -228,11 +228,11 @@ class CharRNNEncoder(FairseqEncoder):
         final_hiddens, final_cells = [], []
         for i, rnn_layer in enumerate(self.layers):
             if self.bidirectional and i == 0:
-                h0 = x.data.new(2, bsz, self.hidden_dim // 2).zero_()
-                c0 = x.data.new(2, bsz, self.hidden_dim // 2).zero_()
+                h0 = x.new(2, bsz, self.hidden_dim // 2).zero_()
+                c0 = x.new(2, bsz, self.hidden_dim // 2).zero_()
             else:
-                h0 = x.data.new(1, bsz, self.hidden_dim).zero_()
-                c0 = x.data.new(1, bsz, self.hidden_dim).zero_()
+                h0 = x.new(1, bsz, self.hidden_dim).zero_()
+                c0 = x.new(1, bsz, self.hidden_dim).zero_()
 
             # apply LSTM along entire sequence
             current_output, (h_last, c_last) = rnn_layer(packed_input, (h0, c0))
