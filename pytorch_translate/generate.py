@@ -6,6 +6,7 @@ import torch
 from fairseq import bleu, data, options, progress_bar, tokenizer, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
 from pytorch_translate import beam_decode
+from pytorch_translate import char_source_model
 from pytorch_translate import data as pytorch_translate_data
 from pytorch_translate import dictionary as pytorch_translate_dictionary
 from pytorch_translate import rnn  # noqa
@@ -35,7 +36,7 @@ def _generate_score(models, args, dataset, dataset_split):
     model_weights = None
     if args.model_weights:
         model_weights = [float(w.strip()) for w in args.model_weights.split(",")]
-    use_char_source = (args.arch == "char_source")
+    use_char_source = isinstance(models[0], char_source_model.CharSourceModel)
     translator = beam_decode.SequenceGenerator(
         models,
         beam_size=args.beam,
