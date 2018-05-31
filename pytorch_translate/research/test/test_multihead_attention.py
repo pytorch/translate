@@ -104,7 +104,7 @@ class MultiheadAttentionTest(unittest.TestCase):
                 value=V_tensor,
                 unseen_mask=unseen_mask,
                 src_lengths=src_lengths_tensor,
-            )[0].data.numpy()
+            )[0].numpy()
 
             reference = self._scaled_dot_attn_ref(
                 Q=Q,
@@ -194,9 +194,9 @@ class MultiheadAttentionTest(unittest.TestCase):
         X_fc_b = 0
         for name, param in module.named_parameters():
             if X_name + '_fc.weight' in name:
-                X_fc_w = param.data.numpy()
+                X_fc_w = param.detach().numpy()
             elif X_name + '_fc.bias' in name:
-                X_fc_b = param.data.numpy()
+                X_fc_b = param.detach().numpy()
         return np.matmul(X, np.transpose(X_fc_w)) + X_fc_b
 
     def _multihead_attn_test_helper(self, unseen_mask, use_src_lengths):

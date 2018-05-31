@@ -55,8 +55,8 @@ class WordPredictionCriterion(FairseqCriterion):
             sample_size = sample['ntokens']
 
         logging_output = {
-            'loss': translation_loss.data,
-            'word_prediction_loss': word_prediction_loss.data,
+            'loss': translation_loss,
+            'word_prediction_loss': word_prediction_loss,
             'ntokens': sample['ntokens'],
             'sample_size': sample_size,
         }
