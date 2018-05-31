@@ -54,6 +54,10 @@ def _generate_score(models, args, dataset, dataset_split):
     # (None if no unknown word replacement, empty if no path to align dictionary)
     align_dict = utils.load_align_dict(args.replace_unk)
 
+    # Keep track of translations
+    # Initialize with empty translations
+    translated_sentences = [""] * len(dataset.splits[dataset_split])
+
     # Generate and compute BLEU score
     scorer = bleu.Scorer(
         dataset.dst_dict.pad(), dataset.dst_dict.eos(), dataset.dst_dict.unk()
@@ -129,10 +133,18 @@ def _generate_score(models, args, dataset, dataset_split):
                             target_str, dataset.dst_dict, add_if_not_exist=True
                         )
                     scorer.add(target_tokens, hypo_tokens)
+                    translated_sentences[sample_id] = hypo_str
 
             wps_meter.update(src_tokens.size(0))
             t.log({"wps": round(wps_meter.avg)})
             num_sentences += 1
+
+    # If applicable, save the translations to the output file
+    # For eg. external evaluation
+    if args.translation_output_file:
+        with open(args.translation_output_file, 'w') as out_file:
+            for hypo_str in translated_sentences:
+                print(hypo_str, file=out_file)
 
     return scorer, num_sentences, gen_timer
 
@@ -192,6 +204,13 @@ def get_parser_with_args():
         metavar="FILE",
         help="Path to raw text file containing examples in target dialect. "
         "This overrides what would be loaded from the data dir.",
+    )
+    group.add_argument(
+        "--translation-output-file",
+        default="",
+        type=str,
+        metavar="FILE",
+        help="Path to text file to store the output of the model. ",
     )
 
     return parser
