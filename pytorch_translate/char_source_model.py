@@ -3,6 +3,7 @@
 import logging
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from fairseq.models import FairseqEncoder, register_model, register_model_architecture
@@ -22,6 +23,13 @@ class CharSourceModel(rnn.RNNModel):
     @staticmethod
     def add_args(parser):
         rnn.RNNModel.add_args(parser)
+        parser.add_argument(
+            "--char-embed-dim",
+            type=int,
+            default=128,
+            metavar="N",
+            help=("Character embedding dimension."),
+        )
         parser.add_argument(
             "--char-rnn-units",
             type=int,
@@ -45,9 +53,16 @@ class CharSourceModel(rnn.RNNModel):
         assert args.sequence_lstm, "CharRNNModel only supports sequence_lstm"
         assert args.cell_type == "lstm", "CharRNNModel only supports cell_type lstm"
 
+        assert hasattr(args, "char_source_dict_size"), (
+            "args.char_source_dict_size required. "
+            "should be set by load_binarized_dataset()"
+        )
+
         encoder = CharRNNEncoder(
             src_dict,
-            embed_dim=args.encoder_embed_dim,
+            num_chars=args.char_source_dict_size,
+            char_embed_dim=args.char_embed_dim,
+            token_embed_dim=args.encoder_embed_dim,
             freeze_embed=args.encoder_freeze_embed,
             char_rnn_units=args.char_rnn_units,
             char_rnn_layers=args.char_rnn_layers,
@@ -109,7 +124,9 @@ class CharRNNEncoder(FairseqEncoder):
     def __init__(
         self,
         dictionary,
-        embed_dim=512,
+        num_chars,
+        char_embed_dim=256,
+        token_embed_dim=256,
         freeze_embed=False,
         char_rnn_units=256,
         char_rnn_layers=1,
@@ -124,17 +141,18 @@ class CharRNNEncoder(FairseqEncoder):
 
         super().__init__(dictionary)
         self.dictionary = dictionary
+        self.num_chars = num_chars
         self.dropout_in = dropout_in
         self.dropout_out = dropout_out
         self.residual_level = residual_level
         self.hidden_dim = hidden_dim
         self.bidirectional = bidirectional
-        num_embeddings = len(dictionary)
+        num_tokens = len(dictionary)
         self.padding_idx = dictionary.pad()
 
         self.embed_chars = rnn.Embedding(
-            num_embeddings=num_embeddings,
-            embedding_dim=embed_dim,
+            num_embeddings=num_chars,
+            embedding_dim=char_embed_dim,
             padding_idx=self.padding_idx,
             freeze_embed=freeze_embed,
         )
@@ -143,20 +161,28 @@ class CharRNNEncoder(FairseqEncoder):
             char_rnn_units % 2 == 0
         ), "char_rnn_units must be even (to be divided evenly between directions)"
         self.char_lstm_encoder = rnn.LSTMSequenceEncoder.LSTM(
-            embed_dim,
+            char_embed_dim,
             char_rnn_units // 2,
             num_layers=char_rnn_layers,
             bidirectional=True,
         )
-        self.word_dim = char_rnn_units
+
+        self.embed_tokens = None
+        if token_embed_dim > 0:
+            self.embed_tokens = rnn.Embedding(
+                num_embeddings=num_tokens,
+                embedding_dim=char_embed_dim,
+                padding_idx=self.padding_idx,
+                freeze_embed=freeze_embed,
+            )
+
+        self.word_dim = char_rnn_units + token_embed_dim
 
         self.layers = nn.ModuleList([])
         for layer in range(num_layers):
             is_layer_bidirectional = self.bidirectional and layer == 0
             if is_layer_bidirectional:
-                assert (
-                    hidden_dim % 2 == 0
-                ), (
+                assert hidden_dim % 2 == 0, (
                     "encoder_hidden_dim must be even if encoder_bidirectional "
                     "(to be divided evenly between directions)"
                 )
@@ -219,6 +245,18 @@ class CharRNNEncoder(FairseqEncoder):
         x[nonzero_word_locations] = unsorted_rnn_output
         x = x.transpose(0, 1)  # (seqlen, bsz, char_rnn_units)
 
+        if self.embed_tokens is not None:
+            embedded_tokens = self.embed_tokens(src_tokens)
+
+            # (seqlen, bsz, token_embed_dim)
+            embedded_tokens = embedded_tokens.transpose(0, 1)
+
+            # (seqlen, bsz, total_word_embed_dim)
+            x = torch.cat([x, embedded_tokens], dim=2)
+
+        if self.dropout_in != 0:
+            x = F.dropout(x, p=self.dropout_in, training=self.training)
+
         # Generate packed seq to deal with varying source seq length
         # packed_input is of type PackedSequence, which consists of:
         # element [0]: a tensor, the packed data, and
@@ -249,6 +287,11 @@ class CharRNNEncoder(FairseqEncoder):
             final_hiddens.append(h_last)
             final_cells.append(c_last)
 
+            if self.dropout_out != 0:
+                current_output = F.dropout(
+                    current_output, p=self.dropout_out, training=self.training
+                )
+
             if self.residual_level is not None and i >= self.residual_level:
                 packed_input[0] = packed_input.clone()[0] + current_output[0]
             else:
@@ -276,5 +319,6 @@ class CharRNNEncoder(FairseqEncoder):
 def base_architecture(args):
     # default architecture
     rnn.base_architecture(args)
+    args.char_rnn_units = getattr(args, "char_embed_dim", 128)
     args.char_rnn_units = getattr(args, "char_rnn_units", 256)
     args.char_rnn_layers = getattr(args, "char_rnn_layers", 1)

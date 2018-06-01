@@ -131,6 +131,13 @@ def load_binarized_dataset(
     source_dict = pytorch_translate_dictionary.Dictionary.load(args.source_vocab_file)
     target_dict = pytorch_translate_dictionary.Dictionary.load(args.target_vocab_file)
 
+    if use_char_source:
+        char_source_dict = pytorch_translate_dictionary.Dictionary.load(
+            args.char_source_vocab_file
+        )
+        # this attribute is used for CharSourceModel construction
+        args.char_source_dict_size = len(char_source_dict)
+
     dataset = data.LanguageDatasets(
         src=train_corpus.source.dialect,
         dst=train_corpus.target.dialect,
