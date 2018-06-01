@@ -141,7 +141,7 @@ def _generate_score(models, args, dataset, dataset_split):
 
     # If applicable, save the translations to the output file
     # For eg. external evaluation
-    if args.translation_output_file:
+    if getattr(args, "translation_output_file", False):
         with open(args.translation_output_file, 'w') as out_file:
             for hypo_str in translated_sentences:
                 print(hypo_str, file=out_file)
