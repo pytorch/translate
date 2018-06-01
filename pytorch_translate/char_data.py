@@ -162,6 +162,8 @@ class LanguagePairSourceCharDataset(torch.utils.data.Dataset):
         src_tokens = (
             samples[0]["source_tokens"].new(len(samples), max_words).fill_(self.pad_idx)
         )
+        for i, s in enumerate(samples):
+            src_tokens[i, :len(s["source_tokens"])] = s["source_tokens"]
 
         char_inds = (
             samples[0]["source_chars_list"][0]
