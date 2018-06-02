@@ -4,12 +4,14 @@ import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from ast import literal_eval
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from fairseq.models import FairseqEncoder, register_model, register_model_architecture
 
 from pytorch_translate import rnn
 from pytorch_translate import word_dropout
+from pytorch_translate import char_encoder
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,35 @@ class CharSourceModel(rnn.RNNModel):
             metavar="N",
             help=("Number of Character LSTM layers."),
         )
+        parser.add_argument(
+            "--char-cnn-params",
+            type=str,
+            metavar="EXPR",
+            help=("String experission, [(dim, kernel_size), ...]."),
+        )
+        '''
+        parser.add_argument(
+            "--char-cnn-output-dim",
+            type=int,
+            default=256,
+            metavar="N",
+            help=("Char cnn encoder output dim."),
+        )
+        '''
+        parser.add_argument(
+            "--char-cnn-nonlinear-fn",
+            type=str,
+            default='tanh',
+            metavar="EXPR",
+            help=("Nonlinearity applied to char conv outputs. Values: relu, tanh."),
+        )
+        parser.add_argument(
+            "--char-cnn-num-highway-layers",
+            type=int,
+            default=0,
+            metavar="N",
+            help=("Char cnn encoder highway layers."),
+        )
 
     @classmethod
     def build_model(cls, args, src_dict, dst_dict):
@@ -58,22 +89,41 @@ class CharSourceModel(rnn.RNNModel):
             "should be set by load_binarized_dataset()"
         )
 
-        encoder = CharRNNEncoder(
-            src_dict,
-            num_chars=args.char_source_dict_size,
-            char_embed_dim=args.char_embed_dim,
-            token_embed_dim=args.encoder_embed_dim,
-            freeze_embed=args.encoder_freeze_embed,
-            char_rnn_units=args.char_rnn_units,
-            char_rnn_layers=args.char_rnn_layers,
-            num_layers=args.encoder_layers,
-            hidden_dim=args.encoder_hidden_dim,
-            dropout_in=args.encoder_dropout_in,
-            dropout_out=args.encoder_dropout_out,
-            residual_level=args.residual_level,
-            bidirectional=bool(args.encoder_bidirectional),
-            word_dropout_params=args.word_dropout_params,
-        )
+        if hasattr(args, "char_cnn_params"):
+            encoder = CharCNNEncoder(
+                src_dict,
+                num_chars=args.char_source_dict_size,
+                embed_dim=args.char_embed_dim,
+                freeze_embed=args.encoder_freeze_embed,
+                char_cnn_params=args.char_cnn_params,
+                char_cnn_nonlinear_fn=args.char_cnn_nonlinear_fn,
+                char_cnn_num_highway_layers=args.char_cnn_num_highway_layers,
+                num_layers=args.encoder_layers,
+                hidden_dim=args.encoder_hidden_dim,
+                dropout_in=args.encoder_dropout_in,
+                dropout_out=args.encoder_dropout_out,
+                residual_level=args.residual_level,
+                bidirectional=bool(args.encoder_bidirectional),
+                word_dropout_params=args.word_dropout_params,
+            )
+        else:
+            encoder = CharRNNEncoder(
+                src_dict,
+                num_chars=args.char_source_dict_size,
+                char_embed_dim=args.char_embed_dim,
+                token_embed_dim=args.encoder_embed_dim,
+                freeze_embed=args.encoder_freeze_embed,
+                char_rnn_units=args.char_rnn_units,
+                char_rnn_layers=args.char_rnn_layers,
+                num_layers=args.encoder_layers,
+                hidden_dim=args.encoder_hidden_dim,
+                dropout_in=args.encoder_dropout_in,
+                dropout_out=args.encoder_dropout_out,
+                residual_level=args.residual_level,
+                bidirectional=bool(args.encoder_bidirectional),
+                word_dropout_params=args.word_dropout_params,
+            )
+
         decoder = rnn.RNNDecoder(
             src_dict=src_dict,
             dst_dict=dst_dict,
@@ -291,6 +341,145 @@ class CharRNNEncoder(FairseqEncoder):
                 current_output = F.dropout(
                     current_output, p=self.dropout_out, training=self.training
                 )
+
+            if self.residual_level is not None and i >= self.residual_level:
+                packed_input[0] = packed_input.clone()[0] + current_output[0]
+            else:
+                packed_input = current_output
+
+        # Reshape to [num_layer, batch_size, hidden_dim]
+        final_hiddens = torch.cat(final_hiddens, dim=0).view(
+            self.num_layers, *final_hiddens[0].size()
+        )
+        final_cells = torch.cat(final_cells, dim=0).view(
+            self.num_layers, *final_cells[0].size()
+        )
+
+        #  [max_seqlen, batch_size, hidden_dim]
+        unpacked_output, _ = pad_packed_sequence(packed_input)
+
+        return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
+
+    def max_positions(self):
+        """Maximum input length supported by the encoder."""
+        return int(1e5)  # an arbitrary large number
+
+
+class CharCNNEncoder(FairseqEncoder):
+    """
+    Character-level CNN encoder to generate word representations, as input to
+    RNN encoder.
+    """
+    def __init__(
+        self,
+        dictionary,
+        num_chars=50,
+        embed_dim=32,
+        freeze_embed=False,
+        char_cnn_params='[(128, 3), (128, 5)]',
+        char_cnn_output_dim=256,
+        char_cnn_nonlinear_fn='tanh',
+        char_cnn_num_highway_layers=0,
+        hidden_dim=512,
+        num_layers=1,
+        dropout_in=0.1,
+        dropout_out=0.1,
+        residual_level=None,
+        bidirectional=False,
+        word_dropout_params=None,
+    ):
+
+        super().__init__(dictionary)
+        self.dictionary = dictionary
+        self.dropout_in = dropout_in
+        self.dropout_out = dropout_out
+        self.residual_level = residual_level
+        self.hidden_dim = hidden_dim
+        self.bidirectional = bidirectional
+
+        convolutions_params = literal_eval(char_cnn_params)
+        self.char_cnn_encoder = char_encoder.CharCNNModel(
+            dictionary,
+            num_chars,
+            embed_dim,
+            convolutions_params,
+            char_cnn_nonlinear_fn,
+            char_cnn_num_highway_layers,
+        )
+        #self.word_dim = char_cnn_output_dim
+        self.word_dim = sum(out_dim for (out_dim, _) in convolutions_params)
+
+        self.layers = nn.ModuleList([])
+        for layer in range(num_layers):
+            is_layer_bidirectional = self.bidirectional and layer == 0
+            if is_layer_bidirectional:
+                assert (
+                    hidden_dim % 2 == 0
+                ), (
+                    "encoder_hidden_dim must be even if encoder_bidirectional "
+                    "(to be divided evenly between directions)"
+                )
+            self.layers.append(
+                rnn.LSTMSequenceEncoder.LSTM(
+                    self.word_dim if layer == 0 else hidden_dim,
+                    hidden_dim // 2 if is_layer_bidirectional else hidden_dim,
+                    num_layers=1,
+                    dropout=self.dropout_out,
+                    bidirectional=is_layer_bidirectional,
+                )
+            )
+
+        self.num_layers = len(self.layers)
+        self.word_dropout_module = None
+        if (
+            word_dropout_params
+            and word_dropout_params["word_dropout_freq_threshold"] is not None
+            and word_dropout_params["word_dropout_freq_threshold"] > 0
+        ):
+            self.word_dropout_module = word_dropout.WordDropout(
+                dictionary, word_dropout_params
+            )
+
+    def forward(self, src_tokens, src_lengths, char_inds, word_lengths):
+        # char_inds has shape (batch_size, max_words_per_sent, max_word_len)
+        bsz, seqlen, maxchars = char_inds.size()
+        # char_cnn_encoder takes input (max_word_length, total_words)
+        char_inds_flat = char_inds.view(-1, maxchars).t()
+        # output (total_words, encoder_dim)
+        char_cnn_output = self.char_cnn_encoder(char_inds_flat)
+        x = char_cnn_output.view(bsz, seqlen, char_cnn_output.shape[-1])
+        x = x.transpose(0, 1)  # (seqlen, bsz, char_cnn_output_dim)
+
+        # The rest is the same as CharRNNEncoder, so could be refactored
+        # Generate packed seq to deal with varying source seq length
+        # packed_input is of type PackedSequence, which consists of:
+        # element [0]: a tensor, the packed data, and
+        # element [1]: a list of integers, the batch size for each step
+        packed_input = pack_padded_sequence(x, src_lengths)
+
+        final_hiddens, final_cells = [], []
+        for i, rnn_layer in enumerate(self.layers):
+            if self.bidirectional and i == 0:
+                h0 = x.data.new(2, bsz, self.hidden_dim // 2).zero_()
+                c0 = x.data.new(2, bsz, self.hidden_dim // 2).zero_()
+            else:
+                h0 = x.data.new(1, bsz, self.hidden_dim).zero_()
+                c0 = x.data.new(1, bsz, self.hidden_dim).zero_()
+
+            # apply LSTM along entire sequence
+            current_output, (h_last, c_last) = rnn_layer(packed_input, (h0, c0))
+
+            # final state shapes: (bsz, hidden_dim)
+            if self.bidirectional and i == 0:
+                # concatenate last states for forward and backward LSTM
+                h_last = torch.cat((h_last[0, :, :], h_last[1, :, :]), dim=1)
+                c_last = torch.cat((c_last[0, :, :], c_last[1, :, :]), dim=1)
+            else:
+                h_last = h_last.squeeze(dim=0)
+                c_last = c_last.squeeze(dim=0)
+
+            final_hiddens.append(h_last)
+            final_cells.append(c_last)
 
             if self.residual_level is not None and i >= self.residual_level:
                 packed_input[0] = packed_input.clone()[0] + current_output[0]
