@@ -10,9 +10,7 @@ from pytorch_translate.test import utils as test_utils
 
 
 class TestBeamDecode(unittest.TestCase):
-    @unittest.skipIf(
-        torch.cuda.device_count() < 1, "No GPU available for test."
-    )
+    @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
     def test_basic_generate(self):
         test_args = test_utils.ModelParamsDict()
         _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
@@ -20,7 +18,4 @@ class TestBeamDecode(unittest.TestCase):
         translator = beam_decode.SequenceGenerator([model])
         src_tokens = torch.LongTensor([[0, 0, 0], [0, 0, 0]])
         src_lengths = torch.LongTensor([3, 3])
-        translator.generate(
-            src_tokens=src_tokens,
-            src_lengths=src_lengths,
-        )
+        translator.generate(src_tokens=src_tokens, src_lengths=src_lengths)
