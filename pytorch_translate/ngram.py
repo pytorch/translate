@@ -10,9 +10,9 @@ from fairseq.models import FairseqIncrementalDecoder
 from pytorch_translate.common_layers import (
     Embedding,
     NonlinearLayer,
-    AttentionLayer,
     Linear,
 )
+from pytorch_translate import attention
 
 
 class NGramDecoder(FairseqIncrementalDecoder):
@@ -75,10 +75,10 @@ class NGramDecoder(FairseqIncrementalDecoder):
             ]
         )
 
-        self.attention = AttentionLayer(
+        self.attention = attention.build_attention(
+            attention_type=attention_type,
             decoder_hidden_state_dim=hidden_dim,
             encoder_output_dim=encoder_hidden_dim,
-            attention_type=attention_type,
             force_projection=True,
         )
         self.combined_output_and_context_dim = self.attention.context_dim + hidden_dim

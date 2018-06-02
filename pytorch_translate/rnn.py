@@ -22,7 +22,8 @@ from fairseq.models import (
 from pytorch_translate import vocab_reduction
 from pytorch_translate import word_dropout
 from pytorch_translate.ngram import NGramDecoder
-from pytorch_translate.common_layers import Embedding, RNNLayer, AttentionLayer, Linear
+from pytorch_translate.common_layers import Embedding, RNNLayer, Linear
+from pytorch_translate import attention
 
 
 def torch_find(index, query, vocab_size):
@@ -660,10 +661,10 @@ class RNNDecoder(FairseqIncrementalDecoder):
         )
 
         if attention_type is not None:
-            self.attention = AttentionLayer(
+            self.attention = attention.build_attention(
+                attention_type=attention_type,
                 decoder_hidden_state_dim=hidden_dim,
                 encoder_output_dim=encoder_hidden_dim,
-                attention_type=attention_type,
             )
             self.combined_output_and_context_dim = encoder_hidden_dim + hidden_dim
         else:
