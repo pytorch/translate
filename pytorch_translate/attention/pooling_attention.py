@@ -49,3 +49,23 @@ class PoolingAttention(BaseAttention):
         ).t()
 
         return context, attn_scores
+
+
+@register_attention('max')
+class MaxPoolingAttention(PoolingAttention):
+    def __init__(self, decoder_hidden_state_dim, encoder_output_dim, **kwargs):
+        super().__init__(
+            decoder_hidden_state_dim,
+            encoder_output_dim,
+            pool_type="max",
+        )
+
+
+@register_attention('mean')
+class MeanPoolingAttention(PoolingAttention):
+    def __init__(self, decoder_hidden_state_dim, encoder_output_dim, **kwargs):
+        super().__init__(
+            decoder_hidden_state_dim,
+            encoder_output_dim,
+            pool_type="mean",
+        )
