@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -40,11 +41,7 @@ class DotAttention(BaseAttention):
                 batch_size,
                 src_lengths,
             )
-            masked_attn_scores = torch.where(
-                src_mask > 0,
-                attn_scores,
-                torch.Tensor([float("-Inf")]).type_as(source_hids.data),
-            )
+            masked_attn_scores = attn_scores.masked_fill(src_mask == 0, -np.inf)
             # Since input of varying lengths, need to make sure the attn_scores
             # for each sentence sum up to one
             attn_scores = F.softmax(masked_attn_scores, dim=-1)  # bsz x srclen
