@@ -7,11 +7,7 @@ import torch.nn.functional as F
 from fairseq import utils
 from fairseq.models import FairseqIncrementalDecoder
 
-from pytorch_translate.common_layers import (
-    Embedding,
-    NonlinearLayer,
-    Linear,
-)
+from pytorch_translate.common_layers import Embedding, NonlinearLayer, Linear
 from pytorch_translate import attention
 
 
@@ -81,7 +77,9 @@ class NGramDecoder(FairseqIncrementalDecoder):
             encoder_output_dim=encoder_hidden_dim,
             force_projection=True,
         )
-        self.combined_output_and_context_dim = self.attention.context_dim + hidden_dim
+        self.combined_output_and_context_dim = (
+            self.attention.encoder_output_dim + hidden_dim
+        )
         if self.combined_output_and_context_dim != out_embed_dim:
             self.additional_fc = Linear(
                 self.combined_output_and_context_dim, out_embed_dim
@@ -153,9 +151,12 @@ class NGramDecoder(FairseqIncrementalDecoder):
         x_flat = torch.onnx.operators.reshape_from_tensor_shape(x, x_flat_shape)
         projection_flat = torch.matmul(output_projection_w, x_flat.t()).t()
         logits_shape = torch.cat((batch_time_hidden[:2], torch.LongTensor([-1])))
-        logits = torch.onnx.operators.reshape_from_tensor_shape(
-            projection_flat, logits_shape
-        ) + output_projection_b
+        logits = (
+            torch.onnx.operators.reshape_from_tensor_shape(
+                projection_flat, logits_shape
+            )
+            + output_projection_b
+        )
         return logits, attn_scores, None
 
     def max_positions(self):
