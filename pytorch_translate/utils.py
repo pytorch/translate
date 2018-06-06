@@ -4,6 +4,10 @@ import argparse
 import collections
 import itertools
 import os
+import time
+import torch
+
+from fairseq import models
 
 
 # Helper type for argparse to enable flippable boolean flags. For example,
@@ -84,3 +88,92 @@ class ManagedCheckpoints:
         # and fix the caller, but handling it here was just fine!
         start = max(len(self.kept_checkpoints) - num_elements, 0)
         return collections.deque(itertools.islice(self.kept_checkpoints, start, None))
+
+
+# Variation on the fairseq StopwatchMeter that separates statistics by number
+# of tokens. Sentences longer than max_length are stored in the last bucket.
+class BucketStopwatchMeter(object):
+    def __init__(self, increment, max_length, sentences_per_batch):
+        self.increment = increment
+        self.n_buckets = max_length // increment + 1
+        self.sentences_per_batch = sentences_per_batch
+        self.reset()
+
+    def start(self):
+        self.start_time = time.time()
+
+    def stop(self, n=1):
+        if self.start_time is not None:
+            delta = time.time() - self.start_time
+            bucket_id = min(
+                self.n_buckets - 1,
+                n // self.increment,
+            )
+            self.sum[bucket_id] += delta
+            self.n[bucket_id] += n
+            self.count[bucket_id] += 1
+            self.start_time = None
+
+    def reset(self):
+        self.sum = [0] * self.n_buckets
+        self.n = [0] * self.n_buckets
+        self.count = [0] * self.n_buckets
+        self.start_time = None
+
+    def reset_bucket(self, bucket_id):
+        if self.start_time is None:
+            self.sum[bucket_id] = 0
+            self.n[bucket_id] = 0
+            self.count[bucket_id] = 0
+
+    @property
+    def avg(self):
+        return sum(self.sum) / sum(self.n)
+
+    @property
+    def avgs(self):
+        result = [0] * self.n_buckets
+        for i in range(self.n_buckets):
+            if self.n[i] != 0:
+                result[i] = self.sum[i] / self.n[i]
+            else:
+                result[i] = 0
+        return result
+
+
+def load_diverse_ensemble_for_inference(filenames, src_dict, dst_dict):
+    """Load an ensemble of diverse models for inference.
+
+    This method is similar to fairseq.utils.load_ensemble_for_inference
+    but allows to load diverse models with non-uniform args.
+
+    Args:
+        filenames: List of file names to checkpoints
+        src_dict: Source dictionary
+        dst_dict: Target dictionary
+
+    Return:
+        models, args: Tuple of lists. models contains the loaded models, args
+        the corresponding configurations.
+    """
+
+    # load model architectures and weights
+    states = []
+    for filename in filenames:
+        if not os.path.exists(filename):
+            raise IOError("Model file not found: {}".format(filename))
+        states.append(
+            torch.load(
+                filename,
+                map_location=lambda s, l: torch.serialization.default_restore_location(
+                    s, "cpu"
+                ),
+            )
+        )
+    # build ensemble
+    ensemble = []
+    for state in states:
+        model = models.build_model(state["args"], src_dict, dst_dict)
+        model.load_state_dict(state["model"])
+        ensemble.append(model)
+    return ensemble, [s["args"] for s in states]
