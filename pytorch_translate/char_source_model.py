@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 @register_model("char_source")
 class CharSourceModel(rnn.RNNModel):
-
     def __init__(self, encoder, decoder):
         super().__init__(encoder, decoder)
 
@@ -52,19 +51,10 @@ class CharSourceModel(rnn.RNNModel):
             metavar="EXPR",
             help=("String experission, [(dim, kernel_size), ...]."),
         )
-        '''
-        parser.add_argument(
-            "--char-cnn-output-dim",
-            type=int,
-            default=256,
-            metavar="N",
-            help=("Char cnn encoder output dim."),
-        )
-        '''
         parser.add_argument(
             "--char-cnn-nonlinear-fn",
             type=str,
-            default='tanh',
+            default="tanh",
             metavar="EXPR",
             help=("Nonlinearity applied to char conv outputs. Values: relu, tanh."),
         )
@@ -221,7 +211,7 @@ class CharRNNEncoder(FairseqEncoder):
         if token_embed_dim > 0:
             self.embed_tokens = rnn.Embedding(
                 num_embeddings=num_tokens,
-                embedding_dim=char_embed_dim,
+                embedding_dim=token_embed_dim,
                 padding_idx=self.padding_idx,
                 freeze_embed=freeze_embed,
             )
@@ -370,15 +360,16 @@ class CharCNNEncoder(FairseqEncoder):
     Character-level CNN encoder to generate word representations, as input to
     RNN encoder.
     """
+
     def __init__(
         self,
         dictionary,
         num_chars=50,
         embed_dim=32,
         freeze_embed=False,
-        char_cnn_params='[(128, 3), (128, 5)]',
+        char_cnn_params="[(128, 3), (128, 5)]",
         char_cnn_output_dim=256,
-        char_cnn_nonlinear_fn='tanh',
+        char_cnn_nonlinear_fn="tanh",
         char_cnn_num_highway_layers=0,
         hidden_dim=512,
         num_layers=1,
@@ -406,16 +397,13 @@ class CharCNNEncoder(FairseqEncoder):
             char_cnn_nonlinear_fn,
             char_cnn_num_highway_layers,
         )
-        #self.word_dim = char_cnn_output_dim
         self.word_dim = sum(out_dim for (out_dim, _) in convolutions_params)
 
         self.layers = nn.ModuleList([])
         for layer in range(num_layers):
             is_layer_bidirectional = self.bidirectional and layer == 0
             if is_layer_bidirectional:
-                assert (
-                    hidden_dim % 2 == 0
-                ), (
+                assert hidden_dim % 2 == 0, (
                     "encoder_hidden_dim must be even if encoder_bidirectional "
                     "(to be divided evenly between directions)"
                 )
