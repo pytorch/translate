@@ -22,6 +22,7 @@ from fairseq.trainer import Trainer
 from pytorch_translate import average_checkpoints
 from pytorch_translate import char_source_model  # noqa
 from pytorch_translate import data as pytorch_translate_data
+from pytorch_translate import options as pytorch_translate_options
 from pytorch_translate import dictionary as pytorch_translate_dictionary
 from pytorch_translate import generate
 from pytorch_translate import preprocess
@@ -33,122 +34,27 @@ from pytorch_translate.research.word_prediction import word_prediction_model  # 
 
 def get_parser_with_args():
     parser = options.get_parser("Trainer")
-    options.add_dataset_args(parser, train=True, gen=True)
-    options.add_distributed_training_args(parser)
-    options.add_optimization_args(parser)
-    options.add_checkpoint_args(parser)
-    options.add_model_args(parser)
-    options.add_generation_args(parser)
-
     parser.add_argument(
         "--log-verbose",
         action="store_true",
         help="Whether to output more verbose logs for debugging/profiling.",
     )
-
+    pytorch_translate_options.add_dataset_args(parser, train=True, gen=True)
+    options.add_distributed_training_args(parser)
     # Adds args related to training (validation and stopping criterions).
-    group = parser.add_argument_group("Optimization")
-    group.add_argument(
-        "--subepoch-validate-interval",
-        default=0,
-        type=int,
-        metavar="N",
-        help="Calculates loss over the validation set every N batch updates. "
-        "Note that validation is done at the end of every epoch regardless. "
-        "A value of <= 0 disables this.",
-    )
-    group.add_argument(
-        "--stop-time-hr",
-        default=-1,
-        type=int,
-        metavar="N",
-        help="Stops training after N hours have elapsed. "
-        "A value of < 0 disables this.",
-    )
-    group.add_argument(
-        "--stop-no-best-validate-loss",
-        default=-1,
-        type=int,
-        metavar="N",
-        help="Stops training after N validations have been run without "
-        "achieving a better loss than before. Note that this is affected by "
-        "--validation-interval in how frequently we run validation in the "
-        "first place. A value of < 0 disables this.",
-    )
-    group.add_argument(
-        "--stop-no-best-bleu-eval",
-        default=-1,
-        type=int,
-        metavar="N",
-        help="Stops training after N evals have been run without "
-        "achieving a better BLEU score than before. Note that this is affected "
-        "by --generate-bleu-eval-interval in how frequently we run BLEU eval "
-        "in the first place. A value of < 0 disables this.",
-    )
-
+    optimization_group = options.add_optimization_args(parser)
+    pytorch_translate_options.expand_optimization_args(optimization_group)
+    # Adds args related to checkpointing.
+    checkointing_group = options.add_checkpoint_args(parser)
+    pytorch_translate_options.expand_checkpointing_args(checkointing_group)
+    # Add model related args
+    options.add_model_args(parser)
+    # Adds args for generating intermediate BLEU eval while training.
+    generation_group = options.add_generation_args(parser)
+    pytorch_translate_options.expand_generation_args(generation_group, train=True)
     # Adds args related to input data files (preprocessing, numberizing, and
     # binarizing text files; creating vocab files)
-    preprocess.add_args(parser)
-
-    # Adds args related to checkpointing.
-    group = parser.add_argument_group("Checkpointing")
-    group.add_argument(
-        "--no-end-of-epoch-checkpoints",
-        action="store_true",
-        help="Disables saving checkpoints at the end of the epoch. "
-        "This differs from --no-save and --no-epoch-checkpoints in that it "
-        "still allows for intra-epoch checkpoints if --save-interval is set.",
-    )
-    group.add_argument(
-        "--max-checkpoints-kept",
-        default=-1,
-        type=int,
-        metavar="N",
-        help="Keep at most the last N checkpoints file around. "
-        "A value < -1 keeps all. "
-        "When --generate-bleu-eval-avg-checkpoints is used and is > N, the "
-        "number of checkpoints kept around is automatically adjusted "
-        "to allow BLEU to work properly.",
-    )
-
-    # Adds args for generating intermediate BLEU eval while training.
-    # generate.add_args() adds args used by both train.py and the standalone
-    # generate binary, while the flags defined here are used only by train.py.
-    generate.add_args(parser)
-    group = parser.add_argument_group("Generation")
-    group.add_argument(
-        "--generate-bleu-eval-per-epoch",
-        action="store_true",
-        help="Whether to generate BLEU score eval after each epoch.",
-    )
-    group.add_argument(
-        "--generate-bleu-eval-interval",
-        default=0,
-        type=int,
-        metavar="N",
-        help="Does BLEU eval every N batch updates. Note that "
-        "--save-interval also affects this - we can only eval as "
-        "frequently as a checkpoint is written. A value of <= 0 "
-        "disables this.",
-    )
-    group.add_argument(
-        "--generate-bleu-eval-avg-checkpoints",
-        default=1,
-        type=int,
-        metavar="N",
-        help="Maximum number of last N checkpoints to average over when "
-        "doing BLEU eval. Must be >= 1.",
-    )
-    group.add_argument(
-        "--continuous-averaging-after-epochs",
-        type=int,
-        default=-1,
-        help=(
-            "Average parameter values after each step since previous "
-            "checkpoint, beginning after the specified number of epochs. "
-        ),
-    )
-
+    pytorch_translate_options.add_preprocessing_args(parser)
     return parser
 
 
@@ -191,20 +97,6 @@ def validate_and_set_default_args(args):
     # Prevents generate from printing individual translated sentences when
     # calculating BLEU score.
     args.quiet = True
-
-    if args.data:
-        raise ValueError(
-            "Specifying a data directory is disabled in FBTranslate since the "
-            "fairseq data class is not supported. Please specify input text "
-            "files (--{train, eval}-{source, target}-text-file) "
-            "or binarized input files "
-            "(--{train, eval}-{source, target}-binary-prefix) instead."
-        )
-
-    if args.source_lang is None:
-        args.source_lang = "src"
-    if args.target_lang is None:
-        args.target_lang = "tgt"
 
     if not args.source_vocab_file:
         args.source_vocab_file = pytorch_translate_dictionary.default_dictionary_path(

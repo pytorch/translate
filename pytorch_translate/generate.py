@@ -8,6 +8,7 @@ from fairseq.meters import StopwatchMeter, TimeMeter
 from pytorch_translate import beam_decode
 from pytorch_translate import char_source_model
 from pytorch_translate import data as pytorch_translate_data
+from pytorch_translate import options as pytorch_translate_options
 from pytorch_translate import dictionary as pytorch_translate_dictionary
 from pytorch_translate import utils as pytorch_translate_utils
 from pytorch_translate import rnn  # noqa
@@ -158,70 +159,11 @@ def _generate_score(models, args, dataset, dataset_split):
     return scorer, num_sentences, gen_timer
 
 
-def add_args(parser):
-    group = parser.add_argument_group("Generation")
-    group.add_argument(
-        "--word-reward",
-        type=float,
-        default=0.0,
-        help=(
-            "Value to add to (log-prob) score for each token except EOS. "
-            "IMPORTANT NOTE: higher values of --lenpen and --word-reward "
-            "both encourage longer translations, while higher values of "
-            "--unkpen penalize UNKs more."
-        ),
-    )
-    group.add_argument(
-        "--model-weights",
-        default="",
-        help=(
-            "Interpolation weights for ensembles. Comma-separated list of "
-            "floats with length equal to the number of models in the ensemble."
-        ),
-    )
-
-
 def get_parser_with_args():
     parser = options.get_parser("Generation")
-    options.add_dataset_args(parser, gen=True)
-    options.add_generation_args(parser)
-    add_args(parser)
-
-    group = parser.add_argument_group("Generation")
-    group.add_argument(
-        "--source-vocab-file",
-        default="",
-        metavar="FILE",
-        help="Path to text file representing the Dictionary to use.",
-    )
-    group.add_argument(
-        "--target-vocab-file",
-        default="",
-        metavar="FILE",
-        help="Path to text file representing the Dictionary to use.",
-    )
-    group.add_argument(
-        "--source-text-file",
-        default="",
-        metavar="FILE",
-        help="Path to raw text file containing examples in source dialect. "
-        "This overrides what would be loaded from the data dir.",
-    )
-    group.add_argument(
-        "--target-text-file",
-        default="",
-        metavar="FILE",
-        help="Path to raw text file containing examples in target dialect. "
-        "This overrides what would be loaded from the data dir.",
-    )
-    group.add_argument(
-        "--translation-output-file",
-        default="",
-        type=str,
-        metavar="FILE",
-        help="Path to text file to store the output of the model. ",
-    )
-
+    pytorch_translate_options.add_dataset_args(parser, gen=True)
+    generation_group = options.add_generation_args(parser)
+    pytorch_translate_options.expand_generation_args(generation_group, gen=True)
     return parser
 
 
@@ -232,12 +174,6 @@ def main():
 
 
 def assert_test_corpus_and_vocab_files_specified(args):
-    assert not args.data, (
-        "Specifying a data directory is disabled in FBTranslate since the "
-        "fairseq data class is not supported. Please specify "
-        "--train-source-text-file, --train-target-text-file, "
-        "--eval-source-text-file, and  --eval-target-text-file instead."
-    )
     assert (
         args.source_vocab_file and os.path.isfile(args.source_vocab_file)
     ), "Please specify a valid file for --source-vocab-file"
@@ -257,11 +193,6 @@ def generate(args):
     assert args.path is not None, "--path required for generation!"
 
     print(args)
-
-    if args.source_lang is None:
-        args.source_lang = "src"
-    if args.target_lang is None:
-        args.target_lang = "tgt"
 
     src_dict = pytorch_translate_dictionary.Dictionary.load(args.source_vocab_file)
     dst_dict = pytorch_translate_dictionary.Dictionary.load(args.target_vocab_file)

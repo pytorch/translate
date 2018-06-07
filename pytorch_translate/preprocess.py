@@ -7,134 +7,8 @@ from typing import Optional
 
 from pytorch_translate import char_data
 from pytorch_translate import data as pytorch_translate_data
+from pytorch_translate import options as pytorch_translate_options
 from pytorch_translate.dictionary import Dictionary
-from pytorch_translate import utils
-
-
-def add_args(parser):
-    # Args related to dataset.
-    group = parser.add_argument_group("Preprocess data")
-    group.add_argument(
-        "--source-vocab-file",
-        default="",
-        metavar="FILE",
-        help="Path to text file representing the dictionary of tokens to use. "
-        "If the file does not exist, the dict is auto-generated from source "
-        "training data and saved as that file.",
-    )
-    group.add_argument(
-        "--source-max-vocab-size",
-        default=-1,
-        type=int,
-        metavar="N",
-        help="If a new vocab file needs to be generated, restrict it to the "
-        "top N most common words. If we re-use an existing vocab file, this "
-        "flag will have no effect. A value of < 0 means no max size.",
-    )
-    group.add_argument(
-        "--char-source-vocab-file",
-        default="",
-        metavar="FILE",
-        help="Same as --source-vocab-file except using characters.",
-    )
-    group.add_argument(
-        "--char-source-max-vocab-size",
-        default=-1,
-        type=int,
-        metavar="N",
-        help="Same as --source-max-vocab-size except using characters.",
-    )
-    group.add_argument(
-        "--target-vocab-file",
-        default="",
-        metavar="FILE",
-        help="Path to text file representing the fairseq Dictionary to use. "
-        "If the file does not exist, the dict is auto-generated from target "
-        "training data and saved as that file.",
-    )
-    group.add_argument(
-        "--target-max-vocab-size",
-        default=-1,
-        type=int,
-        metavar="N",
-        help="If a new vocab file needs to be generated, restrict it to the "
-        "top N most common words. If we re-use an existing vocab file, this "
-        "flag will have no effect. A value of < 0 means no max size.",
-    )
-
-    group.add_argument(
-        "--train-source-text-file",
-        default="",
-        metavar="FILE",
-        help="Path to text file containing source training examples.",
-    )
-    group.add_argument(
-        "--train-target-text-file",
-        default="",
-        metavar="FILE",
-        help="Path to text file containing target training examples.",
-    )
-    group.add_argument(
-        "--eval-source-text-file",
-        default="",
-        metavar="FILE",
-        help="Path to text file containing source eval examples for "
-        "calculating validation loss and BLEU eval scores.",
-    )
-    group.add_argument(
-        "--eval-target-text-file",
-        default="",
-        metavar="FILE",
-        help="Path to text file containing target eval examples for "
-        "calculating validation loss and BLEU eval scores.",
-    )
-    group.add_argument(
-        "--train-source-binary-path",
-        default="",
-        help="Path for the binary file containing source training examples.",
-    )
-    group.add_argument(
-        "--train-target-binary-path",
-        default="",
-        help="Path for the binary file containing target training examples.",
-    )
-    group.add_argument(
-        "--eval-source-binary-path",
-        default="",
-        help="Path for the binary file containing source eval examples for "
-        "calculating validation loss and BLEU scores.",
-    )
-    group.add_argument(
-        "--eval-target-binary-path",
-        default="",
-        help="Path for the binary file containing target eval examples for "
-        "calculating validation loss and BLEU scores.",
-    )
-
-    group.add_argument(
-        "--penalized-target-tokens-file",
-        default="",
-        metavar="FILE",
-        help="Path to text file of tokens to receive a penalty in decoding."
-        "If left empty, no penalty will be applied",
-    )
-
-    group.add_argument(
-        "--append-eos-to-source",
-        type=utils.bool_flag,
-        nargs="?",
-        const=True,
-        default=False,
-        help=("If true, append EOS to source sentences (instead of just target)."),
-    )
-    group.add_argument(
-        "--reverse-source",
-        type=utils.bool_flag,
-        nargs="?",
-        const=True,
-        default=True,
-        help=("If true, feed source sentence to model in reverse order."),
-    )
 
 
 def validate_args(args):
@@ -288,7 +162,7 @@ def preprocess_corpora(args):
 
 def main():
     parser = argparse.ArgumentParser(description="PyTorch Translate - preprocessing")
-    add_args(parser)
+    pytorch_translate_options.add_preprocessing_args(parser)
     args = parser.parse_args()
     preprocess_corpora(args)
 
