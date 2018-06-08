@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import collections
 import os
 import torch
 
@@ -77,6 +78,7 @@ def _generate_score(models, args, dataset, dataset_split):
         itr = data.sharded_iterator(itr, args.num_shards, args.shard_id)
 
     num_sentences = 0
+    translation_samples = []
     with progress_bar.build_progress_bar(args, itr) as t:
         wps_meter = TimeMeter()
         # Keep more detailed timing when invoked from benchmark
@@ -109,7 +111,6 @@ def _generate_score(models, args, dataset, dataset_split):
                 target_str = dataset.dst_dict.string(
                     target_tokens, args.remove_bpe, escape_unk=True
                 )
-
             if not args.quiet:
                 print(f"S-{sample_id}\t{src_str}")
                 print(f"T-{sample_id}\t{target_str}")
@@ -144,7 +145,12 @@ def _generate_score(models, args, dataset, dataset_split):
                         )
                     scorer.add(target_tokens, hypo_tokens)
                     translated_sentences[sample_id] = hypo_str
-
+            translation_samples.append(collections.OrderedDict({
+                "sample_id": sample_id,
+                "src_str": src_str,
+                "target_str": target_str,
+                "hypo_str": translated_sentences[sample_id]
+            }))
             wps_meter.update(src_tokens.size(0))
             t.log({"wps": round(wps_meter.avg)})
             num_sentences += 1
@@ -156,7 +162,7 @@ def _generate_score(models, args, dataset, dataset_split):
             for hypo_str in translated_sentences:
                 print(hypo_str, file=out_file)
 
-    return scorer, num_sentences, gen_timer
+    return scorer, num_sentences, gen_timer, translation_samples
 
 
 def get_parser_with_args():
@@ -225,7 +231,7 @@ def generate(args):
     print(f"| [{dataset.src}] dictionary: {len(dataset.src_dict)} types")
     print(f"| [{dataset.dst}] dictionary: {len(dataset.dst_dict)} types")
     print(f"| {args.gen_subset} {len(dataset.splits[args.gen_subset])} examples")
-    scorer, num_sentences, gen_timer = _generate_score(
+    scorer, num_sentences, gen_timer, _ = _generate_score(
         models=models, args=args, dataset=dataset, dataset_split=args.gen_subset
     )
     print(
