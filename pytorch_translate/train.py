@@ -31,6 +31,7 @@ from pytorch_translate import rnn  # noqa
 from pytorch_translate import utils
 from pytorch_translate.research.word_prediction import word_prediction_criterion  # noqa
 from pytorch_translate.research.word_prediction import word_prediction_model  # noqa
+from pytorch_translate.research.knowledge_distillation import knowledge_distillation_loss # noqa
 
 
 def get_parser_with_args():
