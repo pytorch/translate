@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import math
 import torch
 
@@ -134,10 +136,8 @@ class SequenceGenerator(torch.nn.Module):
             return self._generate(encoder_input, beam_size, maxlen, prefix_tokens)
 
     def _generate(self, encoder_input, beam_size=None, maxlen=None, prefix_tokens=None):
-        if self.use_char_source:
-            (src_tokens, src_lengths, char_inds, word_lengths) = encoder_input
-        else:
-            (src_tokens, src_lengths) = encoder_input
+
+        src_tokens = encoder_input[0]
 
         bsz, srclen = src_tokens.size()
         maxlen = min(maxlen, self.maxlen) if maxlen is not None else self.maxlen
@@ -148,26 +148,8 @@ class SequenceGenerator(torch.nn.Module):
             beam_size < self.vocab_size
         ), "Beam size must be smaller than target vocabulary"
 
-        encoder_outs = []
-        incremental_states = {}
-        for model in self.models:
-            if not self.retain_dropout:
-                model.eval()
-            if isinstance(model.decoder, FairseqIncrementalDecoder):
-                incremental_states[model] = {}
-            else:
-                incremental_states[model] = None
-
-            if self.use_char_source:
-                encoder_out = model.encoder(
-                    src_tokens, src_lengths, char_inds, word_lengths
-                )
-            else:
-                encoder_out = model.encoder(src_tokens, src_lengths)
-
-            # expand outputs for each example beam_size times
-            encoder_out = model.expand_encoder_output(encoder_out, beam_size)
-            encoder_outs.append(encoder_out)
+        # Encode
+        encoder_outs, incremental_states = self._encode(encoder_input, beam_size)
 
         # initialize buffers
         scores = src_tokens.new(bsz * beam_size, maxlen + 1).float().fill_(0)
@@ -217,7 +199,7 @@ class SequenceGenerator(torch.nn.Module):
                 # finalized one
                 best_unfinalized_score = unfinalized_scores[sent].max()
                 if self.normalize_scores:
-                    best_unfinalized_score /= maxlen
+                    best_unfinalized_score /= (maxlen + 1) ** self.len_penalty
                 if worst_finalized[sent]["score"] >= best_unfinalized_score:
                     return True
             return False
@@ -309,34 +291,30 @@ class SequenceGenerator(torch.nn.Module):
                         model.decoder.reorder_incremental_state(
                             incremental_states[model], reorder_state
                         )
-
-            decode_output = self._decode(
+            # Run decoder for one step
+            logprobs, avg_attn, possible_translation_tokens = self._decode(
                 tokens[:, : step + 1], encoder_outs, incremental_states
             )
-            if len(decode_output) == 3:
-                probs, avg_attn_scores, possible_translation_tokens = decode_output
-            else:
-                probs, avg_attn_scores = decode_output
-                possible_translation_tokens = None
+
             if step == 0:
                 # at the first step all hypotheses are equally likely, so use
                 # only the first beam
-                probs = probs.unfold(0, 1, beam_size).squeeze(2).contiguous()
-                scores = scores.type_as(probs)
-                scores_buf = scores_buf.type_as(probs)
+                logprobs = logprobs.unfold(0, 1, beam_size).squeeze(2).contiguous()
+                scores = scores.type_as(logprobs)
+                scores_buf = scores_buf.type_as(logprobs)
             else:
                 # make probs contain cumulative scores for each hypothesis
-                probs.add_(scores[:, step - 1].view(-1, 1))
-            probs[:, self.pad] = -math.inf  # never select pad
-            probs[:, self.unk] -= self.unk_penalty  # apply unk penalty
+                logprobs.add_(scores[:, step - 1].view(-1, 1))
+            logprobs[:, self.pad] = -math.inf  # never select pad
+            logprobs[:, self.unk] -= self.unk_penalty  # apply unk penalty
             # external lexicon penalty
-            probs[:, self.lexicon_indices] -= self.lexicon_penalty
+            logprobs[:, self.lexicon_indices] -= self.lexicon_penalty
 
-            probs += self.word_reward
-            probs[:, self.eos] -= self.word_reward
+            logprobs += self.word_reward
+            logprobs[:, self.eos] -= self.word_reward
 
             # Record attention scores
-            attn[:, :, step + 1].copy_(avg_attn_scores)
+            attn[:, :, step + 1].copy_(avg_attn)
 
             cand_scores = buffer("cand_scores", type_of=scores)
             cand_indices = buffer("cand_indices")
@@ -345,9 +323,9 @@ class SequenceGenerator(torch.nn.Module):
             eos_scores = buffer("eos_scores", type_of=scores)
             if step < maxlen:
                 if prefix_tokens is not None and step < prefix_tokens.size(1):
-                    probs_slice = probs.view(bsz, -1, probs.size(-1))[:, 0, :]
+                    logprobs_slice = logprobs.view(bsz, -1, logprobs.size(-1))[:, 0, :]
                     cand_scores = torch.gather(
-                        probs_slice, dim=1, index=prefix_tokens[:, step].view(-1, 1)
+                        logprobs_slice, dim=1, index=prefix_tokens[:, step].view(-1, 1)
                     ).expand(-1, cand_size)
                     cand_indices = (
                         prefix_tokens[:, step].view(-1, 1).expand(bsz, cand_size)
@@ -357,17 +335,22 @@ class SequenceGenerator(torch.nn.Module):
                     # take the best 2 x beam_size predictions. We'll choose the first
                     # beam_size of these which don't predict eos to continue with.
                     torch.topk(
-                        probs.view(bsz, -1),
+                        logprobs.view(bsz, -1),
                         k=min(
-                            cand_size, probs.view(bsz, -1).size(1) - 1
+                            cand_size, logprobs.view(bsz, -1).size(1) - 1
                         ),  # -1 so we never select pad
                         out=(cand_scores, cand_indices),
                     )
+
                     possible_tokens_size = self.vocab_size
                     if possible_translation_tokens is not None:
                         possible_tokens_size = possible_translation_tokens.size(0)
+                    # cand_indices has values in [0, vocab_size * beam_size]
+                    # the following does euclidean division bu vocab_size
+                    # to retrieve the beam and word id of each candidate
                     torch.div(cand_indices, possible_tokens_size, out=cand_beams)
                     cand_indices.fmod_(possible_tokens_size)
+                    # Handle vocab reduction
                     if possible_translation_tokens is not None:
                         possible_translation_tokens = possible_translation_tokens.view(
                             1, possible_tokens_size
@@ -380,9 +363,11 @@ class SequenceGenerator(torch.nn.Module):
                         )
             else:
                 # finalize all active hypotheses once we hit maxlen
-                # pick the hypothesis with the highest prob of EOS right now
+                # pick the hypothesis with the highest log prob of EOS right now
                 torch.sort(
-                    probs[:, self.eos], descending=True, out=(eos_scores, eos_bbsz_idx)
+                    logprobs[:, self.eos],
+                    descending=True,
+                    out=(eos_scores, eos_bbsz_idx)
                 )
                 num_remaining_sent -= finalize_hypos(step, eos_bbsz_idx, eos_scores)
                 assert num_remaining_sent == 0
@@ -484,15 +469,9 @@ class SequenceGenerator(torch.nn.Module):
             )
 
             # swap buffers
-            old_tokens = tokens
-            tokens = tokens_buf
-            tokens_buf = old_tokens
-            old_scores = scores
-            scores = scores_buf
-            scores_buf = old_scores
-            old_attn = attn
-            attn = attn_buf
-            attn_buf = old_attn
+            tokens, tokens_buf = tokens_buf, tokens
+            scores, scores_buf = scores_buf, scores
+            attn, attn_buf = attn_buf, attn
 
             # reorder incremental state in decoder
             reorder_state = active_bbsz_idx
@@ -504,6 +483,24 @@ class SequenceGenerator(torch.nn.Module):
             )
 
         return finalized
+
+    def _encode(self, encoder_input, beam_size):
+        encoder_outs = []
+        incremental_states = {}
+        for model in self.models:
+            if not self.retain_dropout:
+                model.eval()
+            if isinstance(model.decoder, FairseqIncrementalDecoder):
+                incremental_states[model] = {}
+            else:
+                incremental_states[model] = None
+
+            encoder_out = model.encoder(*encoder_input)
+
+            # expand outputs for each example beam_size times
+            encoder_out = model.expand_encoder_output(encoder_out, beam_size)
+            encoder_outs.append(encoder_out)
+        return encoder_outs, incremental_states
 
     def _decode(self, tokens, encoder_outs, incremental_states):
         # wrap in Variable
