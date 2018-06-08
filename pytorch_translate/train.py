@@ -21,6 +21,7 @@ from fairseq.trainer import Trainer
 
 from pytorch_translate import average_checkpoints
 from pytorch_translate import char_source_model  # noqa
+from pytorch_translate import constants
 from pytorch_translate import data as pytorch_translate_data
 from pytorch_translate import options as pytorch_translate_options
 from pytorch_translate import dictionary as pytorch_translate_dictionary
@@ -710,7 +711,9 @@ def evaluate_bleu(args, dataset, extra_state):
             "best_epoch": epoch,
             "num_since_best": 0,
         }
-        best_filename = os.path.join(args.save_dir, "averaged_checkpoint_best.pt")
+        best_filename = os.path.join(
+            args.save_dir, constants.AVERAGED_CHECKPOINT_BEST_FILENAME
+        )
         shutil.copy2(filename, best_filename)
     else:
         extra_state["evaluate_bleu"]["num_since_best"] += 1
