@@ -280,6 +280,7 @@ def train(args, extra_state, trainer, dataset):
                 val_ppl,
                 val_bleu,
                 stop_training_mid_epoch,
+                translation_samples
             ) = validate_save_and_evaluate_bleu(
                 args=args,
                 trainer=trainer,
@@ -295,6 +296,7 @@ def train(args, extra_state, trainer, dataset):
                     "train_ppl": train_stats["ppl"],
                     "tune_ppl": val_ppl,
                     "tune_bleu": val_bleu,
+                    "translation_samples": translation_samples,
                 },
             )
 
@@ -316,6 +318,7 @@ def train(args, extra_state, trainer, dataset):
             val_ppl,
             val_bleu,
             stop_training_end_of_epoch,
+            translation_samples
         ) = validate_save_and_evaluate_bleu(
             args=args,
             trainer=trainer,
@@ -332,6 +335,7 @@ def train(args, extra_state, trainer, dataset):
                 "train_ppl": train_stats["ppl"],
                 "tune_ppl": val_ppl,
                 "tune_bleu": val_bleu,
+                "translation_samples": translation_samples,
             },
         )
         if stop_training_end_of_epoch:
@@ -676,7 +680,7 @@ def _save_averaged_checkpoint(args, extra_state):
 
 
 def calculate_bleu_on_subset(args, dataset, epoch, offset, dataset_split):
-    scorer, num_sentences, gen_timer = generate.generate_score(
+    scorer, num_sentences, gen_timer, translation_samples = generate.generate_score(
         args=args, dataset=dataset, dataset_split=dataset_split
     )
 
@@ -688,14 +692,14 @@ def calculate_bleu_on_subset(args, dataset, epoch, offset, dataset_split):
         f"in {gen_timer.sum:.1f}s ({1. / gen_timer.avg:.2f} tokens/s).",
         flush=True,
     )
-    return scorer.score()
+    return scorer.score(), translation_samples
 
 
 def evaluate_bleu(args, dataset, extra_state):
     epoch, offset = extra_state["epoch"], extra_state["batch_offset"]
     filename = _save_averaged_checkpoint(args, extra_state)
     args.path = [filename]
-    val_bleu = calculate_bleu_on_subset(
+    val_bleu, translation_samples = calculate_bleu_on_subset(
         args=args,
         dataset=dataset,
         epoch=epoch,
@@ -731,7 +735,7 @@ def evaluate_bleu(args, dataset, extra_state):
             f"(current score: {val_bleu}) was"
             f"{extra_state['evaluate_bleu']['num_since_best']} evals ago."
         )
-    return val_bleu, stop_due_to_val_bleu
+    return val_bleu, stop_due_to_val_bleu, translation_samples
 
 
 def validate_save_and_evaluate_bleu(
@@ -742,7 +746,7 @@ def validate_save_and_evaluate_bleu(
     do_validate: bool,
     do_save: bool,
     do_eval_bleu: bool,
-) -> Tuple[Optional[float], Optional[float], Optional[float], bool]:
+) -> Tuple[Optional[float], Optional[float], Optional[float], bool, Optional[list]]:
     # evaluate on validate set
     val_loss = None
     val_ppl = None
@@ -759,15 +763,17 @@ def validate_save_and_evaluate_bleu(
 
     val_bleu = None
     stop_due_to_val_bleu = False
+    translation_samples = None
     if do_save and distributed_utils.is_master(args):
         # save checkpoint
         save_checkpoint(trainer=trainer, args=args, extra_state=extra_state)
         if do_eval_bleu:
-            val_bleu, stop_due_to_val_bleu = evaluate_bleu(
+            val_bleu, stop_due_to_val_bleu, translation_samples = evaluate_bleu(
                 args=args, dataset=dataset, extra_state=extra_state
             )
 
-    return (val_loss, val_ppl, val_bleu, stop_due_to_val_loss or stop_due_to_val_bleu)
+    return (val_loss, val_ppl, val_bleu,
+            stop_due_to_val_loss or stop_due_to_val_bleu, translation_samples)
 
 
 class ErrorHandler(object):

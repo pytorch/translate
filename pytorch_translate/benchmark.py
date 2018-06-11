@@ -154,7 +154,7 @@ def generate(args):
     print(f"| [{dataset.dst}] dictionary: {len(dataset.dst_dict)} types")
     print(f"| {args.gen_subset} {len(dataset.splits[args.gen_subset])} examples")
     args.keep_detailed_timing = True
-    scorer, num_sentences, gen_timer = pytorch_translate_generate._generate_score(
+    scorer, num_sentences, gen_timer, _ = pytorch_translate_generate._generate_score(
         models=models, args=args, dataset=dataset, dataset_split=args.gen_subset
     )
 
