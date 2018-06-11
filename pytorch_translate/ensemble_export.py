@@ -109,7 +109,6 @@ def save_caffe2_rep_to_db(
 
 
 class EncoderEnsemble(nn.Module):
-
     def __init__(self, models):
         super().__init__()
         self.models = models
@@ -210,7 +209,6 @@ class EncoderEnsemble(nn.Module):
 
 
 class DecoderStepEnsemble(nn.Module):
-
     def __init__(self, models, beam_size, word_penalty=0, unk_penalty=0):
         super().__init__()
         self.models = models
@@ -266,7 +264,11 @@ class DecoderStepEnsemble(nn.Module):
             src_tokens = torch.LongTensor(np.array([[0] * src_length_int]))
 
             encoder_out = (
-                encoder_output, prev_hiddens, prev_cells, src_length, src_tokens
+                encoder_output,
+                prev_hiddens,
+                prev_cells,
+                src_length,
+                src_tokens,
             )
 
             # store cached states, use evaluation mode
@@ -320,9 +322,7 @@ class DecoderStepEnsemble(nn.Module):
         if possible_translation_tokens is not None:
             best_tokens = possible_translation_tokens.index_select(
                 dim=0, index=best_tokens.view(-1)
-            ).view(
-                1, -1
-            )
+            ).view(1, -1)
 
         word_rewards_for_best_tokens = self.word_rewards.index_select(
             0, best_tokens.view(-1)
@@ -338,7 +338,9 @@ class DecoderStepEnsemble(nn.Module):
 
         outputs = [best_tokens, best_scores, average_attn_weights]
         self.output_names = [
-            "best_tokens_indices", "best_scores", "attention_weights_average"
+            "best_tokens_indices",
+            "best_scores",
+            "attention_weights_average",
         ]
         for i, state in enumerate(state_outputs):
             outputs.append(state)
@@ -406,7 +408,6 @@ class DecoderStepEnsemble(nn.Module):
 
 
 class DecoderBatchedStepEnsemble(nn.Module):
-
     def __init__(
         self, models, beam_size, word_penalty=0, unk_penalty=0, tile_internal=False
     ):
@@ -480,7 +481,11 @@ class DecoderBatchedStepEnsemble(nn.Module):
             src_tokens = torch.LongTensor(np.array([[0] * src_length_int]))
 
             encoder_out = (
-                encoder_output, prev_hiddens, prev_cells, src_length, src_tokens
+                encoder_output,
+                prev_hiddens,
+                prev_cells,
+                src_length,
+                src_tokens,
             )
 
             # store cached states, use evaluation mode
@@ -688,17 +693,13 @@ class BeamSearch(torch.jit.ScriptModule):
         )
         self.decoder_ens_tile = torch.jit.trace(
             prev_token, prev_scores, ts, *example_encoder_outs
-        )(
-            decoder_ens_tile
-        )
+        )(decoder_ens_tile)
         self.decoder_ens = torch.jit.trace(
             prev_token.repeat(self.beam_size),
             prev_scores.repeat(self.beam_size),
             ts,
             *tiled_states,
-        )(
-            decoder_ens
-        )
+        )(decoder_ens)
 
         self.input_names = [
             "src_tokens",
@@ -710,7 +711,10 @@ class BeamSearch(torch.jit.ScriptModule):
             "num_steps",
         ]
         self.output_names = [
-            "all_tokens", "all_scores", "all_weights", "all_prev_indices"
+            "all_tokens",
+            "all_scores",
+            "all_weights",
+            "all_prev_indices",
         ]
 
     @torch.jit.script_method
@@ -728,10 +732,10 @@ class BeamSearch(torch.jit.ScriptModule):
 
         all_tokens = prev_token.repeat(repeats=[self.beam_size]).unsqueeze(dim=0)
         all_scores = prev_scores.repeat(repeats=[self.beam_size]).unsqueeze(dim=0)
-        all_weights = attn_weights.unsqueeze(dim=0).repeat(
-            repeats=[self.beam_size, 1]
-        ).unsqueeze(
-            dim=0
+        all_weights = (
+            attn_weights.unsqueeze(dim=0)
+            .repeat(repeats=[self.beam_size, 1])
+            .unsqueeze(dim=0)
         )
         all_prev_indices = prev_hypos_indices.unsqueeze(dim=0)
 
@@ -748,10 +752,12 @@ class BeamSearch(torch.jit.ScriptModule):
 
         for i in range(num_steps - 1):
             (
-                prev_token, prev_scores, prev_hypos_indices, attn_weights, *states
-            ) = self.decoder_ens(
-                prev_token, prev_scores, i + 1, *states
-            )
+                prev_token,
+                prev_scores,
+                prev_hypos_indices,
+                attn_weights,
+                *states,
+            ) = self.decoder_ens(prev_token, prev_scores, i + 1, *states)
 
             all_tokens = torch.cat((all_tokens, prev_token.unsqueeze(dim=0)), dim=0)
             all_scores = torch.cat((all_scores, prev_scores.unsqueeze(dim=0)), dim=0)
@@ -834,6 +840,113 @@ class BeamSearch(torch.jit.ScriptModule):
             caffe2_backend_rep=beam_search,
             output_path=output_path,
             input_names=self.input_names,
+            output_names=self.output_names,
+            num_workers=2 * len(self.models),
+        )
+
+
+class CharSourceEncoderEnsemble(nn.Module):
+    def __init__(self, models):
+        super().__init__()
+        self.models = models
+        for i, model in enumerate(self.models):
+            self._modules[f"model_{i}"] = model
+
+    def forward(self, src_tokens, src_lengths, char_inds, word_lengths):
+        outputs = []
+        output_names = []
+        states = []
+
+        # (seq_length, batch_size) for compatibility with Caffe2
+        src_tokens_seq_first = src_tokens.t()
+
+        for i, model in enumerate(self.models):
+            # evaluation mode
+            model.eval()
+
+            encoder_out = model.encoder(
+                src_tokens_seq_first, src_lengths, char_inds, word_lengths
+            )
+
+            # evaluation mode
+            model.eval()
+
+            # "primary" encoder output (vector representations per source token)
+            encoder_outputs = encoder_out[0]
+            outputs.append(encoder_outputs)
+            output_names.append(f"encoder_output_{i}")
+
+            init_hiddens, init_cells = model.decoder._init_prev_states(encoder_out)
+            for h, c in zip(init_hiddens, init_cells):
+                states.extend([h, c])
+            states.append(model.decoder.initial_attn_context)
+
+        # underlying assumption is each model has same vocab_reduction_module
+        vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
+        if vocab_reduction_module is not None:
+            possible_translation_tokens = vocab_reduction_module(
+                src_tokens=src_tokens, decoder_input_tokens=None
+            )
+            outputs.append(possible_translation_tokens)
+            output_names.append("possible_translation_tokens")
+
+        for i, state in enumerate(states):
+            outputs.append(state)
+            output_names.append(f"initial_state_{i}")
+
+        self.output_names = output_names
+
+        return tuple(outputs)
+
+    def onnx_export(self, output_path):
+        # The discrepancy in types here is a temporary expedient.
+        # PyTorch indexing requires int64 while support for tracing
+        # pack_padded_sequence() requires int32.
+        length = 5
+        src_tokens = torch.LongTensor(np.ones((length, 1), dtype="int64"))
+        src_lengths = torch.IntTensor(np.array([length], dtype="int32"))
+        word_length = 3
+        char_inds = torch.LongTensor(np.ones((1, length, word_length), dtype="int64"))
+        word_lengths = torch.IntTensor(
+            np.array([word_length] * length, dtype="int32")
+        ).reshape((1, length))
+
+        # generate output names
+        self.forward(src_tokens, src_lengths, char_inds, word_lengths)
+
+        onnx_export_ensemble(
+            module=self,
+            output_path=output_path,
+            input_tuple=(src_tokens, src_lengths, char_inds, word_lengths),
+            input_names=["src_tokens", "src_lengths", "char_inds", "word_lengths"],
+            output_names=self.output_names,
+        )
+
+    @staticmethod
+    def build_from_checkpoints(
+        checkpoint_filenames, src_dict_filename, dst_dict_filename
+    ):
+        models = load_models_from_checkpoints(
+            checkpoint_filenames, src_dict_filename, dst_dict_filename
+        )
+        return CharSourceEncoderEnsemble(models)
+
+    def save_to_db(self, output_path):
+        """
+        Save encapsulated encoder export file.
+        """
+        tmp_dir = tempfile.mkdtemp()
+        tmp_file = os.path.join(tmp_dir, "encoder.pb")
+        self.onnx_export(tmp_file)
+
+        with open(tmp_file, "r+b") as f:
+            onnx_model = onnx.load(f)
+        onnx_encoder = caffe2_backend.prepare(onnx_model)
+
+        save_caffe2_rep_to_db(
+            caffe2_backend_rep=onnx_encoder,
+            output_path=output_path,
+            input_names=["src_tokens", "src_lengths", "char_inds", "word_lengths"],
             output_names=self.output_names,
             num_workers=2 * len(self.models),
         )
