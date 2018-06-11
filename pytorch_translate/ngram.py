@@ -5,13 +5,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from fairseq import utils
-from fairseq.models import FairseqIncrementalDecoder
 
-from pytorch_translate.common_layers import Embedding, NonlinearLayer, Linear
+from pytorch_translate.common_layers import (
+    Embedding,
+    NonlinearLayer,
+    Linear,
+    DecoderWithOutputProjection,
+)
 from pytorch_translate import attention
 
 
-class NGramDecoder(FairseqIncrementalDecoder):
+class NGramDecoder(DecoderWithOutputProjection):
     """n-gram decoder.
 
     This decoder implementation does not condition on the full target-side
@@ -24,6 +28,7 @@ class NGramDecoder(FairseqIncrementalDecoder):
         self,
         src_dict,
         dst_dict,
+        vocab_reduction_params=None,
         n=4,
         encoder_hidden_dim=512,
         embed_dim=512,
@@ -36,8 +41,15 @@ class NGramDecoder(FairseqIncrementalDecoder):
         attention_type="dot",
         residual_level=None,
         activation_fn=nn.ReLU,
+        project_output=True,
     ):
-        super().__init__(dst_dict)
+        super().__init__(
+            src_dict,
+            dst_dict,
+            vocab_reduction_params,
+            out_embed_dim,
+            project_output=project_output,
+        )
         self.history_len = n - 1
         self.encoder_hidden_dim = encoder_hidden_dim
         self.embed_dim = embed_dim
@@ -85,16 +97,9 @@ class NGramDecoder(FairseqIncrementalDecoder):
                 self.combined_output_and_context_dim, out_embed_dim
             )
 
-        self.output_projection_w = nn.Parameter(
-            torch.FloatTensor(num_embeddings, out_embed_dim).uniform_(-0.1, 0.1)
-        )
-        self.output_projection_b = nn.Parameter(
-            torch.FloatTensor(num_embeddings).zero_()
-        )
-
-    def forward(self, prev_output_tokens, encoder_out, incremental_state=None):
+    def forward_unprojected(self, input_tokens, encoder_out, incremental_state=None):
         padded_tokens = F.pad(
-            prev_output_tokens,
+            input_tokens,
             (self.history_len - 1, 0, 0, 0),
             "constant",
             self.dst_dict.eos(),
@@ -102,7 +107,7 @@ class NGramDecoder(FairseqIncrementalDecoder):
         # We use incremental_state only to check whether we are decoding or not
         # self.training is false even for the forward pass through validation
         if incremental_state is not None:
-            padded_tokens = padded_tokens[:, -self.history_len - 1 :]
+            padded_tokens = padded_tokens[:, -self.history_len :]
         utils.set_incremental_state(self, incremental_state, "incremental_marker", True)
 
         bsz, seqlen = padded_tokens.size()
@@ -141,23 +146,7 @@ class NGramDecoder(FairseqIncrementalDecoder):
         if hasattr(self, "additional_fc"):
             x = self.additional_fc(x)
             x = F.dropout(x, p=self.dropout_out, training=self.training)
-
-        output_projection_w = self.output_projection_w
-        output_projection_b = self.output_projection_b
-
-        # avoiding transpose of projection weights during ONNX tracing
-        batch_time_hidden = torch.onnx.operators.shape_as_tensor(x)
-        x_flat_shape = torch.cat((torch.LongTensor([-1]), batch_time_hidden[2].view(1)))
-        x_flat = torch.onnx.operators.reshape_from_tensor_shape(x, x_flat_shape)
-        projection_flat = torch.matmul(output_projection_w, x_flat.t()).t()
-        logits_shape = torch.cat((batch_time_hidden[:2], torch.LongTensor([-1])))
-        logits = (
-            torch.onnx.operators.reshape_from_tensor_shape(
-                projection_flat, logits_shape
-            )
-            + output_projection_b
-        )
-        return logits, attn_scores, None
+        return x, attn_scores
 
     def max_positions(self):
         """Maximum output length supported by the decoder."""

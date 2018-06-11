@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import numpy as np
 import torch
 from torch.autograd import Variable
 import torch.nn as nn
@@ -13,7 +12,6 @@ from fairseq import utils
 from fairseq.data import LanguagePairDataset
 from fairseq.models import (
     FairseqEncoder,
-    FairseqIncrementalDecoder,
     FairseqModel,
     register_model,
     register_model_architecture,
@@ -22,7 +20,12 @@ from fairseq.models import (
 from pytorch_translate import vocab_reduction
 from pytorch_translate import word_dropout
 from pytorch_translate.ngram import NGramDecoder
-from pytorch_translate.common_layers import Embedding, RNNLayer, Linear
+from pytorch_translate.common_layers import (
+    Embedding,
+    RNNLayer,
+    Linear,
+    DecoderWithOutputProjection,
+)
 from pytorch_translate import attention
 
 
@@ -46,7 +49,6 @@ def torch_find(index, query, vocab_size):
 
 @register_model("rnn")
 class RNNModel(FairseqModel):
-
     def __init__(self, encoder, decoder):
         super().__init__(encoder, decoder)
 
@@ -178,11 +180,15 @@ class RNNModel(FairseqModel):
         parser.add_argument(
             "--ngram-decoder",
             default=None,
-            type=int,
+            type=str,
             help=(
-                "If this is positive, we use an n-gram based feedforward "
-                "network in the decoder rather than recurrence. The decoder is "
-                "still conditioned on the source side via attention."
+                "A single integer, or a comma-separated list of integers. If "
+                "positive, the decoder is not recurrent but a feedforward "
+                "network with target-side n-gram history as input. The decoder "
+                "is still conditioned on the source side via attention. If "
+                "this parameter is a list of integers, the n-th entry applies "
+                "to the n-th decoder (for multilingual models and "
+                "multi-decoders)"
             ),
         )
         parser.add_argument(
@@ -201,15 +207,13 @@ class RNNModel(FairseqModel):
         # Args for word dropout
         word_dropout.add_args(parser)
 
-    @classmethod
-    def build_model(cls, args, src_dict, dst_dict):
-        """Build a new model instance."""
-        base_architecture(args)
+    @staticmethod
+    def build_encoder(args, src_dict):
         if args.sequence_lstm:
             encoder_class = LSTMSequenceEncoder
         else:
             encoder_class = RNNEncoder
-        encoder = encoder_class(
+        return encoder_class(
             src_dict,
             embed_dim=args.encoder_embed_dim,
             freeze_embed=args.encoder_freeze_embed,
@@ -222,7 +226,12 @@ class RNNModel(FairseqModel):
             bidirectional=bool(args.encoder_bidirectional),
             word_dropout_params=args.word_dropout_params,
         )
-        if args.ngram_decoder is not None:
+
+    @staticmethod
+    def build_decoder(
+        args, src_dict, dst_dict, ngram_decoder=None, project_output=True
+    ):
+        if ngram_decoder:
             if args.ngram_activation_type == "relu":
                 activation_fn = nn.ReLU
             elif args.ngram_activation_type == "tanh":
@@ -235,7 +244,7 @@ class RNNModel(FairseqModel):
             decoder = NGramDecoder(
                 src_dict=src_dict,
                 dst_dict=dst_dict,
-                n=args.ngram_decoder,
+                n=ngram_decoder,
                 encoder_hidden_dim=args.encoder_hidden_dim,
                 embed_dim=args.decoder_embed_dim,
                 freeze_embed=args.decoder_freeze_embed,
@@ -247,6 +256,7 @@ class RNNModel(FairseqModel):
                 dropout_out=args.decoder_dropout_out,
                 residual_level=args.residual_level,
                 activation_fn=activation_fn,
+                project_output=project_output,
             )
         else:
             decoder = RNNDecoder(
@@ -265,7 +275,17 @@ class RNNModel(FairseqModel):
                 dropout_out=args.decoder_dropout_out,
                 residual_level=args.residual_level,
                 averaging_encoder=args.averaging_encoder,
+                project_output=project_output,
             )
+        return decoder
+
+    @classmethod
+    def build_model(cls, args, src_dict, dst_dict):
+        """Build a new model instance."""
+        base_architecture(args)
+        encoder = RNNModel.build_encoder(args, src_dict)
+        n = int(args.ngram_decoder) if args.ngram_decoder else None
+        decoder = RNNModel.build_decoder(args, src_dict, dst_dict, n)
         return cls(encoder, decoder)
 
     def get_targets(self, sample, net_output):
@@ -452,8 +472,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
 
         #  [max_seqlen, batch_size, hidden_dim]
         unpacked_output, _ = pad_packed_sequence(
-            packed_input,
-            padding_value=self.padding_value,
+            packed_input, padding_value=self.padding_value
         )
 
         return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
@@ -599,7 +618,7 @@ class RNNEncoder(FairseqEncoder):
         return int(1e5)  # an arbitrary large number
 
 
-class RNNDecoder(FairseqIncrementalDecoder):
+class RNNDecoder(DecoderWithOutputProjection):
     """RNN decoder."""
 
     def __init__(
@@ -619,8 +638,15 @@ class RNNDecoder(FairseqIncrementalDecoder):
         attention_type="dot",
         residual_level=None,
         averaging_encoder=False,
+        project_output=True,
     ):
-        super().__init__(dst_dict)
+        super().__init__(
+            src_dict,
+            dst_dict,
+            vocab_reduction_params,
+            out_embed_dim,
+            project_output=project_output,
+        )
         self.encoder_hidden_dim = encoder_hidden_dim
         self.embed_dim = embed_dim
         self.hidden_dim = hidden_dim
@@ -657,7 +683,7 @@ class RNNDecoder(FairseqIncrementalDecoder):
             self.hidden_init_fc_list = nn.ModuleList(hidden_init_fc_list)
             self.cell_init_fc_list = nn.ModuleList(cell_init_fc_list)
         self.initial_attn_context = nn.Parameter(
-            torch.Tensor(encoder_hidden_dim).zero_(),
+            torch.Tensor(encoder_hidden_dim).zero_()
         )
 
         if attention_type is not None:
@@ -680,8 +706,7 @@ class RNNDecoder(FairseqIncrementalDecoder):
                     cell_input_dim = embed_dim
             else:
                 cell_input_dim = hidden_dim
-            layers.append(
-                cell_class(input_dim=cell_input_dim, hidden_dim=hidden_dim))
+            layers.append(cell_class(input_dim=cell_input_dim, hidden_dim=hidden_dim))
         self.layers = nn.ModuleList(layers)
 
         if self.combined_output_and_context_dim != out_embed_dim:
@@ -689,26 +714,7 @@ class RNNDecoder(FairseqIncrementalDecoder):
                 self.combined_output_and_context_dim, out_embed_dim
             )
 
-        self.vocab_reduction_module = None
-        if vocab_reduction_params:
-            self.vocab_reduction_module = vocab_reduction.VocabReduction(
-                src_dict, dst_dict, vocab_reduction_params
-            )
-
-        self.output_projection_w = nn.Parameter(
-            torch.FloatTensor(num_embeddings, out_embed_dim).uniform_(-0.1, 0.1)
-        )
-        self.output_projection_b = nn.Parameter(
-            torch.FloatTensor(num_embeddings).zero_()
-        )
-
-    def forward(
-        self,
-        input_tokens,
-        encoder_out,
-        incremental_state=None,
-        possible_translation_tokens=None,
-    ):
+    def forward_unprojected(self, input_tokens, encoder_out, incremental_state=None):
         if incremental_state is not None:
             input_tokens = input_tokens[:, -1:]
         bsz, seqlen = input_tokens.size()
@@ -764,16 +770,14 @@ class RNNDecoder(FairseqIncrementalDecoder):
 
             if self.attention is not None:
                 out, step_attn_scores = self.attention(
-                    hidden,
-                    encoder_outs,
-                    src_lengths,
+                    hidden, encoder_outs, src_lengths
                 )
                 input_feed = out
             else:
                 combined_output_and_context = hidden
                 step_attn_scores = Variable(
                     torch.ones(src_lengths.shape[0], src_lengths.max()).type_as(
-                        encoder_outs,
+                        encoder_outs
                     ),
                     requires_grad=False,
                 ).t()
@@ -796,9 +800,7 @@ class RNNDecoder(FairseqIncrementalDecoder):
 
         # collect outputs across time steps
         x = torch.cat(outs, dim=0).view(
-            seqlen,
-            bsz,
-            self.combined_output_and_context_dim,
+            seqlen, bsz, self.combined_output_and_context_dim
         )
 
         # T x B x C -> B x T x C
@@ -808,39 +810,7 @@ class RNNDecoder(FairseqIncrementalDecoder):
         if hasattr(self, "additional_fc"):
             x = self.additional_fc(x)
             x = F.dropout(x, p=self.dropout_out, training=self.training)
-
-        output_projection_w = self.output_projection_w
-        output_projection_b = self.output_projection_b
-        decoder_input_tokens = input_tokens if self.training else None
-
-        if self.vocab_reduction_module and possible_translation_tokens is None:
-            possible_translation_tokens = self.vocab_reduction_module(
-                src_tokens, decoder_input_tokens=decoder_input_tokens
-            )
-
-        if possible_translation_tokens is not None:
-            output_projection_w = output_projection_w.index_select(
-                dim=0, index=possible_translation_tokens
-            )
-            output_projection_b = output_projection_b.index_select(
-                dim=0, index=possible_translation_tokens
-            )
-
-        # avoiding transpose of projection weights during ONNX tracing
-        batch_time_hidden = torch.onnx.operators.shape_as_tensor(x)
-        x_flat_shape = torch.cat((torch.LongTensor([-1]), batch_time_hidden[2].view(1)))
-        x_flat = torch.onnx.operators.reshape_from_tensor_shape(x, x_flat_shape)
-
-        projection_flat = torch.matmul(output_projection_w, x_flat.t()).t()
-        logits_shape = torch.cat((batch_time_hidden[:2], torch.LongTensor([-1])))
-        logits = (
-            torch.onnx.operators.reshape_from_tensor_shape(
-                projection_flat, logits_shape
-            )
-            + output_projection_b
-        )
-
-        return logits, attn_scores, possible_translation_tokens
+        return x, attn_scores
 
     def reorder_incremental_state(self, incremental_state, new_order):
         """Reorder buffered internal state (for incremental generation)."""
@@ -907,6 +877,7 @@ def base_architecture(args):
     args.encoder_freeze_embed = getattr(args, "encoder_freeze_embed", False)
     args.decoder_freeze_embed = getattr(args, "decoder_freeze_embed", False)
     args.ngram_decoder = getattr(args, "ngram_decoder", None)
+    args.multi_decoder = getattr(args, "multi_decoder", None)
     args.cell_type = getattr(args, "cell_type", "lstm")
     args.ngram_activation_type = getattr(args, "ngram_activation_type", "relu")
     vocab_reduction.set_arg_defaults(args)

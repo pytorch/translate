@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
-import torch.nn.functional as F
+import abc
+from pytorch_translate import vocab_reduction
+from fairseq.models import FairseqIncrementalDecoder
 
 from pytorch_translate import rnn_cell  # noqa
 
@@ -25,11 +26,9 @@ class VariableLengthRecurrent(nn.Module):
 
     def forward(self, x, hidden, batch_size_per_step):
         self.batch_size_per_step = batch_size_per_step
-        self.starting_batch_size = batch_size_per_step[
-            -1
-        ] if self.reverse else batch_size_per_step[
-            0
-        ]
+        self.starting_batch_size = (
+            batch_size_per_step[-1] if self.reverse else batch_size_per_step[0]
+        )
 
         output = []
         input_offset = x.size(0) if self.reverse else 0
@@ -167,3 +166,131 @@ def NonlinearLayer(in_features, out_features, bias=True, activation_fn=nn.ReLU):
     if bias:
         m.bias.data.uniform_(-0.1, 0.1)
     return nn.Sequential(m, activation_fn())
+
+
+class DecoderWithOutputProjection(FairseqIncrementalDecoder):
+    """Common super class for decoder networks with output projection layers.
+
+    This class couples common functionality for `FairseqDecoder`s with large
+    output projection layers such as ONNX compatibility and vocabulary reduction.
+    """
+
+    def __init__(
+        self,
+        src_dict,
+        dst_dict,
+        vocab_reduction_params=None,
+        out_embed_dim=512,
+        project_output=True,
+    ):
+        super().__init__(dst_dict)
+        self.project_output = project_output
+        if project_output:
+            self.num_embeddings = len(dst_dict)
+            self.out_embed_dim = out_embed_dim
+            self.vocab_reduction_module = None
+            if vocab_reduction_params:
+                self.vocab_reduction_module = vocab_reduction.VocabReduction(
+                    src_dict, dst_dict, vocab_reduction_params
+                )
+
+            self.output_projection_w = nn.Parameter(
+                torch.FloatTensor(self.num_embeddings, self.out_embed_dim).uniform_(
+                    -0.1, 0.1
+                )
+            )
+            self.output_projection_b = nn.Parameter(
+                torch.FloatTensor(self.num_embeddings).zero_()
+            )
+
+    def forward(
+        self,
+        input_tokens,
+        encoder_out,
+        incremental_state=None,
+        possible_translation_tokens=None,
+    ):
+        (_, _, _, _, src_tokens) = encoder_out
+        x, attn_scores = self.forward_unprojected(
+            input_tokens, encoder_out, incremental_state
+        )
+        if not self.project_output:
+            return x, attn_scores, None
+        output_projection_w = self.output_projection_w
+        output_projection_b = self.output_projection_b
+        decoder_input_tokens = input_tokens if self.training else None
+
+        if self.vocab_reduction_module and possible_translation_tokens is None:
+            possible_translation_tokens = self.vocab_reduction_module(
+                src_tokens, decoder_input_tokens=decoder_input_tokens
+            )
+
+        if possible_translation_tokens is not None:
+            output_projection_w = output_projection_w.index_select(
+                dim=0, index=possible_translation_tokens
+            )
+            output_projection_b = output_projection_b.index_select(
+                dim=0, index=possible_translation_tokens
+            )
+
+        # avoiding transpose of projection weights during ONNX tracing
+        batch_time_hidden = torch.onnx.operators.shape_as_tensor(x)
+        x_flat_shape = torch.cat((torch.LongTensor([-1]), batch_time_hidden[2].view(1)))
+        x_flat = torch.onnx.operators.reshape_from_tensor_shape(x, x_flat_shape)
+
+        projection_flat = torch.matmul(output_projection_w, x_flat.t()).t()
+        logits_shape = torch.cat((batch_time_hidden[:2], torch.LongTensor([-1])))
+        logits = (
+            torch.onnx.operators.reshape_from_tensor_shape(
+                projection_flat, logits_shape
+            )
+            + output_projection_b
+        )
+
+        return logits, attn_scores, possible_translation_tokens
+
+    @abc.abstractmethod
+    def forward_unprojected(
+        self,
+        input_tokens,
+        encoder_out,
+        incremental_state=None,
+        possible_translation_tokens=None,
+    ):
+        """Forward pass through the decoder without output projection."""
+        raise NotImplementedError()
+
+
+class OutputProjection(nn.Module):
+    """Output projection layer."""
+
+    def __init__(self, out_embed_dim, vocab_size):
+        super().__init__()
+        self.out_embed_dim = out_embed_dim
+        self.vocab_size = vocab_size
+
+        self.output_projection_w = nn.Parameter(
+            torch.FloatTensor(self.vocab_size, self.out_embed_dim).uniform_(-0.1, 0.1)
+        )
+        self.output_projection_b = nn.Parameter(
+            torch.FloatTensor(self.vocab_size).zero_()
+        )
+
+    def forward(self, x):
+        output_projection_w = self.output_projection_w
+        output_projection_b = self.output_projection_b
+
+        # avoiding transpose of projection weights during ONNX tracing
+        batch_time_hidden = torch.onnx.operators.shape_as_tensor(x)
+        x_flat_shape = torch.cat((torch.LongTensor([-1]), batch_time_hidden[2].view(1)))
+        x_flat = torch.onnx.operators.reshape_from_tensor_shape(x, x_flat_shape)
+
+        projection_flat = torch.matmul(output_projection_w, x_flat.t()).t()
+        logits_shape = torch.cat((batch_time_hidden[:2], torch.LongTensor([-1])))
+        logits = (
+            torch.onnx.operators.reshape_from_tensor_shape(
+                projection_flat, logits_shape
+            )
+            + output_projection_b
+        )
+        return logits
