@@ -87,9 +87,10 @@ class CharCNNModel(nn.Module):
         ])
         conv_output_dim = sum(out_dim for (out_dim, _) in self.convolutions_params)
 
-        self.highway_layers = nn.ModuleList(
-            [HighwayLayer(conv_output_dim)] * self.num_highway_layers
-        )
+        highway_layers = []
+        for _ in range(self.num_highway_layers):
+            highway_layers.append(HighwayLayer(conv_output_dim))
+        self.highway_layers = nn.ModuleList(highway_layers)
 
     def forward(self, char_inds_flat):
         x = self.embed_chars(char_inds_flat)
