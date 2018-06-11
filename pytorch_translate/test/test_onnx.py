@@ -10,7 +10,9 @@ import unittest
 
 from fairseq import models
 from pytorch_translate import rnn  # noqa
+from pytorch_translate import char_source_model  # noqa (must be after rnn)
 from pytorch_translate.ensemble_export import (
+    CharSourceEncoderEnsemble,
     DecoderBatchedStepEnsemble,
     DecoderStepEnsemble,
     EncoderEnsemble,
@@ -371,3 +373,68 @@ class TestONNX(unittest.TestCase):
             encoder_bidirectional=True, sequence_lstm=True
         )
         self._test_full_beam_decoder(test_args)
+
+    def test_ensemble_encoder_export_char_cnn(self):
+        test_args = test_utils.ModelParamsDict(
+            encoder_bidirectional=True, sequence_lstm=True
+        )
+        lexical_dictionaries = test_utils.create_lexical_dictionaries()
+        test_args.vocab_reduction_params = {
+            "lexical_dictionaries": lexical_dictionaries,
+            "num_top_words": 5,
+            "max_translation_candidates_per_word": 1,
+        }
+
+        test_args.arch = "char_source"
+        test_args.char_source_dict_size = 126
+        test_args.char_embed_dim = 8
+        test_args.char_cnn_params = "[(10, 3), (10, 5)]"
+        test_args.char_cnn_nonlinear_fn = "tanh"
+        test_args.char_cnn_num_highway_layers = 2
+
+        _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+
+        num_models = 3
+        model_list = []
+        for _ in range(num_models):
+            model_list.append(models.build_model(test_args, src_dict, tgt_dict))
+        encoder_ensemble = CharSourceEncoderEnsemble(model_list)
+
+        tmp_dir = tempfile.mkdtemp()
+        encoder_pb_path = os.path.join(tmp_dir, "char_encoder.pb")
+        encoder_ensemble.onnx_export(encoder_pb_path)
+
+        length = 5
+        src_tokens = torch.LongTensor(np.ones((length, 1), dtype="int64"))
+        src_lengths = torch.IntTensor(np.array([length], dtype="int32"))
+        word_length = 3
+        char_inds = torch.LongTensor(np.ones((1, length, word_length), dtype="int64"))
+        word_lengths = torch.IntTensor(
+            np.array([word_length] * length, dtype="int32")
+        ).reshape((1, length))
+
+        pytorch_encoder_outputs = encoder_ensemble(
+            src_tokens, src_lengths, char_inds, word_lengths
+        )
+
+        with open(encoder_pb_path, "r+b") as f:
+            onnx_model = onnx.load(f)
+        onnx_encoder = caffe2_backend.prepare(onnx_model)
+
+        caffe2_encoder_outputs = onnx_encoder.run(
+            (
+                src_tokens.numpy(),
+                src_lengths.numpy(),
+                char_inds.numpy(),
+                word_lengths.numpy(),
+            )
+        )
+
+        for i in range(len(pytorch_encoder_outputs)):
+            caffe2_out_value = caffe2_encoder_outputs[i]
+            pytorch_out_value = pytorch_encoder_outputs[i].detach().numpy()
+            np.testing.assert_allclose(
+                caffe2_out_value, pytorch_out_value, rtol=1e-4, atol=1e-6
+            )
+
+        encoder_ensemble.save_to_db(os.path.join(tmp_dir, "encoder.predictor_export"))
