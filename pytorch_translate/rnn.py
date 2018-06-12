@@ -20,6 +20,7 @@ from fairseq.models import (
 from pytorch_translate import vocab_reduction
 from pytorch_translate import word_dropout
 from pytorch_translate.ngram import NGramDecoder
+from pytorch_translate.multi_model import MultiEncoder, MultiDecoder
 from pytorch_translate.common_layers import (
     Embedding,
     RNNLayer,
@@ -180,9 +181,10 @@ class RNNModel(FairseqModel):
         parser.add_argument(
             "--ngram-decoder",
             default=None,
-            type=str,
+            type=int,
+            nargs="+",
             help=(
-                "A single integer, or a comma-separated list of integers. If "
+                "A single integer, or a list of integers. If "
                 "positive, the decoder is not recurrent but a feedforward "
                 "network with target-side n-gram history as input. The decoder "
                 "is still conditioned on the source side via attention. If "
@@ -199,6 +201,52 @@ class RNNModel(FairseqModel):
             help=(
                 "Activation in FF layers of the ngram decoder, defaults to "
                 "relu, values: relu, tanh"
+            ),
+        )
+        parser.add_argument(
+            "--multi-encoder",
+            default=None,
+            type=int,
+            help=(
+                "If this is positive, train n encoder networks rather than "
+                "only one. The outputs of the encoders are concatenated before "
+                "passing them through to the decoder."
+            ),
+        )
+        parser.add_argument(
+            "--multi-decoder",
+            default=None,
+            type=int,
+            help=(
+                "If this is positive, train n decoder networks rather than "
+                "only one. The predictions are combined via the method in "
+                "--multi-decoder-combination-strategy."
+            ),
+        )
+        parser.add_argument(
+            "--multi-decoder-combination-strategy",
+            default="bottleneck",
+            type=str,
+            metavar="EXPR",
+            help=(
+                "Only used if --multi-decoder is positive. Controls how the "
+                "decoders are combined with each other.\n"
+                "- uniform: Separate projection layers, average predictions\n"
+                "- unprojected: Shared projection layer, unprojected "
+                "decoder outputs are averaged.\n"
+                "- weighted: Separate projection layers, weighted average "
+                "of logits. Weights are learned from unprojected decoder "
+                "outputs.\n"
+                "- weighted-unprojected: Shared projection layer, weighted "
+                "average of decoder outputs. Weights are learned from "
+                "unprojected decoder outputs.\n"
+                "- concat: Shared projection layer, decoder outputs are "
+                "concatenated.\n"
+                "- bottleneck: Like 'concat' but with an additional "
+                "bottleneck layer to reduce the size of the output embedding "
+                "matrix.\n"
+                "- multiplicative-unprojected: Shared projection layer, element"
+                "-wise product of decoder outputs after ReLU.\n"
             ),
         )
 
@@ -283,9 +331,41 @@ class RNNModel(FairseqModel):
     def build_model(cls, args, src_dict, dst_dict):
         """Build a new model instance."""
         base_architecture(args)
-        encoder = RNNModel.build_encoder(args, src_dict)
-        n = int(args.ngram_decoder) if args.ngram_decoder else None
-        decoder = RNNModel.build_decoder(args, src_dict, dst_dict, n)
+        if args.multi_encoder is not None:
+            encoders = [
+                RNNModel.build_encoder(args, src_dict)
+                for _ in range(args.multi_encoder)
+            ]
+            encoder = MultiEncoder(src_dict, encoders)
+        else:
+            encoder = RNNModel.build_encoder(args, src_dict)
+
+        if args.multi_decoder is not None:
+            ngram_decoder_args = [None] * args.multi_decoder
+            if args.ngram_decoder is not None:
+                ngram_decoder_args = args.ngram_decoder
+                if len(ngram_decoder_args) == 1:
+                    ngram_decoder_args = [ngram_decoder_args[0]] * args.multi_decoder
+                assert len(ngram_decoder_args) == args.multi_decoder
+            decoders = [
+                RNNModel.build_decoder(
+                    args, src_dict, dst_dict, n, project_output=False
+                )
+                for n in ngram_decoder_args
+            ]
+            decoder = MultiDecoder(
+                src_dict,
+                dst_dict,
+                decoders=decoders,
+                combination_strategy=args.multi_decoder_combination_strategy,
+                split_encoder=args.multi_encoder is not None,
+                vocab_reduction_params=args.vocab_reduction_params,
+            )
+        else:
+            if args.multi_encoder:
+                args.encoder_hidden_dim *= args.multi_encoder
+            n = int(args.ngram_decoder) if args.ngram_decoder else None
+            decoder = RNNModel.build_decoder(args, src_dict, dst_dict, n)
         return cls(encoder, decoder)
 
     def get_targets(self, sample, net_output):
@@ -877,6 +957,7 @@ def base_architecture(args):
     args.encoder_freeze_embed = getattr(args, "encoder_freeze_embed", False)
     args.decoder_freeze_embed = getattr(args, "decoder_freeze_embed", False)
     args.ngram_decoder = getattr(args, "ngram_decoder", None)
+    args.multi_encoder = getattr(args, "multi_encoder", None)
     args.multi_decoder = getattr(args, "multi_decoder", None)
     args.cell_type = getattr(args, "cell_type", "lstm")
     args.ngram_activation_type = getattr(args, "ngram_activation_type", "relu")
