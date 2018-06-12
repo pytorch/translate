@@ -50,9 +50,7 @@ class TestONNX(unittest.TestCase):
 
         pytorch_encoder_outputs = encoder_ensemble(src_tokens, src_lengths)
 
-        with open(encoder_pb_path, "r+b") as f:
-            onnx_model = onnx.load(f)
-        onnx_encoder = caffe2_backend.prepare(onnx_model)
+        onnx_encoder = caffe2_backend.prepare_zip_archive(encoder_pb_path)
 
         caffe2_encoder_outputs = onnx_encoder.run(
             (src_tokens.numpy(), src_lengths.numpy())
@@ -100,9 +98,7 @@ class TestONNX(unittest.TestCase):
 
         pytorch_encoder_outputs = encoder_ensemble(src_tokens, src_lengths)
 
-        with open(encoder_pb_path, "r+b") as f:
-            onnx_model = onnx.load(f)
-        onnx_encoder = caffe2_backend.prepare(onnx_model)
+        onnx_encoder = caffe2_backend.prepare_zip_archive(encoder_pb_path)
 
         srclen = src_tokens.size(1)
         beam_size = 1
@@ -154,9 +150,7 @@ class TestONNX(unittest.TestCase):
             input_token, timestep, *pytorch_encoder_outputs
         )
 
-        with open(decoder_step_pb_path, "r+b") as f:
-            onnx_model = onnx.load(f)
-        onnx_decoder = caffe2_backend.prepare(onnx_model)
+        onnx_decoder = caffe2_backend.prepare_zip_archive(decoder_step_pb_path)
 
         decoder_inputs_numpy = [input_token.numpy(), timestep.numpy()]
         for tensor in pytorch_encoder_outputs:
@@ -247,9 +241,7 @@ class TestONNX(unittest.TestCase):
             next_input_tokens, next_prev_scores, next_timestep, *next_states
         )
 
-        with open(decoder_step_pb_path, "r+b") as f:
-            onnx_model = onnx.load(f)
-        onnx_decoder = caffe2_backend.prepare(onnx_model)
+        onnx_decoder = caffe2_backend.prepare_zip_archive(decoder_step_pb_path)
 
         decoder_inputs_numpy = [
             next_input_tokens.numpy(),
@@ -351,7 +343,6 @@ class TestONNX(unittest.TestCase):
         )
 
         f.seek(0)
-        import onnx
 
         onnx_model = onnx.load(f)
         c2_model = caffe2_backend.prepare(onnx_model)
@@ -417,9 +408,7 @@ class TestONNX(unittest.TestCase):
             src_tokens, src_lengths, char_inds, word_lengths
         )
 
-        with open(encoder_pb_path, "r+b") as f:
-            onnx_model = onnx.load(f)
-        onnx_encoder = caffe2_backend.prepare(onnx_model)
+        onnx_encoder = caffe2_backend.prepare_zip_archive(encoder_pb_path)
 
         caffe2_encoder_outputs = onnx_encoder.run(
             (
