@@ -36,6 +36,7 @@ def onnx_export_ensemble(module, output_path, input_tuple, input_names, output_n
             verbose=False,
             input_names=input_names,
             output_names=output_names,
+            export_type=ExportTypes.ZIP_ARCHIVE,
         )
 
 
@@ -186,9 +187,7 @@ class EncoderEnsemble(nn.Module):
         tmp_file = os.path.join(tmp_dir, "encoder.pb")
         self.onnx_export(tmp_file)
 
-        with open(tmp_file, "r+b") as f:
-            onnx_model = onnx.load(f)
-        onnx_encoder = caffe2_backend.prepare(onnx_model)
+        onnx_encoder = caffe2_backend.prepare_zip_archive(tmp_file)
 
         save_caffe2_rep_to_db(
             caffe2_backend_rep=onnx_encoder,
@@ -394,9 +393,7 @@ class DecoderStepEnsemble(nn.Module):
         tmp_file = os.path.join(tmp_dir, "decoder_step.pb")
         self.onnx_export(tmp_file, encoder_ensemble_outputs)
 
-        with open(tmp_file, "r+b") as f:
-            onnx_model = onnx.load(f)
-        onnx_decoder_step = caffe2_backend.prepare(onnx_model)
+        onnx_decoder_step = caffe2_backend.prepare_zip_archive(tmp_file)
 
         save_caffe2_rep_to_db(
             caffe2_backend_rep=onnx_decoder_step,
@@ -644,9 +641,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
         tmp_file = os.path.join(tmp_dir, "decoder_step.pb")
         self.onnx_export(tmp_file, encoder_ensemble_outputs)
 
-        with open(tmp_file, "r+b") as f:
-            onnx_model = onnx.load(f)
-        onnx_decoder_step = caffe2_backend.prepare(onnx_model)
+        onnx_decoder_step = caffe2_backend.prepare_zip_archive(tmp_file)
 
         save_caffe2_rep_to_db(
             caffe2_backend_rep=onnx_decoder_step,
@@ -834,7 +829,7 @@ class BeamSearch(torch.jit.ScriptModule):
         tmp_file = os.path.join(tmp_dir, "beam_search.pb")
         self.onnx_export(tmp_file)
 
-        beam_search = caffe2_backend.prepare_zip_archive(tmp_file)
+        beam_search = caffe2_backend.prepare_zip_archive(tmp_file, no_check_UNSAFE=True)
 
         save_caffe2_rep_to_db(
             caffe2_backend_rep=beam_search,
@@ -939,9 +934,7 @@ class CharSourceEncoderEnsemble(nn.Module):
         tmp_file = os.path.join(tmp_dir, "encoder.pb")
         self.onnx_export(tmp_file)
 
-        with open(tmp_file, "r+b") as f:
-            onnx_model = onnx.load(f)
-        onnx_encoder = caffe2_backend.prepare(onnx_model)
+        onnx_encoder = caffe2_backend.prepare_zip_archive(tmp_file)
 
         save_caffe2_rep_to_db(
             caffe2_backend_rep=onnx_encoder,
