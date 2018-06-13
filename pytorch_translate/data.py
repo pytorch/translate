@@ -93,31 +93,48 @@ def make_language_pair_dataset_from_text(
     target_dict: pytorch_translate_dictionary.Dictionary,
     append_eos: Optional[bool] = False,
     reverse_source: Optional[bool] = True,
+    char_source_dict: Optional[pytorch_translate_dictionary.Dictionary] = None,
 ) -> data.LanguagePairDataset:
-    return data.LanguagePairDataset(
-        src=indexed_dataset.IndexedRawTextDataset(
-            path=source_text_file,
-            dictionary=source_dict,
-            append_eos=append_eos,
-            reverse_order=reverse_source,
-        ),
-        dst=indexed_dataset.IndexedRawTextDataset(
-            path=target_text_file,
-            dictionary=target_dict,
-            # We always append EOS to the target sentence since we still want
-            # the model to output an indication the sentence has finished, even
-            # if we don't append the EOS symbol to the source sentence
-            # (to prevent the model from misaligning UNKs or other words
-            # to the frequently occurring EOS).
-            append_eos=True,
-            # We don't reverse the order of the target sentence, since
-            # even if the source sentence is fed to the model backwards,
-            # we still want the model to start outputting from the first word.
-            reverse_order=False,
-        ),
-        pad_idx=source_dict.pad(),
-        eos_idx=source_dict.eos(),
+    dst_dataset = indexed_dataset.IndexedRawTextDataset(
+        path=target_text_file,
+        dictionary=target_dict,
+        # We always append EOS to the target sentence since we still want
+        # the model to output an indication the sentence has finished, even
+        # if we don't append the EOS symbol to the source sentence
+        # (to prevent the model from misaligning UNKs or other words
+        # to the frequently occurring EOS).
+        append_eos=True,
+        # We don't reverse the order of the target sentence, since
+        # even if the source sentence is fed to the model backwards,
+        # we still want the model to start outputting from the first word.
+        reverse_order=False,
     )
+
+    if char_source_dict is not None:
+        src_dataset = char_data.InMemoryNumpyWordCharDataset()
+        src_dataset.parse(
+            path=source_text_file,
+            word_dict=source_dict,
+            char_dict=char_source_dict,
+            reverse_order=reverse_source,
+            append_eos=append_eos,
+        )
+        return char_data.LanguagePairSourceCharDataset(
+            src=src_dataset,
+            dst=dst_dataset,
+            pad_idx=source_dict.pad(),
+            eos_idx=source_dict.eos(),
+        )
+    else:
+        return data.LanguagePairDataset(
+            src=indexed_dataset.IndexedRawTextDataset(
+                path=source_text_file,
+                dictionary=source_dict,
+                append_eos=append_eos,
+                reverse_order=reverse_source,
+            ),
+            dst=dst_dataset,
+        )
 
 
 def load_binarized_dataset(
@@ -163,7 +180,6 @@ def load_binarized_dataset(
                 eos_idx=source_dict.eos(),
             )
         else:
-
             src_dataset = InMemoryNumpyDataset.create_from_file(corpus.source.data_file)
             dataset.splits[split] = data.LanguagePairDataset(
                 src=src_dataset,
