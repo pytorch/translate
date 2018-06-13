@@ -82,8 +82,6 @@ def binarize_text_file(
 
 
 def preprocess_corpora(args):
-    validate_args(args)
-
     # Additional text preprocessing options could be added here before
     # binarizing.
 
@@ -164,6 +162,7 @@ def main():
     parser = argparse.ArgumentParser(description="PyTorch Translate - preprocessing")
     pytorch_translate_options.add_preprocessing_args(parser)
     args = parser.parse_args()
+    pytorch_translate_options.validate_preprocessing_args(args)
     preprocess_corpora(args)
 
 

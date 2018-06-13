@@ -15,7 +15,7 @@ python3 pytorch_translate/onnx_component_export.py \
     --source-vocab-file model/dictionary-de.txt \
     --target-vocab-file model/dictionary-en.txt \
     --beam-size 6 \
-    --word-penalty 0.25 \
-    --unk-penalty -0.5 \
+    --word-reward 0.25 \
+    --unk-reward -0.5 \
     --batched-beam && \
   echo "Finished exporting encoder as ./encoder.pb and decoder as ./decoder.pb"

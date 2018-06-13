@@ -32,7 +32,7 @@ CUDA_VISIBLE_DEVICES=0 python3 pytorch_translate/train.py \
    --label-smoothing 0.1 \
    --batch-size 256 \
    --lenpen 0 \
-   --unkpen 0.5 \
+   --unk-reward -0.5 \
    --word-reward 0.25 \
    --max-tokens 9999999 \
    --encoder-layers 2 \

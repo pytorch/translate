@@ -38,13 +38,13 @@ def main():
         help="Number of top candidates returned by each decoder step",
     )
     parser.add_argument(
-        "--word_penalty",
+        "--word_reward",
         type=float,
         default=0.0,
         help="Value to add for each word (besides EOS)",
     )
     parser.add_argument(
-        "--unk_penalty",
+        "--unk_reward",
         type=float,
         default=0.0,
         help="Value to add for each word UNK token",
@@ -64,8 +64,8 @@ def main():
         src_dict_filename=args.src_dict,
         dst_dict_filename=args.dst_dict,
         beam_size=args.beam_size,
-        word_penalty=args.word_penalty,
-        unk_penalty=args.unk_penalty,
+        word_reward=args.word_reward,
+        unk_reward=args.unk_reward,
     )
     beam_search.save_to_db(args.output_file)
 

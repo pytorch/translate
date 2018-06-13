@@ -16,7 +16,7 @@ python3 pytorch_translate/generate.py \
        --target-vocab-file model/dictionary-en.txt \
        --source-text-file data/test.tok.bpe.de \
        --target-text-file data/test.tok.bpe.en \
-       --unkpen 0.5 \
+       --unk-reward -0.5 \
        --lenpen 0 \
        --word-reward 0.25 \
        --beam 6 \
@@ -35,7 +35,7 @@ python3 pytorch_translate/generate.py \
        --target-vocab-file model/dictionary-en.txt \
        --source-text-file data/test.tok.bpe.de \
        --target-text-file data/test.tok.bpe.en \
-       --unkpen 0.5 \
+       --unk-reward -0.5 \
        --lenpen 0 \
        --word-reward 0.25 \
        --beam 6 \

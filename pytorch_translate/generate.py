@@ -46,7 +46,7 @@ def _generate_score(models, args, dataset, dataset_split):
         stop_early=(not args.no_early_stop),
         normalize_scores=(not args.unnormalized),
         len_penalty=args.lenpen,
-        unk_penalty=args.unkpen,
+        unk_reward=args.unk_reward,
         word_reward=args.word_reward,
         model_weights=model_weights,
         use_char_source=use_char_source,
@@ -84,9 +84,7 @@ def _generate_score(models, args, dataset, dataset_split):
         # Keep more detailed timing when invoked from benchmark
         if "keep_detailed_timing" in args:
             gen_timer = pytorch_translate_utils.BucketStopwatchMeter(
-                args.increment,
-                args.max_length,
-                args.samples_per_length,
+                args.increment, args.max_length, args.samples_per_length
             )
         else:
             gen_timer = StopwatchMeter()
@@ -145,12 +143,16 @@ def _generate_score(models, args, dataset, dataset_split):
                         )
                     scorer.add(target_tokens, hypo_tokens)
                     translated_sentences[sample_id] = hypo_str
-            translation_samples.append(collections.OrderedDict({
-                "sample_id": sample_id,
-                "src_str": src_str,
-                "target_str": target_str,
-                "hypo_str": translated_sentences[sample_id]
-            }))
+            translation_samples.append(
+                collections.OrderedDict(
+                    {
+                        "sample_id": sample_id,
+                        "src_str": src_str,
+                        "target_str": target_str,
+                        "hypo_str": translated_sentences[sample_id],
+                    }
+                )
+            )
             wps_meter.update(src_tokens.size(0))
             t.log({"wps": round(wps_meter.avg)})
             num_sentences += 1
@@ -158,7 +160,7 @@ def _generate_score(models, args, dataset, dataset_split):
     # If applicable, save the translations to the output file
     # For eg. external evaluation
     if getattr(args, "translation_output_file", False):
-        with open(args.translation_output_file, 'w') as out_file:
+        with open(args.translation_output_file, "w") as out_file:
             for hypo_str in translated_sentences:
                 print(hypo_str, file=out_file)
 
@@ -169,35 +171,73 @@ def get_parser_with_args():
     parser = options.get_parser("Generation")
     pytorch_translate_options.add_dataset_args(parser, gen=True)
     generation_group = options.add_generation_args(parser)
-    pytorch_translate_options.expand_generation_args(generation_group, gen=True)
+    pytorch_translate_options.expand_generation_args(generation_group)
+
+    # Adds args used by the standalone generate binary.
+    generation_group.add_argument(
+        "--source-vocab-file",
+        default="",
+        metavar="FILE",
+        help="Path to text file representing the Dictionary to use.",
+    )
+    generation_group.add_argument(
+        "--target-vocab-file",
+        default="",
+        metavar="FILE",
+        help="Path to text file representing the Dictionary to use.",
+    )
+    generation_group.add_argument(
+        "--source-text-file",
+        default="",
+        metavar="FILE",
+        help="Path to raw text file containing examples in source dialect. "
+        "This overrides what would be loaded from the data dir.",
+    )
+    generation_group.add_argument(
+        "--target-text-file",
+        default="",
+        metavar="FILE",
+        help="Path to raw text file containing examples in target dialect. "
+        "This overrides what would be loaded from the data dir.",
+    )
+    generation_group.add_argument(
+        "--translation-output-file",
+        default="",
+        type=str,
+        metavar="FILE",
+        help="Path to text file to store the output of the model. ",
+    )
+
     return parser
 
 
 def main():
     parser = get_parser_with_args()
     args = parser.parse_args()
+    validate_args(args)
     generate(args)
 
 
-def assert_test_corpus_and_vocab_files_specified(args):
-    assert (
-        args.source_vocab_file and os.path.isfile(args.source_vocab_file)
+def validate_args(args):
+    pytorch_translate_options.validate_generation_args(args)
+
+    assert args.source_vocab_file and os.path.isfile(
+        args.source_vocab_file
     ), "Please specify a valid file for --source-vocab-file"
-    assert (
-        args.target_vocab_file and os.path.isfile(args.target_vocab_file)
+    assert args.target_vocab_file and os.path.isfile(
+        args.target_vocab_file
     ), "Please specify a valid file for --target-vocab_file"
-    assert (
-        args.source_text_file and os.path.isfile(args.source_text_file)
+    assert args.source_text_file and os.path.isfile(
+        args.source_text_file
     ), "Please specify a valid file for --source-text-file"
-    assert (
-        args.target_text_file and os.path.isfile(args.target_text_file)
+    assert args.target_text_file and os.path.isfile(
+        args.target_text_file
     ), "Please specify a valid file for --target-text-file"
+
+    assert args.path is not None, "--path required for generation!"
 
 
 def generate(args):
-    assert_test_corpus_and_vocab_files_specified(args)
-    assert args.path is not None, "--path required for generation!"
-
     print(args)
 
     src_dict = pytorch_translate_dictionary.Dictionary.load(args.source_vocab_file)
@@ -215,7 +255,9 @@ def generate(args):
         and a.reverse_source == reverse_source
         for a in model_args
     )
-    dataset.splits[args.gen_subset] = pytorch_translate_data.make_language_pair_dataset_from_text(
+    dataset.splits[
+        args.gen_subset
+    ] = pytorch_translate_data.make_language_pair_dataset_from_text(
         source_text_file=args.source_text_file,
         target_text_file=args.target_text_file,
         source_dict=src_dict,
