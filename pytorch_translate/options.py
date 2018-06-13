@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import os
 from pytorch_translate import utils
 
 
@@ -7,9 +8,13 @@ def add_dataset_args(parser, train=False, gen=False):
     """Same as fairseq.options.add_dataset_args but without
     the "data" argument"""
     group = parser.add_argument_group("Dataset and data loading")
-    group.add_argument("data", metavar="DIR", nargs="?",
-                       help="path to data directory. "
-                       "This is not needed but kept for backward compatibility")
+    group.add_argument(
+        "data",
+        metavar="DIR",
+        nargs="?",
+        help="path to data directory. "
+        "This is not needed but kept for backward compatibility",
+    )
     group.add_argument(
         "-s", "--source-lang", default="src", metavar="SRC", help="source language"
     )
@@ -221,6 +226,40 @@ def add_preprocessing_args(parser):
     )
 
 
+def validate_preprocessing_args(args):
+    if not (
+        (args.train_source_text_file or args.train_source_binary_path)
+        and (args.train_target_text_file or args.train_target_binary_path)
+        and (args.eval_source_text_file or args.eval_source_binary_path)
+        and (args.eval_target_text_file or args.eval_target_binary_path)
+    ):
+        raise ValueError(
+            "At least one of --*_text_file or --*_binary_path flags must be "
+            "specified for each of --{train, eval}_{source, target}_*"
+        )
+
+    for file_type in (
+        "train_source_text_file",
+        "train_target_text_file",
+        "eval_source_text_file",
+        "eval_target_text_file",
+    ):
+        file = getattr(args, file_type)
+        if file and not os.path.isfile(file):
+            raise ValueError(
+                f"Please specify an existing text file for --{file_type}={file}"
+            )
+
+    for file_type in ("source_vocab_file", "target_vocab_file"):
+        file = getattr(args, file_type)
+        if not file:
+            raise ValueError(
+                f"--{file_type} must be specified - even if you don't have "
+                f"a vocab file, you must still specify a location "
+                f"for it to be written to."
+            )
+
+
 def expand_optimization_args(group):
     """Expands the optimization related arguments with pytorch_translate
     specific arguments"""
@@ -288,7 +327,7 @@ def expand_checkpointing_args(group):
     return group
 
 
-def expand_generation_args(group, train=False, gen=False):
+def expand_generation_args(group, train=False):
     """Expands the generation related arguments with pytorch_translate
     specific arguments"""
     group.add_argument(
@@ -297,9 +336,19 @@ def expand_generation_args(group, train=False, gen=False):
         default=0.0,
         help=(
             "Value to add to (log-prob) score for each token except EOS. "
-            "IMPORTANT NOTE: higher values of --lenpen and --word-reward "
-            "both encourage longer translations, while higher values of "
-            "--unkpen penalize UNKs more."
+            "Value < 0 encourages shorter translations, while > 0 "
+            "(the usual case) encourages longer translations "
+            "(similar to --lenpen)."
+        ),
+    )
+    group.add_argument(
+        "--unk-reward",
+        type=float,
+        default=0.0,
+        help=(
+            "Value to add to (log-prob) score for UNK tokens. "
+            "Value < 0 (the usual case) encourages fewer UNKs, while > 0 "
+            "encourages more UNKs."
         ),
     )
     group.add_argument(
@@ -344,39 +393,13 @@ def expand_generation_args(group, train=False, gen=False):
                 "checkpoint, beginning after the specified number of epochs. "
             ),
         )
-    # Add filenames arguments for generation
-    if gen:
-        group.add_argument(
-            "--source-vocab-file",
-            default="",
-            metavar="FILE",
-            help="Path to text file representing the Dictionary to use.",
-        )
-        group.add_argument(
-            "--target-vocab-file",
-            default="",
-            metavar="FILE",
-            help="Path to text file representing the Dictionary to use.",
-        )
-        group.add_argument(
-            "--source-text-file",
-            default="",
-            metavar="FILE",
-            help="Path to raw text file containing examples in source dialect. "
-            "This overrides what would be loaded from the data dir.",
-        )
-        group.add_argument(
-            "--target-text-file",
-            default="",
-            metavar="FILE",
-            help="Path to raw text file containing examples in target dialect. "
-            "This overrides what would be loaded from the data dir.",
-        )
-        group.add_argument(
-            "--translation-output-file",
-            default="",
-            type=str,
-            metavar="FILE",
-            help="Path to text file to store the output of the model. ",
-        )
     return group
+
+
+def validate_generation_args(args):
+    assert args.unkpen == 0, (
+        "PyTorch Translate does not use fairseq's --unkpen flag. "
+        "Use --unk-reward instead, and check the flag description regarding "
+        "sign polarity meaning."
+    )
+    pass

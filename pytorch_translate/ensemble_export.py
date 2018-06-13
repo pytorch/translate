@@ -208,7 +208,7 @@ class EncoderEnsemble(nn.Module):
 
 
 class DecoderStepEnsemble(nn.Module):
-    def __init__(self, models, beam_size, word_penalty=0, unk_penalty=0):
+    def __init__(self, models, beam_size, word_reward=0, unk_reward=0):
         super().__init__()
         self.models = models
         for i, model in enumerate(self.models):
@@ -216,14 +216,14 @@ class DecoderStepEnsemble(nn.Module):
             self._modules[f"model_{i}"] = model
 
         self.beam_size = beam_size
-        self.word_penalty = word_penalty
-        self.unk_penalty = unk_penalty
+        self.word_reward = word_reward
+        self.unk_reward = unk_reward
 
         dst_dict = models[0].dst_dict
         vocab_size = len(dst_dict.indices)
-        self.word_rewards = torch.FloatTensor(vocab_size).fill_(word_penalty)
+        self.word_rewards = torch.FloatTensor(vocab_size).fill_(word_reward)
         self.word_rewards[dst_dict.eos()] = 0
-        self.word_rewards[dst_dict.unk()] = word_penalty + unk_penalty
+        self.word_rewards[dst_dict.unk()] = word_reward + unk_reward
 
     def forward(self, input_token, timestep, *inputs):
         """
@@ -370,8 +370,8 @@ class DecoderStepEnsemble(nn.Module):
         src_dict_filename,
         dst_dict_filename,
         beam_size=1,
-        word_penalty=0,
-        unk_penalty=0,
+        word_reward=0,
+        unk_reward=0,
     ):
         models = load_models_from_checkpoints(
             checkpoint_filenames, src_dict_filename, dst_dict_filename
@@ -379,8 +379,8 @@ class DecoderStepEnsemble(nn.Module):
         return DecoderStepEnsemble(
             models,
             beam_size=beam_size,
-            word_penalty=word_penalty,
-            unk_penalty=unk_penalty,
+            word_reward=word_reward,
+            unk_reward=unk_reward,
         )
 
     def save_to_db(self, output_path, encoder_ensemble_outputs):
@@ -406,7 +406,7 @@ class DecoderStepEnsemble(nn.Module):
 
 class DecoderBatchedStepEnsemble(nn.Module):
     def __init__(
-        self, models, beam_size, word_penalty=0, unk_penalty=0, tile_internal=False
+        self, models, beam_size, word_reward=0, unk_reward=0, tile_internal=False
     ):
         super().__init__()
         self.models = models
@@ -415,14 +415,14 @@ class DecoderBatchedStepEnsemble(nn.Module):
             self._modules[f"model_{i}"] = model
 
         self.beam_size = beam_size
-        self.word_penalty = word_penalty
-        self.unk_penalty = unk_penalty
+        self.word_reward = word_reward
+        self.unk_reward = unk_reward
 
         dst_dict = models[0].dst_dict
         vocab_size = len(dst_dict.indices)
-        self.word_rewards = torch.FloatTensor(vocab_size).fill_(word_penalty)
+        self.word_rewards = torch.FloatTensor(vocab_size).fill_(word_reward)
         self.word_rewards[dst_dict.eos()] = 0
-        self.word_rewards[dst_dict.unk()] = word_penalty + unk_penalty
+        self.word_rewards[dst_dict.unk()] = word_reward + unk_reward
 
         self.tile_internal = tile_internal
 
@@ -618,8 +618,8 @@ class DecoderBatchedStepEnsemble(nn.Module):
         src_dict_filename,
         dst_dict_filename,
         beam_size,
-        word_penalty=0,
-        unk_penalty=0,
+        word_reward=0,
+        unk_reward=0,
     ):
         models = load_models_from_checkpoints(
             checkpoint_filenames, src_dict_filename, dst_dict_filename
@@ -627,8 +627,8 @@ class DecoderBatchedStepEnsemble(nn.Module):
         return DecoderBatchedStepEnsemble(
             models,
             beam_size=beam_size,
-            word_penalty=word_penalty,
-            unk_penalty=unk_penalty,
+            word_reward=word_reward,
+            unk_reward=unk_reward,
         )
 
     def save_to_db(self, output_path, encoder_ensemble_outputs):
@@ -662,23 +662,23 @@ class BeamSearch(torch.jit.ScriptModule):
         src_tokens,
         src_lengths,
         beam_size=1,
-        word_penalty=0,
-        unk_penalty=0,
+        word_reward=0,
+        unk_reward=0,
     ):
         super().__init__()
         self.models = model_list
         self.beam_size = beam_size
-        self.word_penalty = word_penalty
-        self.unk_penalty = unk_penalty
+        self.word_reward = word_reward
+        self.unk_reward = unk_reward
 
         encoder_ens = EncoderEnsemble(self.models)
         example_encoder_outs = encoder_ens(src_tokens, src_lengths)
         self.encoder_ens = torch.jit.trace(src_tokens, src_lengths)(encoder_ens)
         decoder_ens = DecoderBatchedStepEnsemble(
-            self.models, beam_size, word_penalty, unk_penalty, tile_internal=False
+            self.models, beam_size, word_reward, unk_reward, tile_internal=False
         )
         decoder_ens_tile = DecoderBatchedStepEnsemble(
-            self.models, beam_size, word_penalty, unk_penalty, tile_internal=True
+            self.models, beam_size, word_reward, unk_reward, tile_internal=True
         )
         prev_token = torch.LongTensor([0])
         prev_scores = torch.FloatTensor([0.0])
@@ -803,8 +803,8 @@ class BeamSearch(torch.jit.ScriptModule):
         src_dict_filename,
         dst_dict_filename,
         beam_size,
-        word_penalty=0,
-        unk_penalty=0,
+        word_reward=0,
+        unk_reward=0,
     ):
         length = 10
         models = load_models_from_checkpoints(
@@ -817,8 +817,8 @@ class BeamSearch(torch.jit.ScriptModule):
             src_tokens,
             src_lengths,
             beam_size=beam_size,
-            word_penalty=word_penalty,
-            unk_penalty=unk_penalty,
+            word_reward=word_reward,
+            unk_reward=unk_reward,
         )
 
     def save_to_db(self, output_path):
