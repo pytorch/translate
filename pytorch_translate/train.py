@@ -114,7 +114,8 @@ def validate_and_set_default_args(args):
             save_dir=args.save_dir, dialect=args.source_lang
         )
 
-    preprocess.validate_args(args)
+    pytorch_translate_options.validate_preprocessing_args(args)
+    pytorch_translate_options.validate_generation_args(args)
 
 
 def setup_training(args):

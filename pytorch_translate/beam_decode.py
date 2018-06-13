@@ -17,8 +17,8 @@ class SequenceGenerator(torch.nn.Module):
         stop_early=True,
         normalize_scores=True,
         len_penalty=1,
-        unk_penalty=0,
-        lexicon_penalty=0,
+        unk_reward=0,
+        lexicon_reward=0,
         retain_dropout=False,
         word_reward=0,
         model_weights=None,
@@ -60,8 +60,8 @@ class SequenceGenerator(torch.nn.Module):
         self.stop_early = stop_early
         self.normalize_scores = normalize_scores
         self.len_penalty = len_penalty
-        self.unk_penalty = unk_penalty
-        self.lexicon_penalty = lexicon_penalty
+        self.unk_reward = unk_reward
+        self.lexicon_reward = lexicon_reward
         self.lexicon_indices = models[0].dst_dict.lexicon_indices_list()
         self.retain_dropout = retain_dropout
         self.word_reward = word_reward
@@ -306,9 +306,9 @@ class SequenceGenerator(torch.nn.Module):
                 # make probs contain cumulative scores for each hypothesis
                 logprobs.add_(scores[:, step - 1].view(-1, 1))
             logprobs[:, self.pad] = -math.inf  # never select pad
-            logprobs[:, self.unk] -= self.unk_penalty  # apply unk penalty
-            # external lexicon penalty
-            logprobs[:, self.lexicon_indices] -= self.lexicon_penalty
+            logprobs[:, self.unk] += self.unk_reward  # apply unk reward
+            # external lexicon reward
+            logprobs[:, self.lexicon_indices] += self.lexicon_reward
 
             logprobs += self.word_reward
             logprobs[:, self.eos] -= self.word_reward

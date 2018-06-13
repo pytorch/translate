@@ -49,13 +49,13 @@ def get_parser_with_args():
         help="Number of top candidates returned by each decoder step",
     )
     parser.add_argument(
-        "--word-penalty",
+        "--word-reward",
         type=float,
         default=0.0,
         help="Value to add for each word (besides EOS)",
     )
     parser.add_argument(
-        "--unk-penalty",
+        "--unk-reward",
         type=float,
         default=0.0,
         help="Value to add for each word UNK token",
@@ -105,8 +105,8 @@ def export(args):
             src_dict_filename=args.source_vocab_file,
             dst_dict_filename=args.target_vocab_file,
             beam_size=args.beam_size,
-            word_penalty=args.word_penalty,
-            unk_penalty=args.unk_penalty,
+            word_reward=args.word_reward,
+            unk_reward=args.unk_reward,
         )
 
         # need example encoder outputs to pass through network
