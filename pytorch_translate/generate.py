@@ -181,6 +181,15 @@ def get_parser_with_args():
         help="Path to text file representing the Dictionary to use.",
     )
     generation_group.add_argument(
+        "--char-source-vocab-file",
+        default="",
+        metavar="FILE",
+        help=(
+            "Same as --source-vocab-file except using characters. "
+            "(For use with char_source models only.)"
+        ),
+    )
+    generation_group.add_argument(
         "--target-vocab-file",
         default="",
         metavar="FILE",
@@ -242,6 +251,16 @@ def generate(args):
 
     src_dict = pytorch_translate_dictionary.Dictionary.load(args.source_vocab_file)
     dst_dict = pytorch_translate_dictionary.Dictionary.load(args.target_vocab_file)
+    use_char_source = args.char_source_vocab_file != ""
+    if use_char_source:
+        char_source_dict = pytorch_translate_dictionary.Dictionary.load(
+            args.char_source_vocab_file
+        )
+        # this attribute is used for CharSourceModel construction
+        args.char_source_dict_size = len(char_source_dict)
+    else:
+        char_source_dict = None
+
     dataset = data.LanguageDatasets(
         src=args.source_lang, dst=args.target_lang, src_dict=src_dict, dst_dict=dst_dict
     )
@@ -264,6 +283,7 @@ def generate(args):
         target_dict=dst_dict,
         append_eos=append_eos_to_source,
         reverse_source=reverse_source,
+        char_source_dict=char_source_dict,
     )
 
     if args.source_lang is None or args.target_lang is None:
