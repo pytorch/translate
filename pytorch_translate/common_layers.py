@@ -264,7 +264,9 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
 class OutputProjection(nn.Module):
     """Output projection layer."""
 
-    def __init__(self, out_embed_dim, vocab_size):
+    def __init__(
+        self, out_embed_dim, vocab_size, vocab_reduction_module=None
+    ):
         super().__init__()
         self.out_embed_dim = out_embed_dim
         self.vocab_size = vocab_size
@@ -275,10 +277,27 @@ class OutputProjection(nn.Module):
         self.output_projection_b = nn.Parameter(
             torch.FloatTensor(self.vocab_size).zero_()
         )
+        self.vocab_reduction_module = vocab_reduction_module
 
-    def forward(self, x):
+    def forward(
+        self, x, src_tokens=None, input_tokens=None, possible_translation_tokens=None
+    ):
         output_projection_w = self.output_projection_w
         output_projection_b = self.output_projection_b
+        decoder_input_tokens = input_tokens if self.training else None
+
+        if self.vocab_reduction_module and possible_translation_tokens is None:
+            possible_translation_tokens = self.vocab_reduction_module(
+                src_tokens, decoder_input_tokens=decoder_input_tokens
+            )
+
+        if possible_translation_tokens is not None:
+            output_projection_w = output_projection_w.index_select(
+                dim=0, index=possible_translation_tokens
+            )
+            output_projection_b = output_projection_b.index_select(
+                dim=0, index=possible_translation_tokens
+            )
 
         # avoiding transpose of projection weights during ONNX tracing
         batch_time_hidden = torch.onnx.operators.shape_as_tensor(x)
@@ -293,4 +312,4 @@ class OutputProjection(nn.Module):
             )
             + output_projection_b
         )
-        return logits
+        return logits, possible_translation_tokens
