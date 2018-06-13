@@ -3,13 +3,18 @@
 import abc
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from fairseq.models import FairseqEncoder, FairseqIncrementalDecoder
 from pytorch_translate.common_layers import Linear, OutputProjection
 from pytorch_translate import vocab_reduction
 
 
-def average_tensors(tensor_list):
-    return torch.mean(torch.stack(tensor_list), dim=0)
+def average_tensors(tensor_list, prob_space=False):
+    stacked = torch.stack(tensor_list)
+    if not prob_space:
+        return torch.mean(stacked, dim=0)
+    probs = F.softmax(stacked)
+    return torch.log(torch.mean(probs, dim=0))
 
 
 class MultiEncoder(FairseqEncoder):
@@ -82,12 +87,15 @@ class MultiDecoderCombinationStrategy(nn.Module):
 class UniformStrategy(MultiDecoderCombinationStrategy):
     """Uniform averaging of model predictions."""
 
-    def __init__(self, out_embed_dims, vocab_size, vocab_reduction_module=None):
+    def __init__(
+        self, out_embed_dims, vocab_size, vocab_reduction_module=None, prob_space=False
+    ):
         super().__init__(out_embed_dims, vocab_size)
         assert vocab_reduction_module is None
         self.output_projections = nn.ModuleList(
             [OutputProjection(dim, vocab_size) for dim in out_embed_dims]
         )
+        self.prob_space = prob_space
 
     def forward(
         self,
@@ -97,8 +105,8 @@ class UniformStrategy(MultiDecoderCombinationStrategy):
         possible_translation_tokens=None,
     ):
         assert possible_translation_tokens is None
-        logits = [p(o) for p, o in zip(self.output_projections, unprojected_outs)]
-        return average_tensors(logits), None
+        logits = [p(o)[0] for p, o in zip(self.output_projections, unprojected_outs)]
+        return average_tensors(logits, prob_space=self.prob_space), None
 
 
 class UnprojectedStrategy(MultiDecoderCombinationStrategy):
@@ -231,12 +239,15 @@ class BaseWeightedStrategy(MultiDecoderCombinationStrategy):
 class WeightedStrategy(BaseWeightedStrategy):
     """Weighted average of full logits."""
 
-    def __init__(self, out_embed_dims, vocab_size, vocab_reduction_module=None):
+    def __init__(
+        self, out_embed_dims, vocab_size, vocab_reduction_module=None, prob_space=False
+    ):
         super().__init__(out_embed_dims, vocab_size)
         assert vocab_reduction_module is None
         self.output_projections = nn.ModuleList(
             [OutputProjection(dim, vocab_size) for dim in out_embed_dims]
         )
+        self.prob_space = prob_space
 
     def forward(
         self,
@@ -248,10 +259,10 @@ class WeightedStrategy(BaseWeightedStrategy):
         assert possible_translation_tokens is None
         weights = self.compute_weights(unprojected_outs)
         logits = [
-            weights[:, :, i : i + 1] * p(o)
+            weights[:, :, i : i + 1] * p(o)[0]
             for i, (p, o) in enumerate(zip(self.output_projections, unprojected_outs))
         ]
-        return average_tensors(logits), None
+        return average_tensors(logits, prob_space=self.prob_space), None
 
 
 class WeightedUnprojectedStrategy(BaseWeightedStrategy):
@@ -282,24 +293,33 @@ class WeightedUnprojectedStrategy(BaseWeightedStrategy):
 
 
 def create_strategy(strategy_name, out_embed_dims, vocab_size, vocab_reduction_module):
-    strat_class = None
     if strategy_name == "uniform":
-        strat_class = UniformStrategy
+        return UniformStrategy(out_embed_dims, vocab_size, vocab_reduction_module)
+    elif strategy_name == "uniform-probspace":
+        return UniformStrategy(
+            out_embed_dims, vocab_size, vocab_reduction_module, prob_space=True
+        )
     elif strategy_name == "unprojected":
-        strat_class = UnprojectedStrategy
+        return UnprojectedStrategy(out_embed_dims, vocab_size, vocab_reduction_module)
     elif strategy_name == "weighted":
-        strat_class = WeightedStrategy
+        return WeightedStrategy(out_embed_dims, vocab_size, vocab_reduction_module)
+    elif strategy_name == "weighted-probspace":
+        return WeightedStrategy(
+            out_embed_dims, vocab_size, vocab_reduction_module, prob_space=True
+        )
     elif strategy_name == "weighted-unprojected":
-        strat_class = WeightedUnprojectedStrategy
+        return WeightedUnprojectedStrategy(
+            out_embed_dims, vocab_size, vocab_reduction_module
+        )
     elif strategy_name == "concat":
-        strat_class = ConcatStrategy
+        return ConcatStrategy(out_embed_dims, vocab_size, vocab_reduction_module)
     elif strategy_name == "bottleneck":
-        strat_class = BottleneckStrategy
+        return BottleneckStrategy(out_embed_dims, vocab_size, vocab_reduction_module)
     elif strategy_name == "multiplicative-unprojected":
-        strat_class = MultiplicativeUnprojectedStrategy
-    else:
-        raise RuntimeError(f"Unknown combination strategy '{strategy_name}'")
-    return strat_class(out_embed_dims, vocab_size, vocab_reduction_module)
+        return MultiplicativeUnprojectedStrategy(
+            out_embed_dims, vocab_size, vocab_reduction_module
+        )
+    raise RuntimeError(f"Unknown combination strategy '{strategy_name}'")
 
 
 class MultiDecoder(FairseqIncrementalDecoder):
