@@ -16,6 +16,7 @@ from pytorch_translate.ensemble_export import (
     DecoderBatchedStepEnsemble,
     DecoderStepEnsemble,
     EncoderEnsemble,
+    ForcedDecoder,
     BeamSearch,
 )
 from pytorch_translate.test import utils as test_utils
@@ -427,3 +428,39 @@ class TestONNX(unittest.TestCase):
             )
 
         encoder_ensemble.save_to_db(os.path.join(tmp_dir, "encoder.predictor_export"))
+
+    def _test_forced_decoder_export(self, test_args):
+        _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+
+        num_models = 3
+        model_list = []
+        for _ in range(num_models):
+            model_list.append(models.build_model(test_args, src_dict, tgt_dict))
+
+        forced_decoder_ensemble = ForcedDecoder(
+            model_list,
+            word_reward=0.25,
+            unk_reward=-0.5,
+        )
+
+        tmp_dir = tempfile.mkdtemp()
+        forced_decoder_pb_path = os.path.join(tmp_dir, "forced_decoder.pb")
+        forced_decoder_ensemble.onnx_export(forced_decoder_pb_path)
+
+    def test_forced_decoder_export_default(self):
+        test_args = test_utils.ModelParamsDict(
+            encoder_bidirectional=True, sequence_lstm=True
+        )
+        self._test_forced_decoder_export(test_args)
+
+    def test_forced_decoder_export_vocab_reduction(self):
+        test_args = test_utils.ModelParamsDict(
+            encoder_bidirectional=True, sequence_lstm=True
+        )
+        lexical_dictionaries = test_utils.create_lexical_dictionaries()
+        test_args.vocab_reduction_params = {
+            "lexical_dictionaries": lexical_dictionaries,
+            "num_top_words": 5,
+            "max_translation_candidates_per_word": 1,
+        }
+        self._test_forced_decoder_export(test_args)
