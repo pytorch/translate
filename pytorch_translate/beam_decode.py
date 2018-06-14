@@ -16,7 +16,7 @@ class SequenceGenerator(torch.nn.Module):
         maxlen=None,
         stop_early=True,
         normalize_scores=True,
-        len_penalty=1,
+        len_penalty=0,
         unk_reward=0,
         lexicon_reward=0,
         retain_dropout=False,

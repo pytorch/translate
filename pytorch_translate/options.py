@@ -338,7 +338,7 @@ def expand_generation_args(group, train=False):
             "Value to add to (log-prob) score for each token except EOS. "
             "Value < 0 encourages shorter translations, while > 0 "
             "(the usual case) encourages longer translations "
-            "(similar to --lenpen)."
+            "(similar to --length-penalty)."
         ),
     )
     group.add_argument(
@@ -349,6 +349,16 @@ def expand_generation_args(group, train=False):
             "Value to add to (log-prob) score for UNK tokens. "
             "Value < 0 (the usual case) encourages fewer UNKs, while > 0 "
             "encourages more UNKs."
+        ),
+    )
+    group.add_argument(
+        "--length-penalty",
+        type=float,
+        default=0.0,
+        help=(
+            "When >0 scores are normalized according to length (divided by "
+            "length^length_penalty). Effectively overrides word_reward when"
+            "in use. NOTE: supersedes --lenpen."
         ),
     )
     group.add_argument(
@@ -401,5 +411,9 @@ def validate_generation_args(args):
         "PyTorch Translate does not use fairseq's --unkpen flag. "
         "Use --unk-reward instead, and check the flag description regarding "
         "sign polarity meaning."
+    )
+    assert args.lenpen == 1, (
+        "Argument --lenpen is IGNORED by pytorch_translate. Use "
+        "--length-penalty instead."
     )
     pass

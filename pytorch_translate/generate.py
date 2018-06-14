@@ -45,7 +45,7 @@ def _generate_score(models, args, dataset, dataset_split):
         beam_size=args.beam,
         stop_early=(not args.no_early_stop),
         normalize_scores=(not args.unnormalized),
-        len_penalty=args.lenpen,
+        len_penalty=args.length_penalty,
         unk_reward=args.unk_reward,
         word_reward=args.word_reward,
         model_weights=model_weights,

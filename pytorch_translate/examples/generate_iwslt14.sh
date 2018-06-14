@@ -17,7 +17,7 @@ python3 pytorch_translate/generate.py \
        --source-text-file data/test.tok.bpe.de \
        --target-text-file data/test.tok.bpe.en \
        --unk-reward -0.5 \
-       --lenpen 0 \
+       --length-penalty 0 \
        --word-reward 0.25 \
        --beam 6 \
        --remove-bpe \
@@ -36,7 +36,7 @@ python3 pytorch_translate/generate.py \
        --source-text-file data/test.tok.bpe.de \
        --target-text-file data/test.tok.bpe.en \
        --unk-reward -0.5 \
-       --lenpen 0 \
+       --length-penalty 0 \
        --word-reward 0.25 \
        --beam 6 \
        --remove-bpe \
