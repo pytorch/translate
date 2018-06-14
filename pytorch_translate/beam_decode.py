@@ -306,7 +306,14 @@ class SequenceGenerator(torch.nn.Module):
                 # make probs contain cumulative scores for each hypothesis
                 logprobs.add_(scores[:, step - 1].view(-1, 1))
             logprobs[:, self.pad] = -math.inf  # never select pad
-            logprobs[:, self.unk] += self.unk_reward  # apply unk reward
+
+            # apply unk reward
+            if possible_translation_tokens is None:
+                unk_index = self.unk
+            else:
+                unk_index = torch.nonzero(possible_translation_tokens == self.unk)[0, 0]
+            logprobs[:, unk_index] += self.unk_reward
+
             # external lexicon reward
             logprobs[:, self.lexicon_indices] += self.lexicon_reward
 
@@ -367,7 +374,7 @@ class SequenceGenerator(torch.nn.Module):
                 torch.sort(
                     logprobs[:, self.eos],
                     descending=True,
-                    out=(eos_scores, eos_bbsz_idx)
+                    out=(eos_scores, eos_bbsz_idx),
                 )
                 num_remaining_sent -= finalize_hypos(step, eos_bbsz_idx, eos_scores)
                 assert num_remaining_sent == 0
