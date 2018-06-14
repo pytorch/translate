@@ -216,6 +216,26 @@ def get_parser_with_args():
         metavar="FILE",
         help="Path to text file to store the output of the model. ",
     )
+    generation_group.add_argument(
+        "--multiling-source-lang-id",
+        type=int,
+        default=None,
+        help=(
+            "Must be set for decoding with multilingual models. Set to i if "
+            "the source language is the i-th language in the training parameter "
+            "--multiling-encoder-lang (0-indexed)"
+        ),
+    )
+    generation_group.add_argument(
+        "--multiling-target-lang-id",
+        type=int,
+        default=None,
+        help=(
+            "Must be set for decoding with multilingual models. Set to i if "
+            "the target language is the i-th language in the training parameter "
+            "--multiling-decoder-lang (0-indexed)"
+        ),
+    )
 
     return parser
 
