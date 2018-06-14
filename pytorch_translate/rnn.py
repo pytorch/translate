@@ -968,9 +968,6 @@ def base_architecture(args):
     vocab_reduction.set_arg_defaults(args)
     word_dropout.set_arg_defaults(args)
     args.sequence_lstm = getattr(args, "sequence_lstm", False)
-    args.add_encodercoder_output_as_decoder_input = getattr(
-        args, "add_encoder_output_as_decoder_input", False
-    )
 
 
 @register_model_architecture("rnn", "rnn_big_test")
