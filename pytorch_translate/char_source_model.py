@@ -84,6 +84,7 @@ class CharSourceModel(rnn.RNNModel):
                 src_dict,
                 num_chars=args.char_source_dict_size,
                 embed_dim=args.char_embed_dim,
+                token_embed_dim=args.encoder_embed_dim,
                 freeze_embed=args.encoder_freeze_embed,
                 char_cnn_params=args.char_cnn_params,
                 char_cnn_nonlinear_fn=args.char_cnn_nonlinear_fn,
@@ -366,6 +367,7 @@ class CharCNNEncoder(FairseqEncoder):
         dictionary,
         num_chars=50,
         embed_dim=32,
+        token_embed_dim=256,
         freeze_embed=False,
         char_cnn_params="[(128, 3), (128, 5)]",
         char_cnn_output_dim=256,
@@ -397,7 +399,19 @@ class CharCNNEncoder(FairseqEncoder):
             char_cnn_nonlinear_fn,
             char_cnn_num_highway_layers,
         )
-        self.word_dim = sum(out_dim for (out_dim, _) in convolutions_params)
+
+        self.embed_tokens = None
+        num_tokens = len(dictionary)
+        self.padding_idx = dictionary.pad()
+        if token_embed_dim > 0:
+            self.embed_tokens = rnn.Embedding(
+                num_embeddings=num_tokens,
+                embedding_dim=token_embed_dim,
+                padding_idx=self.padding_idx,
+                freeze_embed=freeze_embed,
+            )
+        self.word_dim = (sum(out_dim for (out_dim, _) in convolutions_params) +
+                         token_embed_dim)
 
         self.layers = nn.ModuleList([])
         for layer in range(num_layers):
@@ -437,6 +451,16 @@ class CharCNNEncoder(FairseqEncoder):
         char_cnn_output = self.char_cnn_encoder(char_inds_flat)
         x = char_cnn_output.view(bsz, seqlen, char_cnn_output.shape[-1])
         x = x.transpose(0, 1)  # (seqlen, bsz, char_cnn_output_dim)
+
+        if self.embed_tokens is not None:
+            embedded_tokens = self.embed_tokens(src_tokens)
+            # (seqlen, bsz, token_embed_dim)
+            embedded_tokens = embedded_tokens.transpose(0, 1)
+            # (seqlen, bsz, total_word_embed_dim)
+            x = torch.cat([x, embedded_tokens], dim=2)
+
+        if self.dropout_in != 0:
+            x = F.dropout(x, p=self.dropout_in, training=self.training)
 
         # The rest is the same as CharRNNEncoder, so could be refactored
         # Generate packed seq to deal with varying source seq length
