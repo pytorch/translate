@@ -134,6 +134,8 @@ def make_language_pair_dataset_from_text(
                 reverse_order=reverse_source,
             ),
             dst=dst_dataset,
+            pad_idx=source_dict.pad(),
+            eos_idx=source_dict.eos(),
         )
 
 
