@@ -116,6 +116,20 @@ def validate_and_set_default_args(args):
 
     pytorch_translate_options.validate_preprocessing_args(args)
     pytorch_translate_options.validate_generation_args(args)
+    if args.multiling_encoder_lang and not args.multiling_source_vocab_file:
+        args.multiling_source_vocab_file = [
+            pytorch_translate_dictionary.default_dictionary_path(
+                save_dir=args.save_dir, dialect=f"src-{l}"
+            )
+            for l in args.multiling_encoder_lang
+        ]
+    if args.multiling_decoder_lang and not args.multiling_target_vocab_file:
+        args.multiling_target_vocab_file = [
+            pytorch_translate_dictionary.default_dictionary_path(
+                save_dir=args.save_dir, dialect=f"trg-{l}"
+            )
+            for l in args.multiling_decoder_lang
+        ]
 
 
 def setup_training(args):
