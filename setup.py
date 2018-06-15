@@ -23,10 +23,10 @@ setup(
     license='BSD',
     packages=find_packages(),
     install_requires=[
-        'fairseq<0.5.0',
+        'fairseq',
     ],
     dependency_links=[
-        "git+https://github.com/pytorch/fairseq.git#egg=fairseq"
+        'git+https://github.com/pytorch/fairseq.git@v0.4.0#egg=fairseq',
     ],
     test_suite='tests',
 )
