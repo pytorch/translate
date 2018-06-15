@@ -366,7 +366,29 @@ class TestONNX(unittest.TestCase):
         )
         self._test_full_beam_decoder(test_args)
 
-    def test_ensemble_encoder_export_char_cnn(self):
+    def _test_forced_decoder_export(self, test_args):
+        _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+
+        num_models = 3
+        model_list = []
+        for _ in range(num_models):
+            model_list.append(models.build_model(test_args, src_dict, tgt_dict))
+
+        forced_decoder_ensemble = ForcedDecoder(
+            model_list, word_reward=0.25, unk_reward=-0.5
+        )
+
+        tmp_dir = tempfile.mkdtemp()
+        forced_decoder_pb_path = os.path.join(tmp_dir, "forced_decoder.pb")
+        forced_decoder_ensemble.onnx_export(forced_decoder_pb_path)
+
+    def test_forced_decoder_export_default(self):
+        test_args = test_utils.ModelParamsDict(
+            encoder_bidirectional=True, sequence_lstm=True
+        )
+        self._test_forced_decoder_export(test_args)
+
+    def test_forced_decoder_export_vocab_reduction(self):
         test_args = test_utils.ModelParamsDict(
             encoder_bidirectional=True, sequence_lstm=True
         )
@@ -376,14 +398,9 @@ class TestONNX(unittest.TestCase):
             "num_top_words": 5,
             "max_translation_candidates_per_word": 1,
         }
+        self._test_forced_decoder_export(test_args)
 
-        test_args.arch = "char_source"
-        test_args.char_source_dict_size = 126
-        test_args.char_embed_dim = 8
-        test_args.char_cnn_params = "[(10, 3), (10, 5)]"
-        test_args.char_cnn_nonlinear_fn = "tanh"
-        test_args.char_cnn_num_highway_layers = 2
-
+    def _test_ensemble_encoder_export_char_source(self, test_args):
         _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
 
         num_models = 3
@@ -429,31 +446,7 @@ class TestONNX(unittest.TestCase):
 
         encoder_ensemble.save_to_db(os.path.join(tmp_dir, "encoder.predictor_export"))
 
-    def _test_forced_decoder_export(self, test_args):
-        _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
-
-        num_models = 3
-        model_list = []
-        for _ in range(num_models):
-            model_list.append(models.build_model(test_args, src_dict, tgt_dict))
-
-        forced_decoder_ensemble = ForcedDecoder(
-            model_list,
-            word_reward=0.25,
-            unk_reward=-0.5,
-        )
-
-        tmp_dir = tempfile.mkdtemp()
-        forced_decoder_pb_path = os.path.join(tmp_dir, "forced_decoder.pb")
-        forced_decoder_ensemble.onnx_export(forced_decoder_pb_path)
-
-    def test_forced_decoder_export_default(self):
-        test_args = test_utils.ModelParamsDict(
-            encoder_bidirectional=True, sequence_lstm=True
-        )
-        self._test_forced_decoder_export(test_args)
-
-    def test_forced_decoder_export_vocab_reduction(self):
+    def test_ensemble_encoder_export_char_cnn_vocab_reduction(self):
         test_args = test_utils.ModelParamsDict(
             encoder_bidirectional=True, sequence_lstm=True
         )
@@ -463,4 +456,88 @@ class TestONNX(unittest.TestCase):
             "num_top_words": 5,
             "max_translation_candidates_per_word": 1,
         }
-        self._test_forced_decoder_export(test_args)
+
+        test_args.arch = "char_source"
+        test_args.char_source_dict_size = 126
+        test_args.char_embed_dim = 8
+        test_args.char_cnn_params = "[(10, 3), (10, 5)]"
+        test_args.char_cnn_nonlinear_fn = "tanh"
+        test_args.char_cnn_num_highway_layers = 2
+
+        self._test_ensemble_encoder_export_char_source(test_args)
+
+    def test_ensemble_encoder_export_char_rnn_vocab_reduction(self):
+        test_args = test_utils.ModelParamsDict(
+            encoder_bidirectional=True, sequence_lstm=True
+        )
+        lexical_dictionaries = test_utils.create_lexical_dictionaries()
+        test_args.vocab_reduction_params = {
+            "lexical_dictionaries": lexical_dictionaries,
+            "num_top_words": 5,
+            "max_translation_candidates_per_word": 1,
+        }
+
+        test_args.arch = "char_source"
+        test_args.char_source_dict_size = 126
+        test_args.char_embed_dim = 8
+        test_args.char_rnn_units = 12
+        test_args.char_rnn_layers = 2
+
+        self._test_ensemble_encoder_export_char_source(test_args)
+
+    def test_char_rnn_equivalent(self):
+        """Ensure that the CharRNNEncoder.onnx_export_model path does not
+        change computation"""
+        test_args = test_utils.ModelParamsDict(
+            encoder_bidirectional=True, sequence_lstm=True
+        )
+        lexical_dictionaries = test_utils.create_lexical_dictionaries()
+        test_args.vocab_reduction_params = {
+            "lexical_dictionaries": lexical_dictionaries,
+            "num_top_words": 5,
+            "max_translation_candidates_per_word": 1,
+        }
+
+        test_args.arch = "char_source"
+        test_args.char_source_dict_size = 126
+        test_args.char_embed_dim = 8
+        test_args.char_rnn_units = 12
+        test_args.char_rnn_layers = 2
+
+        _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+
+        num_models = 3
+        model_list = []
+        for _ in range(num_models):
+            model_list.append(models.build_model(test_args, src_dict, tgt_dict))
+        encoder_ensemble = CharSourceEncoderEnsemble(model_list)
+
+        length = 5
+        src_tokens = torch.LongTensor(
+            np.random.randint(0, len(src_dict), (length, 1), dtype="int64")
+        )
+        src_lengths = torch.IntTensor(np.array([length], dtype="int32"))
+        word_length = 3
+        char_inds = torch.LongTensor(
+            np.random.randint(0, 126, (1, length, word_length), dtype="int64")
+        )
+        word_lengths = torch.IntTensor(
+            np.array([word_length] * length, dtype="int32")
+        ).reshape((1, length))
+
+        onnx_path_outputs = encoder_ensemble(
+            src_tokens, src_lengths, char_inds, word_lengths
+        )
+
+        for model in encoder_ensemble.models:
+            model.encoder.onnx_export_model = False
+
+        original_path_outputs = encoder_ensemble(
+            src_tokens, src_lengths, char_inds, word_lengths
+        )
+
+        for (onnx_out, original_out) in zip(onnx_path_outputs, original_path_outputs):
+            onnx_array = onnx_out.detach().numpy()
+            original_array = original_out.detach().numpy()
+            assert onnx_array.shape == original_array.shape
+            np.testing.assert_allclose(onnx_array, original_array)
