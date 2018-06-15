@@ -14,6 +14,8 @@ from pytorch_translate import options as pytorch_translate_options
 from pytorch_translate import dictionary as pytorch_translate_dictionary
 from pytorch_translate import utils as pytorch_translate_utils
 from pytorch_translate import rnn  # noqa
+from pytorch_translate.research.multisource import multisource_decode
+from pytorch_translate.research.multisource import multisource_data
 
 
 def generate_score(args, dataset, dataset_split):
@@ -51,7 +53,12 @@ def _generate_score(models, args, dataset, dataset_split):
     if args.model_weights:
         model_weights = [float(w.strip()) for w in args.model_weights.split(",")]
     use_char_source = isinstance(models[0], char_source_model.CharSourceModel)
-    translator = beam_decode.SequenceGenerator(
+    # Use a different sequence generator in the multisource setting
+    if getattr(args, "source_ensembling", False):
+        translator_class = multisource_decode.MultiSourceSequenceGenerator
+    else:
+        translator_class = beam_decode.SequenceGenerator
+    translator = translator_class(
         models,
         beam_size=args.beam,
         stop_early=(not args.no_early_stop),
@@ -354,9 +361,13 @@ def get_parser_with_args():
     generation_group.add_argument(
         "--source-text-file",
         default="",
+        nargs="+",
         metavar="FILE",
         help="Path to raw text file containing examples in source dialect. "
-        "This overrides what would be loaded from the data dir.",
+        "This overrides what would be loaded from the data dir. "
+        "You can specify multiple source files (eg. for use in combination "
+        "with --source-ensembling). By default this will only translate the "
+        "first source file",
     )
     generation_group.add_argument(
         "--target-text-file",
@@ -392,6 +403,12 @@ def get_parser_with_args():
             "--multiling-decoder-lang (0-indexed)"
         ),
     )
+    generation_group.add_argument(
+        "--source-ensembling",
+        action="store_true",
+        help="If this flag is present, the model will ensemble the predictions "
+        "conditioned on multiple source sentences (one per source-text-file)"
+    )
 
     return parser
 
@@ -406,20 +423,19 @@ def main():
 def validate_args(args):
     pytorch_translate_options.validate_generation_args(args)
 
+    assert args.path is not None, "--path required for generation!"
     assert args.source_vocab_file and os.path.isfile(
         args.source_vocab_file
     ), "Please specify a valid file for --source-vocab-file"
     assert args.target_vocab_file and os.path.isfile(
         args.target_vocab_file
     ), "Please specify a valid file for --target-vocab_file"
-    assert args.source_text_file and os.path.isfile(
-        args.source_text_file
-    ), "Please specify a valid file for --source-text-file"
-    assert args.target_text_file and os.path.isfile(
-        args.target_text_file
+    assert (all(
+        (src_file and os.path.isfile(src_file)) for src_file in args.source_text_file
+    )), "Please specify a valid file for --source-text-file"
+    assert (
+        args.target_text_file and os.path.isfile(args.target_text_file)
     ), "Please specify a valid file for --target-text-file"
-
-    assert args.path is not None, "--path required for generation!"
 
 
 def generate(args):
@@ -452,7 +468,7 @@ def generate(args):
     )
     if pytorch_translate_data.is_multilingual(args):
         gen_split = pytorch_translate_data.make_language_pair_dataset_from_text_multilingual(
-            source_text_file=args.source_text_file,
+            source_text_file=args.source_text_file[0],
             target_text_file=args.target_text_file,
             source_lang_id=args.multiling_source_lang_id,
             target_lang_id=args.multiling_target_lang_id,
@@ -461,9 +477,18 @@ def generate(args):
             append_eos=append_eos_to_source,
             reverse_source=reverse_source,
         )
+    elif args.source_ensembling:
+        gen_split = multisource_data.make_multisource_language_pair_dataset_from_text(
+            source_text_files=args.source_text_file,
+            target_text_file=args.target_text_file,
+            source_dict=src_dict,
+            target_dict=dst_dict,
+            append_eos=append_eos_to_source,
+            reverse_source=reverse_source,
+        )
     else:
         gen_split = pytorch_translate_data.make_language_pair_dataset_from_text(
-            source_text_file=args.source_text_file,
+            source_text_file=args.source_text_file[0],
             target_text_file=args.target_text_file,
             source_dict=src_dict,
             target_dict=dst_dict,
