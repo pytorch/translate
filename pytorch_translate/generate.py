@@ -3,6 +3,7 @@
 import collections
 import os
 import torch
+from typing import NamedTuple
 
 from fairseq import bleu, data, options, progress_bar, tokenizer, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
@@ -20,6 +21,16 @@ def generate_score(args, dataset, dataset_split):
         args.path, dataset.src_dict, dataset.dst_dict
     )
     return _generate_score(models, args, dataset, dataset_split)
+
+
+class TranslationInfo(NamedTuple):
+    sample_id: int
+    src_tokens: str
+    target_tokens: str
+    hypo_tokens: str
+    src_str: str
+    target_str: str
+    hypo_str: str
 
 
 def _generate_score(models, args, dataset, dataset_split):
@@ -94,66 +105,28 @@ def _generate_score(models, args, dataset, dataset_split):
             maxlen_b=args.max_len_b,
             cuda=use_cuda,
             timer=gen_timer,
+            prefix_size=1 if pytorch_translate_data.is_multilingual(args) else 0,
         )
-        for sample_id, src_tokens, target_tokens, hypos in translations:
-            # Process input and ground truth
-            target_tokens = target_tokens.int().cpu()
-            # Either retrieve the original sentences or regenerate them from tokens.
-            if align_dict is not None:
-                src_str = dataset.splits[dataset_split].src.get_original_text(sample_id)
-                target_str = dataset.splits[dataset_split].dst.get_original_text(
-                    sample_id
-                )
-            else:
-                src_str = dataset.src_dict.string(src_tokens, args.remove_bpe)
-                target_str = dataset.dst_dict.string(
-                    target_tokens, args.remove_bpe, escape_unk=True
-                )
-            if not args.quiet:
-                print(f"S-{sample_id}\t{src_str}")
-                print(f"T-{sample_id}\t{target_str}")
-
-            # Process top predictions
-            for i, hypo in enumerate(hypos[: min(len(hypos), args.nbest)]):
-                hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
-                    hypo_tokens=hypo["tokens"].int().cpu(),
-                    src_str=src_str,
-                    alignment=hypo["alignment"].int().cpu(),
-                    align_dict=align_dict,
-                    dst_dict=dataset.dst_dict,
-                    remove_bpe=args.remove_bpe,
-                )
-
-                if not args.quiet:
-                    print(f"H-{sample_id}\t{hypo['score']}\t{hypo_str}")
-                    print(
-                        "A-{}\t{}".format(
-                            sample_id,
-                            " ".join(map(lambda x: str(utils.item(x)), alignment)),
-                        )
-                    )
-
-                # Score only the top hypothesis
-                if i == 0:
-                    if align_dict is not None or args.remove_bpe is not None:
-                        # Convert back to tokens for evaluation with unk replacement
-                        # and/or without BPE
-                        target_tokens = tokenizer.Tokenizer.tokenize(
-                            target_str, dataset.dst_dict, add_if_not_exist=True
-                        )
-                    scorer.add(target_tokens, hypo_tokens)
-                    translated_sentences[sample_id] = hypo_str
+        if pytorch_translate_data.is_multilingual(args):
+            first_best_translations = _iter_first_best_multilingual
+        else:
+            first_best_translations = _iter_first_best_bilingual
+        for trans_info in first_best_translations(
+            args, dataset, dataset_split, translations, align_dict
+        ):
+            scorer.add(trans_info.target_tokens, trans_info.hypo_tokens)
+            translated_sentences[trans_info.sample_id] = trans_info.hypo_str
             translation_samples.append(
                 collections.OrderedDict(
                     {
-                        "sample_id": sample_id,
-                        "src_str": src_str,
-                        "target_str": target_str,
-                        "hypo_str": translated_sentences[sample_id],
+                        "sample_id": trans_info.sample_id,
+                        "src_str": trans_info.src_str,
+                        "target_str": trans_info.target_str,
+                        "hypo_str": trans_info.hypo_str,
                     }
                 )
             )
-            wps_meter.update(src_tokens.size(0))
+            wps_meter.update(trans_info.src_tokens.size(0))
             t.log({"wps": round(wps_meter.avg)})
             num_sentences += 1
 
@@ -165,6 +138,189 @@ def _generate_score(models, args, dataset, dataset_split):
                 print(hypo_str, file=out_file)
 
     return scorer, num_sentences, gen_timer, translation_samples
+
+
+def _iter_first_best_bilingual(args, dataset, dataset_split, translations, align_dict):
+    """Iterate over first best translations.
+
+    This is a generator function which yields information about the first best
+    translations in `translations`. It also prints the n-best translations
+    to stdout.
+
+    Args:
+        args: Command-line arguments.
+        dataset: Dataset object with source and target sentences.
+        dataset_split: Name of the test set split in `dataset`.
+        translations: Batched translation iterator, as returned by
+            SequenceGenerator.generate_batched_itr().
+        align_dict: Dictionary for UNK replacement.
+
+    Yields:
+        For each sentence in `translations`, yields a TranslationInfo.
+    """
+    for sample_id, src_tokens, target_tokens, hypos in translations:
+        # Process input and ground truth
+        target_tokens = target_tokens.int().cpu()
+        # Either retrieve the original sentences or regenerate them from tokens.
+        if align_dict is not None:
+            src_str = dataset.splits[dataset_split].src.get_original_text(sample_id)
+            target_str = dataset.splits[dataset_split].dst.get_original_text(sample_id)
+        else:
+            src_str = dataset.src_dict.string(src_tokens, args.remove_bpe)
+            target_str = dataset.dst_dict.string(
+                target_tokens, args.remove_bpe, escape_unk=True
+            )
+
+        if not args.quiet:
+            print(f"S-{sample_id}\t{src_str}")
+            print(f"T-{sample_id}\t{target_str}")
+
+        # Process top predictions
+        for i, hypo in enumerate(hypos[: min(len(hypos), args.nbest)]):
+            hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
+                hypo_tokens=hypo["tokens"].int().cpu(),
+                src_str=src_str,
+                alignment=hypo["alignment"].int().cpu(),
+                align_dict=align_dict,
+                dst_dict=dataset.dst_dict,
+                remove_bpe=args.remove_bpe,
+            )
+
+            if not args.quiet:
+                print(f"H-{sample_id}\t{hypo['score']}\t{hypo_str}")
+                print(
+                    "A-{}\t{}".format(
+                        sample_id,
+                        " ".join(map(lambda x: str(utils.item(x)), alignment)),
+                    )
+                )
+
+            if i == 0:
+                if align_dict is not None or args.remove_bpe is not None:
+                    # Convert back to tokens for evaluation with unk replacement
+                    # and/or without BPE
+                    target_tokens = tokenizer.Tokenizer.tokenize(
+                        target_str, dataset.dst_dict, add_if_not_exist=True
+                    )
+                yield TranslationInfo(
+                    sample_id=sample_id,
+                    src_tokens=src_tokens,
+                    target_tokens=target_tokens,
+                    hypo_tokens=hypo_tokens,
+                    src_str=src_str,
+                    target_str=target_str,
+                    hypo_str=hypo_str,
+                )
+
+
+def _iter_first_best_multilingual(
+    args, dataset, dataset_split, translations, align_dict
+):
+    """Like _iter_first_best_bilingual but for multilingual NMT."""
+    src_dict = dataset.src_dict
+    target_dict = dataset.dst_dict
+    src_dicts = None
+    target_dicts = None
+    if hasattr(args, "multiling_source_vocab_file"):
+        src_dicts = [
+            pytorch_translate_dictionary.Dictionary.load(p)
+            for p in args.multiling_source_vocab_file
+        ]
+    if hasattr(args, "multiling_target_vocab_file"):
+        target_dicts = [
+            pytorch_translate_dictionary.Dictionary.load(p)
+            for p in args.multiling_target_vocab_file
+        ]
+    for sample_id, src_tokens, target_tokens, hypos in translations:
+        # Process input and ground truth
+        target_tokens = target_tokens.int().cpu()
+        src_lang_id = (
+            src_tokens[-1] - pytorch_translate_data.MULTILING_DIALECT_ID_OFFSET
+        )
+        target_lang_id = (
+            target_tokens[0] - pytorch_translate_data.MULTILING_DIALECT_ID_OFFSET
+        )
+        src_tokens = src_tokens[:-1]
+        target_tokens = target_tokens[1:]
+        # Select dictionaries
+        if src_dicts:
+            src_dict = src_dicts[src_lang_id]
+        if target_dicts:
+            target_dict = target_dicts[target_lang_id]
+        # Either retrieve the original sentences or regenerate them from tokens.
+        if align_dict is not None:
+            src_str = dataset.splits[dataset_split].src.get_original_text(sample_id)
+            target_str = dataset.splits[dataset_split].dst.get_original_text(sample_id)
+        else:
+            src_str = src_dict.string(src_tokens, args.remove_bpe)
+            target_str = target_dict.string(
+                target_tokens, args.remove_bpe, escape_unk=True
+            )
+
+        if not args.quiet:
+            print(f"S-{sample_id}\tsrc_lang={src_lang_id}\t{src_str}")
+            print(f"T-{sample_id}\ttrg_lang={target_lang_id}\t{target_str}")
+
+        # Process top predictions
+        for i, hypo in enumerate(hypos[: min(len(hypos), args.nbest)]):
+            hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
+                hypo_tokens=hypo["tokens"].int().cpu()[1:],
+                src_str=src_str,
+                alignment=hypo["alignment"].int().cpu()[1:],
+                align_dict=align_dict,
+                dst_dict=target_dict,
+                remove_bpe=args.remove_bpe,
+            )
+
+            if not args.quiet:
+                print(f"H-{sample_id}\t{hypo['score']}\t{hypo_str}")
+                print(
+                    "A-{}\t{}".format(
+                        sample_id,
+                        " ".join(map(lambda x: str(utils.item(x)), alignment)),
+                    )
+                )
+
+            # Score only the top hypothesis
+            if i == 0:
+                if align_dict is not None or args.remove_bpe is not None:
+                    # Convert back to tokens for evaluation with unk replacement
+                    # and/or without BPE
+                    target_tokens = tokenizer.Tokenizer.tokenize(
+                        target_str, target_dict, add_if_not_exist=True
+                    )
+                yield TranslationInfo(
+                    sample_id=sample_id,
+                    src_tokens=src_tokens,
+                    target_tokens=target_tokens,
+                    hypo_tokens=hypo_tokens,
+                    src_str=src_str,
+                    target_str=target_str,
+                    hypo_str=hypo_str,
+                )
+
+
+def add_args(parser):
+    group = parser.add_argument_group("Generation")
+    group.add_argument(
+        "--word-reward",
+        type=float,
+        default=0.0,
+        help=(
+            "Value to add to (log-prob) score for each token except EOS. "
+            "IMPORTANT NOTE: higher values of --lenpen and --word-reward "
+            "both encourage longer translations, while higher values of "
+            "--unkpen penalize UNKs more."
+        ),
+    )
+    group.add_argument(
+        "--model-weights",
+        default="",
+        help=(
+            "Interpolation weights for ensembles. Comma-separated list of "
+            "floats with length equal to the number of models in the ensemble."
+        ),
+    )
 
 
 def get_parser_with_args():
@@ -294,17 +450,28 @@ def generate(args):
         and a.reverse_source == reverse_source
         for a in model_args
     )
-    dataset.splits[
-        args.gen_subset
-    ] = pytorch_translate_data.make_language_pair_dataset_from_text(
-        source_text_file=args.source_text_file,
-        target_text_file=args.target_text_file,
-        source_dict=src_dict,
-        target_dict=dst_dict,
-        append_eos=append_eos_to_source,
-        reverse_source=reverse_source,
-        char_source_dict=char_source_dict,
-    )
+    if pytorch_translate_data.is_multilingual(args):
+        gen_split = pytorch_translate_data.make_language_pair_dataset_from_text_multilingual(
+            source_text_file=args.source_text_file,
+            target_text_file=args.target_text_file,
+            source_lang_id=args.multiling_source_lang_id,
+            target_lang_id=args.multiling_target_lang_id,
+            source_dict=src_dict,
+            target_dict=dst_dict,
+            append_eos=append_eos_to_source,
+            reverse_source=reverse_source,
+        )
+    else:
+        gen_split = pytorch_translate_data.make_language_pair_dataset_from_text(
+            source_text_file=args.source_text_file,
+            target_text_file=args.target_text_file,
+            source_dict=src_dict,
+            target_dict=dst_dict,
+            append_eos=append_eos_to_source,
+            reverse_source=reverse_source,
+            char_source_dict=char_source_dict,
+        )
+    dataset.splits[args.gen_subset] = gen_split
 
     if args.source_lang is None or args.target_lang is None:
         # record inferred languages in args
