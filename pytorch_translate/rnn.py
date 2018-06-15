@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, PackedSequence, pad_packed_sequence
 import torch.onnx.operators
 from pytorch_translate import rnn_cell  # noqa
+from pytorch_translate import data as pytorch_translate_data
 
 from fairseq import utils
 from fairseq.data import LanguagePairDataset
@@ -17,8 +18,10 @@ from fairseq.models import (
     register_model_architecture,
 )
 
+from pytorch_translate import dictionary as pytorch_translate_dictionary
 from pytorch_translate import vocab_reduction
 from pytorch_translate import word_dropout
+from pytorch_translate.multilingual import MultilingualEncoder, MultilingualDecoder
 from pytorch_translate.ngram import NGramDecoder
 from pytorch_translate.multi_model import MultiEncoder, MultiDecoder
 from pytorch_translate.common_layers import (
@@ -260,7 +263,7 @@ class RNNModel(FairseqModel):
         word_dropout.add_args(parser)
 
     @staticmethod
-    def build_encoder(args, src_dict):
+    def build_single_encoder(args, src_dict):
         if args.sequence_lstm:
             encoder_class = LSTMSequenceEncoder
         else:
@@ -280,7 +283,7 @@ class RNNModel(FairseqModel):
         )
 
     @staticmethod
-    def build_decoder(
+    def build_single_decoder(
         args, src_dict, dst_dict, ngram_decoder=None, project_output=True
     ):
         if ngram_decoder:
@@ -332,18 +335,21 @@ class RNNModel(FairseqModel):
         return decoder
 
     @classmethod
-    def build_model(cls, args, src_dict, dst_dict):
-        """Build a new model instance."""
-        base_architecture(args)
+    def build_encoder(cls, args, src_dict):
+        """Build a new (multi-)encoder instance."""
         if args.multi_encoder is not None:
             encoders = [
-                RNNModel.build_encoder(args, src_dict)
+                RNNModel.build_single_encoder(args, src_dict)
                 for _ in range(args.multi_encoder)
             ]
             encoder = MultiEncoder(src_dict, encoders)
         else:
-            encoder = RNNModel.build_encoder(args, src_dict)
+            encoder = RNNModel.build_single_encoder(args, src_dict)
+        return encoder
 
+    @classmethod
+    def build_decoder(cls, args, src_dict, dst_dict):
+        """Build a new (multi-)decoder instance."""
         if args.multi_decoder is not None:
             ngram_decoder_args = [None] * args.multi_decoder
             if args.ngram_decoder is not None:
@@ -352,7 +358,7 @@ class RNNModel(FairseqModel):
                     ngram_decoder_args = [ngram_decoder_args[0]] * args.multi_decoder
                 assert len(ngram_decoder_args) == args.multi_decoder
             decoders = [
-                RNNModel.build_decoder(
+                RNNModel.build_single_decoder(
                     args, src_dict, dst_dict, n, project_output=False
                 )
                 for n in ngram_decoder_args
@@ -368,8 +374,44 @@ class RNNModel(FairseqModel):
         else:
             if args.multi_encoder:
                 args.encoder_hidden_dim *= args.multi_encoder
-            n = int(args.ngram_decoder) if args.ngram_decoder else None
-            decoder = RNNModel.build_decoder(args, src_dict, dst_dict, n)
+            n = args.ngram_decoder[0] if args.ngram_decoder else None
+            decoder = RNNModel.build_single_decoder(args, src_dict, dst_dict, n)
+        return decoder
+
+    @classmethod
+    def build_model(cls, args, src_dict, dst_dict):
+        """Build a new model instance."""
+        base_architecture(args)
+        if pytorch_translate_data.is_multilingual(args):
+            return RNNModel.build_model_multilingual(args, src_dict, dst_dict)
+        encoder = RNNModel.build_encoder(args, src_dict)
+        decoder = RNNModel.build_decoder(args, src_dict, dst_dict)
+        return cls(encoder, decoder)
+
+    @classmethod
+    def build_model_multilingual(cls, args, src_dict, dst_dict):
+        """Build a new multilingual model instance."""
+        encoders = []
+        src_dict = pytorch_translate_dictionary.MaxVocabDictionary()
+        for dict_path in args.multiling_source_vocab_file:
+            d = pytorch_translate_dictionary.Dictionary.load(dict_path)
+            src_dict.push(d)
+            encoders.append(RNNModel.build_encoder(args, d))
+        encoder = MultilingualEncoder(
+            src_dict,
+            encoders,
+            hidden_dim=args.encoder_hidden_dim,
+            num_layers=args.encoder_layers,
+        )
+        decoders = []
+        dst_dict = pytorch_translate_dictionary.MaxVocabDictionary()
+        for dict_path in args.multiling_target_vocab_file:
+            d = pytorch_translate_dictionary.Dictionary.load(dict_path)
+            dst_dict.push(d)
+            decoders.append(RNNModel.build_decoder(args, None, d))
+        decoder = MultilingualDecoder(
+            dst_dict, decoders, hidden_dim=args.encoder_hidden_dim
+        )
         return cls(encoder, decoder)
 
     def get_targets(self, sample, net_output):
@@ -963,6 +1005,7 @@ def base_architecture(args):
     args.ngram_decoder = getattr(args, "ngram_decoder", None)
     args.multi_encoder = getattr(args, "multi_encoder", None)
     args.multi_decoder = getattr(args, "multi_decoder", None)
+    args.multiling_encoder_lang = getattr(args, "multiling_encoder_lang", None)
     args.cell_type = getattr(args, "cell_type", "lstm")
     args.ngram_activation_type = getattr(args, "ngram_activation_type", "relu")
     vocab_reduction.set_arg_defaults(args)
