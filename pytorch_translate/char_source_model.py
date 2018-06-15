@@ -248,28 +248,48 @@ class CharRNNEncoder(FairseqEncoder):
                 dictionary, word_dropout_params
             )
 
+        # disables sorting and word-length thresholding if True
+        # (enables ONNX tracing of length-sorted input with batch_size = 1)
+        self.onnx_export_model = False
+
     def forward(self, src_tokens, src_lengths, char_inds, word_lengths):
 
         # char_inds has shape (batch_size, max_words_per_sent, max_word_len)
         bsz, seqlen, maxchars = char_inds.size()
 
-        # shape (batch_size, max_words_per_sent)
-        nonzero_word_locations = word_lengths > 0
+        if self.onnx_export_model:
+            assert bsz == 1
+            maxchars_tensor = torch.onnx.operators.shape_as_tensor(char_inds)[2]
+            char_inds_flat_shape = torch.cat(
+                (torch.LongTensor([-1]), maxchars_tensor.view(1))
+            )
+            char_inds_flat = torch.onnx.operators.reshape_from_tensor_shape(
+                char_inds, char_inds_flat_shape
+            ).t()
+            char_rnn_input = self.embed_chars(char_inds_flat)
+            packed_char_input = pack_padded_sequence(
+                char_rnn_input, word_lengths.view(-1)
+            )
+        else:
+            # shape (batch_size, max_words_per_sent)
+            nonzero_word_locations = word_lengths > 0
 
-        # (total_words,)
-        word_lengths_flat = word_lengths[nonzero_word_locations]
+            # (total_words,)
+            word_lengths_flat = word_lengths[nonzero_word_locations]
 
-        # (max_word_length, total_words)
-        char_inds_flat = char_inds[nonzero_word_locations].t()
+            # (max_word_length, total_words)
+            char_inds_flat = char_inds[nonzero_word_locations].t()
 
-        # inputs to RNN must be in descending order of length
-        sorted_word_lengths, word_length_order = torch.sort(
-            word_lengths_flat, descending=True
-        )
+            # inputs to RNN must be in descending order of length
+            sorted_word_lengths, word_length_order = torch.sort(
+                word_lengths_flat, descending=True
+            )
 
-        char_rnn_input = self.embed_chars(char_inds_flat[:, word_length_order])
+            char_rnn_input = self.embed_chars(char_inds_flat[:, word_length_order])
 
-        packed_char_input = pack_padded_sequence(char_rnn_input, sorted_word_lengths)
+            packed_char_input = pack_padded_sequence(
+                char_rnn_input, sorted_word_lengths
+            )
 
         # h_last shape: (num_layers * num_directions, batch_size, hidden_dim)
         _, (h_last, _) = self.char_lstm_encoder(packed_char_input)
@@ -278,13 +298,17 @@ class CharRNNEncoder(FairseqEncoder):
         # concatenating forward and backward outputs at end/beginning of words
         char_rnn_output = torch.cat((h_last[-2, :, :], h_last[-1, :, :]), dim=1)
 
-        # "unsort" (total_words, char_rnn_units)
-        _, inverted_word_length_order = torch.sort(word_length_order)
-        unsorted_rnn_output = char_rnn_output[inverted_word_length_order, :]
+        if self.onnx_export_model:
+            # (seqlen, bsz==1, char_rnn_units)
+            x = char_rnn_output.unsqueeze(1)
+        else:
+            # "unsort" (total_words, char_rnn_units)
+            _, inverted_word_length_order = torch.sort(word_length_order)
+            unsorted_rnn_output = char_rnn_output[inverted_word_length_order, :]
 
-        x = char_rnn_output.new(bsz, seqlen, unsorted_rnn_output.shape[1])
-        x[nonzero_word_locations] = unsorted_rnn_output
-        x = x.transpose(0, 1)  # (seqlen, bsz, char_rnn_units)
+            x = char_rnn_output.new(bsz, seqlen, unsorted_rnn_output.shape[1])
+            x[nonzero_word_locations] = unsorted_rnn_output
+            x = x.transpose(0, 1)  # (seqlen, bsz, char_rnn_units)
 
         if self.embed_tokens is not None:
             embedded_tokens = self.embed_tokens(src_tokens)
