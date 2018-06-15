@@ -12,7 +12,7 @@ import torch.onnx.operators
 from torch.onnx import ExportTypes
 
 from fairseq import utils
-from pytorch_translate import dictionary, rnn  # noqa
+from pytorch_translate import char_source_model, dictionary, rnn  # noqa
 
 from caffe2.python.predictor import predictor_exporter
 from caffe2.python import core, dyndep, workspace
@@ -1143,6 +1143,8 @@ class CharSourceEncoderEnsemble(nn.Module):
         super().__init__()
         self.models = models
         for i, model in enumerate(self.models):
+            if isinstance(model.encoder, char_source_model.CharRNNEncoder):
+                model.encoder.onnx_export_model = True
             self._modules[f"model_{i}"] = model
 
     def forward(self, src_tokens, src_lengths, char_inds, word_lengths):
