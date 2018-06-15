@@ -168,10 +168,35 @@ def create_lexical_dictionaries():
     return [lexical_dictionary_path]
 
 
+def create_test_text_files():
+    src = write_lines_to_temp_file(
+        [
+            "srcA srcB srcC srcD",
+            "srcA srcA srcB srcB srcC srcC",
+            "srcA srcA srcA srcA srcB srcB srcB srcB",
+            "srcA srcA srcA srcA srcA srcA srcA srcA srcA srcA",
+        ]
+    )
+    trg = write_lines_to_temp_file(
+        [
+            "trgA trgA trgA trgA trgA trgA trgA trgA trgA trgA",
+            "trgA trgA trgA trgA trgB trgB trgB trgB",
+            "trgA trgA trgB trgB trgC trgC",
+            "trgA trgB trgC trgD",
+        ]
+    )
+    return src, trg
+
+
 def write_lines_to_temp_file(lines):
+    temp_file_path = make_temp_file()
+    with codecs.open(temp_file_path, "w", "utf-8") as temp_file:
+        temp_file.write("\n".join(lines) + "\n")
+    return temp_file_path
+
+
+def make_temp_file():
     temp_file = tempfile.NamedTemporaryFile(mode="w", delete=False, dir="/tmp")
     temp_file_path = temp_file.name
     temp_file.close()
-    with codecs.open(temp_file_path, "w", "utf-8") as temp_file:
-        temp_file.write("\n".join(lines) + "\n")
     return temp_file_path

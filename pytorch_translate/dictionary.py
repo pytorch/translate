@@ -81,7 +81,7 @@ class Dictionary(dictionary.Dictionary):
     @classmethod
     def build_vocab_file(
         cls,
-        corpus_file: str,
+        corpus_files: List[str],
         vocab_file: str,
         max_vocab_size: int,
         tokens_with_penalty: Optional[str] = None,
@@ -90,9 +90,10 @@ class Dictionary(dictionary.Dictionary):
         d = cls()
 
         tokenize = char_tokenize if is_char_vocab else tokenizer.tokenize_line
-        tokenizer.Tokenizer.add_file_to_dictionary(
-            filename=corpus_file, dict=d, tokenize=tokenize
-        )
+        for corpus_file in corpus_files:
+            tokenizer.Tokenizer.add_file_to_dictionary(
+                filename=corpus_file, dict=d, tokenize=tokenize
+            )
 
         # Set indices to receive penalty
         if tokens_with_penalty:
@@ -123,7 +124,7 @@ class Dictionary(dictionary.Dictionary):
     @classmethod
     def build_vocab_file_if_nonexistent(
         cls,
-        corpus_file: str,
+        corpus_files: List[str],
         vocab_file: str,
         max_vocab_size: int,
         tokens_with_penalty: Optional[str] = None,
@@ -142,7 +143,7 @@ class Dictionary(dictionary.Dictionary):
             "Creating new vocab file at that path."
         )
         return cls.build_vocab_file(
-            corpus_file=corpus_file,
+            corpus_files=corpus_files,
             vocab_file=vocab_file,
             max_vocab_size=max_vocab_size,
             tokens_with_penalty=tokens_with_penalty,
@@ -160,3 +161,25 @@ class CharDictionary(Dictionary):
         self.eow_index = self.add_symbol("<eow>")
         self.word_delim_index = self.add_symbol(word_delim)
         self.nspecial += 3
+
+
+class MaxVocabDictionary(Dictionary):
+    """This dictionary takes the form of the largest dictionary supplied via push()."""
+
+    def push(self, d: Dictionary):
+        if len(d) > len(self):
+            self.copy_from(d)
+
+    def copy_from(self, d: dictionary.Dictionary):
+        """Makes self a shallow copy of d."""
+        self.unk_word = d.unk_word
+        self.pad_word = d.pad_word
+        self.eos_word = d.eos_word
+        self.symbols = d.symbols
+        self.count = d.count
+        self.indices = d.indices
+        self.pad_index = d.pad_index
+        self.eos_index = d.eos_index
+        self.unk_index = d.unk_index
+        self.nspecial = d.nspecial
+        self.lexicon_indices = d.lexicon_indices

@@ -201,6 +201,97 @@ def add_preprocessing_args(parser):
     )
 
     group.add_argument(
+        "--multiling-encoder-lang",
+        action="append",
+        metavar="SRC",
+        help="For multilingual models only. Use this argument repeatedly to "
+        "specify a list of encoder languages. The multilingual model contains "
+        "a separate encoder for each language in this list.",
+    )
+    group.add_argument(
+        "--multiling-decoder-lang",
+        action="append",
+        metavar="TARGET",
+        help="For multilingual models only. Use this argument repeatedly to "
+        "specify a list of decoder languages. The multilingual model contains "
+        "a separate decoder for each language in this list.",
+    )
+    group.add_argument(
+        "--multiling-source-lang",
+        action="append",
+        metavar="SRC",
+        help="For multilingual models only. Use this argument repeatedly to "
+        "specify a list of corpus source languages, where the n-th language is "
+        "the source language of the n-th training corpus. Each entry must be "
+        "in --multiling-encoder-lang.",
+    )
+    group.add_argument(
+        "--multiling-target-lang",
+        action="append",
+        metavar="TARGET",
+        help="For multilingual models only. Use this argument repeatedly to "
+        "specify a list of corpus target languages, where the n-th language is "
+        "the target language of the n-th training corpus. Each entry must be "
+        "in --multiling-decoder-lang.",
+    )
+    group.add_argument(
+        "--multiling-source-vocab-file",
+        action="append",
+        metavar="FILE",
+        help="For multilingual models only. Use this argument repeatedly to "
+        "specify the path to the dictionary for the n-th entry in "
+        "--multiling-encoder-lang",
+    )
+    group.add_argument(
+        "--multiling-target-vocab-file",
+        action="append",
+        metavar="FILE",
+        help="For multilingual models only. Use this argument repeatedly to "
+        "specify the path to the dictionary for the n-th entry in "
+        "--multiling-decoder-lang",
+    )
+    group.add_argument(
+        "--multiling-train-source-text-file",
+        action="append",
+        metavar="FILE",
+        help="For multilingual models only. Use this argument repeatedly to "
+        "specify paths to training source samples. The n-th entry should be "
+        "in the n-th language in --multiling-source-lang.",
+    )
+    group.add_argument(
+        "--multiling-train-target-text-file",
+        action="append",
+        metavar="FILE",
+        help="For multilingual models only. Use this argument repeatedly to "
+        "specify paths to training target samples. The n-th entry should be "
+        "in the n-th language in --multiling-target-lang.",
+    )
+    group.add_argument(
+        "--multiling-train-oversampling",
+        action="append",
+        type=int,
+        help="For multilingual models only. Use this argument repeatedly to "
+        "oversample corpora. The n-th training corpus is oversampled by the n-"
+        "the entry. No oversampling if not specified.",
+    )
+    group.add_argument(
+        "--multiling-eval-source-text-file",
+        action="append",
+        metavar="FILE",
+        help="For multilingual models only. Use this argument repeatedly to "
+        "specify paths to eval source samples. The n-th entry should be "
+        "in the n-th language in --multiling-source-lang.",
+    )
+    group.add_argument(
+        "--multiling-eval-target-text-file",
+        action="append",
+        metavar="FILE",
+        help="For multilingual models only. Use this argument repeatedly to "
+        "specify paths to eval target samples. The n-th entry should be "
+        "in the n-th language in --multiling-target-lang.",
+    )
+
+    group.add_argument(
         "--penalized-target-tokens-file",
         default="",
         metavar="FILE",
