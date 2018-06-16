@@ -6,6 +6,7 @@ import torch
 
 from pytorch_translate import rnn  # noqa
 from pytorch_translate.ensemble_export import (
+    CharSourceEncoderEnsemble,
     DecoderBatchedStepEnsemble,
     DecoderStepEnsemble,
     EncoderEnsemble,
@@ -17,7 +18,8 @@ def get_parser_with_args():
         description=("Export PyTorch-trained FBTranslate models to Caffe2 components")
     )
     parser.add_argument(
-        "--path", "--checkpoint",
+        "--path",
+        "--checkpoint",
         action="append",
         nargs="+",
         help="PyTorch checkpoint file (at least one required)",
@@ -65,6 +67,15 @@ def get_parser_with_args():
         action="store_true",
         help="Decoder step has entire beam as input/output",
     )
+    parser.add_argument(
+        "--char-source",
+        action="store_true",
+        help=(
+            "Indicates encoder uses char_source architecture (taking both "
+            "token and character numberized inputs)."
+        ),
+    )
+
     return parser
 
 
@@ -87,7 +98,12 @@ def export(args):
     assert_required_args_are_set(args)
     checkpoint_filenames = [arg[0] for arg in args.path]
 
-    encoder_ensemble = EncoderEnsemble.build_from_checkpoints(
+    if args.char_source:
+        encoder_class = CharSourceEncoderEnsemble
+    else:
+        encoder_class = EncoderEnsemble
+
+    encoder_ensemble = encoder_class.build_from_checkpoints(
         checkpoint_filenames=checkpoint_filenames,
         src_dict_filename=args.source_vocab_file,
         dst_dict_filename=args.target_vocab_file,
@@ -117,7 +133,16 @@ def export(args):
             np.array(token_list, dtype="int64").reshape(-1, 1)
         )
         src_lengths = torch.IntTensor(np.array([len(token_list)], dtype="int32"))
-        pytorch_encoder_outputs = encoder_ensemble(src_tokens, src_lengths)
+        if args.char_source:
+            char_inds = torch.LongTensor(np.ones((1, 5, 3), dtype="int64"))
+            word_lengths = torch.LongTensor(np.array([3] * 5, dtype="int64")).reshape(
+                1, 5
+            )
+            pytorch_encoder_outputs = encoder_ensemble(
+                src_tokens, src_lengths, char_inds, word_lengths
+            )
+        else:
+            pytorch_encoder_outputs = encoder_ensemble(src_tokens, src_lengths)
 
         decoder_step_ensemble.save_to_db(
             args.decoder_output_file, pytorch_encoder_outputs

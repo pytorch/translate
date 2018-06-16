@@ -48,8 +48,15 @@ def load_models_from_checkpoints(
     models = []
     for filename in checkpoint_filenames:
         checkpoint_data = torch.load(filename, map_location="cpu")
+        if checkpoint_data["args"].arch == "char_source":
+            model = char_source_model.CharSourceModel.build_model(
+                checkpoint_data["args"], src_dict, dst_dict
+            )
+        else:
+            model = rnn.RNNModel.build_model(
+                checkpoint_data["args"], src_dict, dst_dict
+            )
 
-        model = rnn.RNNModel.build_model(checkpoint_data["args"], src_dict, dst_dict)
         model.load_state_dict(checkpoint_data["model"])
         models.append(model)
 
@@ -377,10 +384,7 @@ class DecoderStepEnsemble(nn.Module):
             checkpoint_filenames, src_dict_filename, dst_dict_filename
         )
         return DecoderStepEnsemble(
-            models,
-            beam_size=beam_size,
-            word_reward=word_reward,
-            unk_reward=unk_reward,
+            models, beam_size=beam_size, word_reward=word_reward, unk_reward=unk_reward
         )
 
     def save_to_db(self, output_path, encoder_ensemble_outputs):
@@ -625,10 +629,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
             checkpoint_filenames, src_dict_filename, dst_dict_filename
         )
         return DecoderBatchedStepEnsemble(
-            models,
-            beam_size=beam_size,
-            word_reward=word_reward,
-            unk_reward=unk_reward,
+            models, beam_size=beam_size, word_reward=word_reward, unk_reward=unk_reward
         )
 
     def save_to_db(self, output_path, encoder_ensemble_outputs):
@@ -845,6 +846,8 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
         super().__init__()
         self.models = models
         for i, model in enumerate(self.models):
+            if isinstance(model.encoder, char_source_model.CharRNNEncoder):
+                model.encoder.onnx_export_model = True
             model.decoder.attention.src_length_masking = False
             self._modules[f"model_{i}"] = model
 
@@ -943,9 +946,7 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
         )
 
         if possible_translation_tokens is not None:
-            reduced_indices = (
-                torch.zeros(self.vocab_size).long().fill_(self.unk_token)
-            )
+            reduced_indices = torch.zeros(self.vocab_size).long().fill_(self.unk_token)
             # ONNX-exportable arange (ATen op)
             possible_translation_token_range = torch._dim_arange(
                 like=possible_translation_tokens, dim=0
@@ -992,12 +993,7 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
 
 
 class ForcedDecoder(torch.jit.ScriptModule):
-    def __init__(
-        self,
-        model_list,
-        word_reward=0,
-        unk_reward=0,
-    ):
+    def __init__(self, model_list, word_reward=0, unk_reward=0):
         super().__init__()
         self.models = model_list
         self.word_reward = word_reward
@@ -1113,11 +1109,7 @@ class ForcedDecoder(torch.jit.ScriptModule):
         models = load_models_from_checkpoints(
             checkpoint_filenames, src_dict_filename, dst_dict_filename
         )
-        return ForcedDecoder(
-            models,
-            word_reward=word_reward,
-            unk_reward=unk_reward,
-        )
+        return ForcedDecoder(models, word_reward=word_reward, unk_reward=unk_reward)
 
     def save_to_db(self, output_path):
         """
