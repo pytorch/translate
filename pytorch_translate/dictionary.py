@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
 import os
+import re
 from typing import Dict, List, Optional, Set
 
-from fairseq import dictionary, tokenizer
+from fairseq import dictionary
 from pytorch_translate import vocab_constants
 
 
@@ -19,6 +20,8 @@ TAGS = [
     "@NOTRANSLATE",
 ]
 
+SPACE_NORMALIZER = re.compile("\s+")
+
 
 def default_dictionary_path(save_dir: str, dialect: str) -> str:
     return os.path.join(save_dir, f"dictionary-{dialect}.txt")
@@ -28,8 +31,14 @@ def default_char_dictionary_path(save_dir: str, dialect: str) -> str:
     return os.path.join(save_dir, f"char-dictionary-{dialect}.txt")
 
 
-def char_tokenize(line):
-    words = tokenizer.tokenize_line(line)
+def tokenize_line(line):
+    line = SPACE_NORMALIZER.sub(" ", line)
+    line = line.strip()
+    return line.split()
+
+
+def char_tokenize_line(line):
+    words = tokenize_line(line)
     chars = []
     for word in words:
         if word in TAGS:
@@ -37,6 +46,14 @@ def char_tokenize(line):
         else:
             chars.extend(c for c in word)
     return chars
+
+
+def add_file_to_dictionary(filename, dict, tokenize):
+    with open(filename, "r", encoding="utf-8") as f:
+        for line in f:
+            for word in tokenize(line):
+                dict.add_symbol(word)
+            dict.add_symbol(dict.eos_word)
 
 
 class Dictionary(dictionary.Dictionary):
@@ -89,11 +106,9 @@ class Dictionary(dictionary.Dictionary):
     ) -> "Dictionary":  # https://www.python.org/dev/peps/pep-0484/#forward-references
         d = cls()
 
-        tokenize = char_tokenize if is_char_vocab else tokenizer.tokenize_line
+        tokenize = char_tokenize_line if is_char_vocab else tokenize_line
         for corpus_file in corpus_files:
-            tokenizer.Tokenizer.add_file_to_dictionary(
-                filename=corpus_file, dict=d, tokenize=tokenize
-            )
+            add_file_to_dictionary(filename=corpus_file, dict=d, tokenize=tokenize)
 
         # Set indices to receive penalty
         if tokens_with_penalty:
