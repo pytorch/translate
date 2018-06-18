@@ -35,7 +35,7 @@ class TranslationInfo(NamedTuple):
     hypo_str: str
 
 
-def _generate_score(models, args, dataset, dataset_split):
+def _generate_score(models, args, dataset, dataset_split, optimize=True):
     use_cuda = torch.cuda.is_available() and not args.cpu
 
     # Load ensemble
@@ -43,10 +43,11 @@ def _generate_score(models, args, dataset, dataset_split):
         print("| loading model(s) from {}".format(", ".join(args.path)))
 
     # Optimize ensemble for generation
-    for model in models:
-        model.make_generation_fast_(
-            beamable_mm_beam_size=None if args.no_beamable_mm else args.beam
-        )
+    if optimize:
+        for model in models:
+            model.make_generation_fast_(
+                beamable_mm_beam_size=None if args.no_beamable_mm else args.beam
+            )
 
     # Initialize generator
     model_weights = None
