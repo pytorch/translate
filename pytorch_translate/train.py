@@ -5,6 +5,7 @@ import collections
 import itertools
 import math
 import multiprocessing
+import numpy as np
 import os
 import random
 import shutil
@@ -47,8 +48,8 @@ def get_parser_with_args():
     optimization_group = options.add_optimization_args(parser)
     pytorch_translate_options.expand_optimization_args(optimization_group)
     # Adds args related to checkpointing.
-    checkointing_group = options.add_checkpoint_args(parser)
-    pytorch_translate_options.expand_checkpointing_args(checkointing_group)
+    checkpointing_group = options.add_checkpoint_args(parser)
+    pytorch_translate_options.expand_checkpointing_args(checkpointing_group)
     # Add model related args
     options.add_model_args(parser)
     # Adds args for generating intermediate BLEU eval while training.
@@ -207,6 +208,25 @@ def setup_training(args):
     return extra_state, trainer, dataset
 
 
+def prune(args, trainer):
+    """Sets some model weights to zero based on pruning scheme"""
+    assert args.pruning_percentile > 0 and args.pruning_percentile < 100, (
+        "--pruning-percentile must be in (0, 100)"
+    )
+    all_params = []
+    for name, params in trainer.model.named_parameters():
+        if "weight" in name:
+            all_params.append(np.abs(np.reshape(params.data, (-1, 1))))
+    threshold = np.percentile(np.vstack(all_params), args.pruning_percentile)
+
+    prune_masks = {}
+    for name, params in trainer.model.named_parameters():
+        if "weight" in name:
+            prune_masks[name] = (np.abs(params.data) < threshold)
+            params.data[prune_masks[name]] = 0.0
+
+    return prune_masks
+
 def single_process_main(args):
     """Train the model for multiple epochs."""
     extra_state, trainer, dataset = setup_training(args)
@@ -228,6 +248,9 @@ def train(args, extra_state, trainer, dataset):
     lr = trainer.get_lr()
     train_meter = StopwatchMeter()
     train_meter.start()
+    do_prune = (args.pruning_percentile > 0)
+    extra_state["retraining"] = False
+    prune_masks = None
     while lr > args.min_lr and extra_state["epoch"] <= max_epoch:
         """Train the model for one epoch."""
 
@@ -240,6 +263,12 @@ def train(args, extra_state, trainer, dataset):
         )
 
         for i, sample in enumerate(itr, start=starting_offset):
+
+            if extra_state["retraining"]:
+                for name, params in trainer.model.named_parameters():
+                    if "weight" in name:
+                        params.data[prune_masks[name]] = 0.0
+
             log_output = trainer.train_step(sample)
 
             train_stats = log_mid_epoch_stats(
@@ -323,38 +352,47 @@ def train(args, extra_state, trainer, dataset):
             trainer=trainer, progress=progress, extra_meters=extra_meters
         )
 
-        if stop_training_mid_epoch:
-            break
-
-        # batch_offset being None denotes the end of an epoch.
-        extra_state["batch_offset"] = None
-        (
-            val_loss,
-            val_ppl,
-            val_bleu,
-            stop_training_end_of_epoch,
-            translation_samples
-        ) = validate_save_and_evaluate_bleu(
-            args=args,
-            trainer=trainer,
-            dataset=dataset,
-            extra_state=extra_state,
-            do_validate=True,
-            do_save=not args.no_save and not args.no_end_of_epoch_checkpoints,
-            do_eval_bleu=args.generate_bleu_eval_per_epoch,
-        )
-        extra_state["val_loss"] = val_loss
-        yield (
-            trainer.get_num_updates(),
-            {
-                "train_ppl": train_stats["ppl"],
-                "tune_ppl": val_ppl,
-                "tune_bleu": val_bleu,
-                "translation_samples": translation_samples,
-            },
-        )
-        if stop_training_end_of_epoch:
-            break
+        # Run a training step if not stopping mid-epoch.
+        if not stop_training_mid_epoch:
+            # batch_offset being None denotes the end of an epoch.
+            extra_state["batch_offset"] = None
+            (
+                val_loss,
+                val_ppl,
+                val_bleu,
+                stop_training_end_of_epoch,
+                translation_samples,
+            ) = validate_save_and_evaluate_bleu(
+                args=args,
+                trainer=trainer,
+                dataset=dataset,
+                extra_state=extra_state,
+                do_validate=True,
+                do_save=not args.no_save and not args.no_end_of_epoch_checkpoints,
+                do_eval_bleu=args.generate_bleu_eval_per_epoch,
+            )
+            extra_state["val_loss"] = val_loss
+            yield (
+                trainer.get_num_updates(),
+                {
+                    "train_ppl": train_stats["ppl"],
+                    "tune_ppl": val_ppl,
+                    "tune_bleu": val_bleu,
+                    "translation_samples": translation_samples,
+                },
+            )
+        if stop_training_mid_epoch or stop_training_end_of_epoch:
+            if do_prune and not extra_state["retraining"]:
+                lr *= args.retrain_lr_ratio
+                extra_state["validate"]["lowest_loss"] = np.inf
+                extra_state["evaluate_bleu"]["best"] = 0
+                stop_training_mid_epoch = False
+                stop_training_end_of_epoch = False
+                prune_masks = prune(args, trainer)
+                extra_state["retraining"] = True
+                print("| Finished pruning and switching to retraining")
+            else:
+                break
 
         lr = trainer.lr_step(extra_state["epoch"], val_loss)
         extra_state["epoch"] += 1
