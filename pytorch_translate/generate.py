@@ -87,6 +87,7 @@ def _generate_score(models, args, dataset, dataset_split, optimize=True):
     max_positions = min(model.max_encoder_positions() for model in models)
     itr = dataset.eval_dataloader(
         dataset_split,
+        max_tokens=args.max_tokens,
         max_sentences=args.max_sentences,
         max_positions=max_positions,
         skip_invalid_size_inputs_valid_test=(args.skip_invalid_size_inputs_valid_test),
