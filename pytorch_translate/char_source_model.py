@@ -361,11 +361,6 @@ class CharRNNEncoder(FairseqEncoder):
             final_hiddens.append(h_last)
             final_cells.append(c_last)
 
-            if self.dropout_out != 0:
-                current_output = F.dropout(
-                    current_output, p=self.dropout_out, training=self.training
-                )
-
             if self.residual_level is not None and i >= self.residual_level:
                 packed_input[0] = packed_input.clone()[0] + current_output[0]
             else:
