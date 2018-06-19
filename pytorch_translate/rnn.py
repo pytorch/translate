@@ -128,6 +128,13 @@ class RNNModel(FairseqModel):
             help="decoder output embedding dimension",
         )
         parser.add_argument(
+            "--decoder-tie-embeddings",
+            default=False,
+            action="store_true",
+            help="tie the decoder word embeddings with the output projection "
+            "weights (requires that the embedding dims be of the same size)",
+        )
+        parser.add_argument(
             "--attention-type",
             type=str,
             metavar="EXPR",
@@ -331,6 +338,7 @@ class RNNModel(FairseqModel):
                 residual_level=args.residual_level,
                 averaging_encoder=args.averaging_encoder,
                 project_output=project_output,
+                tie_embeddings=args.decoder_tie_embeddings,
             )
         return decoder
 
@@ -765,6 +773,7 @@ class RNNDecoder(DecoderWithOutputProjection):
         residual_level=None,
         averaging_encoder=False,
         project_output=True,
+        tie_embeddings=False,
     ):
         super().__init__(
             src_dict,
@@ -781,6 +790,7 @@ class RNNDecoder(DecoderWithOutputProjection):
         self.dropout_out = dropout_out
         self.attention_type = attention_type
         self.residual_level = residual_level
+        self.tie_embeddings = tie_embeddings
 
         num_embeddings = len(dst_dict)
         padding_idx = dst_dict.pad()
@@ -790,6 +800,13 @@ class RNNDecoder(DecoderWithOutputProjection):
             padding_idx=padding_idx,
             freeze_embed=freeze_embed,
         )
+        if self.tie_embeddings:
+            assert self.embed_dim == self.out_embed_dim, (
+                "Input embeddings and output projections must have the same "
+                "dimension for the weights to be tied"
+            )
+            self.embed_tokens.weight = self.output_projection_w
+
         self.hidden_dim = hidden_dim
         self.averaging_encoder = averaging_encoder
 
@@ -1011,6 +1028,7 @@ def base_architecture(args):
     vocab_reduction.set_arg_defaults(args)
     word_dropout.set_arg_defaults(args)
     args.sequence_lstm = getattr(args, "sequence_lstm", False)
+    args.decoder_tie_embeddings = getattr(args, "decoder_tie_embeddings", False)
 
 
 @register_model_architecture("rnn", "rnn_big_test")
