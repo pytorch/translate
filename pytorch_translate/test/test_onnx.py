@@ -462,6 +462,7 @@ class TestONNX(unittest.TestCase):
         test_args.char_embed_dim = 8
         test_args.char_cnn_params = "[(10, 3), (10, 5)]"
         test_args.char_cnn_nonlinear_fn = "tanh"
+        test_args.char_cnn_pool_type = "max"
         test_args.char_cnn_num_highway_layers = 2
 
         self._test_ensemble_encoder_export_char_source(test_args)
