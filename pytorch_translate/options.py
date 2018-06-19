@@ -448,6 +448,14 @@ def expand_checkpointing_args(group):
         "number of checkpoints kept around is automatically adjusted "
         "to allow BLEU to work properly.",
     )
+    group.add_argument(
+        "--pretrained-weights-file",
+        default="",
+        type=str,
+        help="Load the model weights from this file. This is different from "
+        "--restore-file in that it only loads the weights (and not the optimizer "
+        "state). This option is superseded by --restore-file so don't use both.",
+    )
     return group
 
 
