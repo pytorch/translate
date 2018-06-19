@@ -59,6 +59,14 @@ class CharSourceModel(rnn.RNNModel):
             help=("Nonlinearity applied to char conv outputs. Values: relu, tanh."),
         )
         parser.add_argument(
+            "--char-cnn-pool-type",
+            type=str,
+            default="max",
+            metavar="EXPR",
+            help=("Pooling function of input sequence outputs. "
+                  "Values: logsumexp, max, mean, meanmax."),
+        )
+        parser.add_argument(
             "--char-cnn-num-highway-layers",
             type=int,
             default=0,
@@ -88,6 +96,7 @@ class CharSourceModel(rnn.RNNModel):
                 freeze_embed=args.encoder_freeze_embed,
                 char_cnn_params=args.char_cnn_params,
                 char_cnn_nonlinear_fn=args.char_cnn_nonlinear_fn,
+                char_cnn_pool_type=args.char_cnn_pool_type,
                 char_cnn_num_highway_layers=args.char_cnn_num_highway_layers,
                 num_layers=args.encoder_layers,
                 hidden_dim=args.encoder_hidden_dim,
@@ -396,6 +405,7 @@ class CharCNNEncoder(FairseqEncoder):
         char_cnn_params="[(128, 3), (128, 5)]",
         char_cnn_output_dim=256,
         char_cnn_nonlinear_fn="tanh",
+        char_cnn_pool_type="max",
         char_cnn_num_highway_layers=0,
         hidden_dim=512,
         num_layers=1,
@@ -421,6 +431,7 @@ class CharCNNEncoder(FairseqEncoder):
             embed_dim,
             convolutions_params,
             char_cnn_nonlinear_fn,
+            char_cnn_pool_type,
             char_cnn_num_highway_layers,
         )
 

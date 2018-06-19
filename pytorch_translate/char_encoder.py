@@ -41,7 +41,7 @@ class CharCNNModel(nn.Module):
     A Conv network to generate word embedding from character embeddings, from
     Character-Aware Neural Language Models, https://arxiv.org/abs/1508.06615.
 
-    Components include convolutional filters, max pooling, and
+    Components include convolutional filters, pooling, and
     optional highway network.
     """
     def __init__(
@@ -51,6 +51,7 @@ class CharCNNModel(nn.Module):
         char_embed_dim=32,
         convolutions_params='((128, 3), (128, 5))',
         nonlinear_fn_type='tanh',
+        pool_type='max',
         num_highway_layers=0,
     ):
         super().__init__()
@@ -67,6 +68,7 @@ class CharCNNModel(nn.Module):
             raise Exception(
                 "Invalid nonlinear type: {}".format(nonlinear_fn_type)
             )
+        self.pool_type = pool_type
 
         self.embed_chars = rnn.Embedding(
             num_embeddings=num_chars,
@@ -94,8 +96,8 @@ class CharCNNModel(nn.Module):
 
     def forward(self, char_inds_flat):
         x = self.embed_chars(char_inds_flat)
-
         encoder_padding_mask = char_inds_flat.eq(self.padding_idx)
+        char_lengths = torch.sum(1 - encoder_padding_mask, dim=0)
         if not encoder_padding_mask.any():
             encoder_padding_mask = None
 
@@ -108,7 +110,7 @@ class CharCNNModel(nn.Module):
             conv_output = conv(x.permute(1, 2, 0))
             kernel_outputs.append(conv_output)
         # Pooling over the entire seq
-        pools = [torch.max(conv, dim=2)[0] for conv in kernel_outputs]
+        pools = [self.pooling(conv, char_lengths, dim=2) for conv in kernel_outputs]
         # [total_words, sum(output_channel_dim)]
         encoder_output = torch.cat([p for p in pools], 1)
 
@@ -117,3 +119,19 @@ class CharCNNModel(nn.Module):
 
         # (total_words, output_dim)
         return encoder_output
+
+    def pooling(self, inputs, char_lengths, dim):
+        if self.pool_type == "max":
+            return torch.max(inputs, dim=dim)[0]
+
+        elif self.pool_type == "mean":
+            return torch.mean(inputs, dim=dim)
+
+        elif self.pool_type == "logsumexp":
+            logsumexp = inputs.exp().mean(dim=dim, keepdim=True).log()
+            return logsumexp.squeeze(dim)
+
+        else:
+            raise Exception(
+                "Invalid pool type: {}".format(self.pool_type)
+            )
