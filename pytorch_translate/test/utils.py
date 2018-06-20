@@ -41,6 +41,7 @@ class ModelParamsDict:
         self.averaging_encoder = False
         self.cell_type = cell_type
         self.sequence_lstm = sequence_lstm
+        self.decoder_tie_embeddings = False
         # Training params
         self.criterion = "cross_entropy"
         self.lr = [0.1]
