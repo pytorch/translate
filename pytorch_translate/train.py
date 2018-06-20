@@ -16,7 +16,7 @@ import torch
 
 from typing import Any, Dict, Optional, Tuple
 
-from fairseq import criterions, distributed_utils, models, options, progress_bar
+from fairseq import criterions, distributed_utils, models, options, progress_bar, utils
 from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
 
@@ -29,7 +29,7 @@ from pytorch_translate import dictionary as pytorch_translate_dictionary
 from pytorch_translate import generate
 from pytorch_translate import preprocess
 from pytorch_translate import rnn  # noqa
-from pytorch_translate import utils
+from pytorch_translate.utils import ManagedCheckpoints
 from pytorch_translate.research.word_prediction import word_prediction_criterion  # noqa
 from pytorch_translate.research.word_prediction import word_prediction_model  # noqa
 from pytorch_translate.research.knowledge_distillation import knowledge_distillation_loss # noqa
@@ -194,6 +194,14 @@ def setup_training(args):
         {sum(p.numel() for p in model.parameters())}"
     )
 
+    # Load pretrained model weights if applicable
+    if args.pretrained_weights_file:
+        utils.load_model_state(
+            args.pretrained_weights_file,
+            model,
+            cuda_device=torch.cuda.current_device()
+        )
+
     # Build trainer
     trainer = Trainer(args, model, criterion)
     print(f"| training on {args.distributed_world_size} GPUs")
@@ -203,7 +211,9 @@ def setup_training(args):
         flush=True,
     )
 
-    extra_state = load_existing_checkpoint(args.save_dir, args.restore_file, trainer)
+    extra_state = load_existing_checkpoint(
+        args.save_dir, args.restore_file, trainer
+    )
 
     return extra_state, trainer, dataset
 
@@ -559,7 +569,7 @@ def save_checkpoint(trainer, args, extra_state):
             raise argparse.ArgumentTypeError(
                 "--generate-bleu-eval-avg-checkpoints must be >= 1."
             )
-        extra_state["last_checkpoints"] = utils.ManagedCheckpoints(
+        extra_state["last_checkpoints"] = ManagedCheckpoints(
             max(args.generate_bleu_eval_avg_checkpoints, args.max_checkpoints_kept),
             # Don't auto_clear checkpoints for no_epoch_checkpoints, because
             # we are only going to reuse the same file.
@@ -700,7 +710,7 @@ def _save_averaged_checkpoint(args, extra_state):
     if not hasattr(_save_averaged_checkpoint, "last_avg_checkpoints"):
         if args.max_checkpoints_kept == 0:
             raise argparse.ArgumentTypeError("--max-checkpoints-kept must be != 0.")
-        _save_averaged_checkpoint.last_avg_checkpoints = utils.ManagedCheckpoints(
+        _save_averaged_checkpoint.last_avg_checkpoints = ManagedCheckpoints(
             max(args.max_checkpoints_kept, 1), auto_clear=args.max_checkpoints_kept > 0
         )
 
