@@ -870,11 +870,11 @@ class ErrorHandler(object):
         raise Exception(msg)
 
 
-def run(args, error_queue):
+def run(args, single_process_train, error_queue):
     try:
         torch.cuda.set_device(args.device_id)
         args.distributed_rank = distributed_utils.distributed_init(args)
-        single_process_main(args)
+        single_process_train(args)
     except KeyboardInterrupt:
         pass  # killed by parent, do nothing
     except Exception:
@@ -884,7 +884,7 @@ def run(args, error_queue):
         error_queue.put((args.distributed_rank, traceback.format_exc()))
 
 
-def main(args):
+def main(args, single_process_train):
     # We preprocess the data (generating vocab files and binarized data files
     # if needed) outside of the train clones to prevent them from having to
     # wait while the master clone is doing this.
@@ -895,7 +895,7 @@ def main(args):
     args.distributed_init_method = f"tcp://localhost:{random.randint(10000, 20000)}"
 
     if args.distributed_world_size == 1:
-        return single_process_main(args)
+        return single_process_train(args)
 
     mp = multiprocessing.get_context("spawn")
 
@@ -908,7 +908,10 @@ def main(args):
     for i in range(args.distributed_world_size):
         args.distributed_rank = i
         args.device_id = i
-        procs.append(mp.Process(target=run, args=(args, error_queue), daemon=True))
+        procs.append(mp.Process(
+            target=run,
+            args=(args, single_process_train, error_queue),
+            daemon=True))
         procs[i].start()
         error_handler.add_child(procs[i].pid)
     for p in procs:
@@ -920,4 +923,4 @@ if __name__ == "__main__":
     args = options.parse_args_and_arch(parser)
     validate_and_set_default_args(args)
     print(args)
-    main(args)
+    main(args, single_process_main)
