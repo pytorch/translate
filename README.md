@@ -129,6 +129,42 @@ bash pytorch_translate/examples/train_iwslt14.sh
 
 The pretrained model actually contains two checkpoints that correspond to training twice with random initialization of the parameters. This is useful to obtain ensembles. This dataset is relatively small (~160K sentence pairs), so training will complete in a few hours on a single GPU.
 
+####  Training with tensorboard visualization
+
+We provide support for visualizing training stats with tensorboard. As a dependency, you will need [tensorboard_logger](https://github.com/TeamHG-Memex/tensorboard_logger) installed.
+
+```
+pip install tensorboard_logger
+```
+
+Please also make sure that [tensorboard](https://github.com/tensorflow/tensorboard) is installed. It also comes with `tensorflow` installation.
+
+You can use the above [example script](https://github.com/pytorch/translate/blob/master/pytorch_translate/examples/train_iwslt14.sh) to train with tensorboard, but need to change line 10 from :
+
+```
+CUDA_VISIBLE_DEVICES=0 python3 pytorch_translate/train.py
+```
+to
+
+```
+CUDA_VISIBLE_DEVICES=0 python3 pytorch_translate/train_with_tensorboard.py
+```
+The event log directory for tensorboard can be specified by option `--tensorboard_dir` with a default value: `run-1234`. This directory is appended to your `--save_dir` argument.
+
+For example in the above script, you can visualize with:
+
+```
+tensorboard --logdir checkpoints/runs/run-1234
+```
+
+Multiple runs can be compared by specifying different `--tensorboard_dir`. i.e. `run-1234` and `run-2345`. Then
+
+```
+tensorboard --logdir checkpoints/runs
+```
+
+can visualize stats from both runs.
+
 ### Pretrained Model
 
 A pretrained model for IWSLT 2014 can be evaluated by running the [example script](https://github.com/pytorch/translate/blob/master/pytorch_translate/examples/generate_iwslt14.sh):
