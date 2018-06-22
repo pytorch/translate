@@ -82,6 +82,7 @@ def binarize_text_file(
     reverse_order: bool,
     use_char_data: bool = False,
     char_dictionary: Optional[Dictionary] = None,
+    already_numberized: bool = False,
 ) -> str:
     output_path = maybe_generate_temp_file_path(output_path)
     if use_char_data:
@@ -95,7 +96,13 @@ def binarize_text_file(
         )
     else:
         dataset = pytorch_translate_data.InMemoryNumpyDataset()
-        dataset.parse(text_file, dictionary, reverse_order, append_eos)
+        dataset.parse(
+            path=text_file,
+            dictionary=dictionary,
+            reverse_order=reverse_order,
+            append_eos=append_eos,
+            already_numberized=already_numberized,
+        )
     dataset.save(output_path)
     return output_path
 

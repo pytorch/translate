@@ -66,19 +66,32 @@ class InMemoryNumpyDataset(indexed_dataset.IndexedDataset):
         self.offsets = npz["offsets"]
         self.sizes = self.offsets[1:] - self.offsets[:-1]
 
-    def parse(self, path, dict, reverse_order=False, append_eos=False):
+    def parse(
+        self,
+        path,
+        dictionary,
+        reverse_order=False,
+        append_eos=False,
+        already_numberized=False,
+    ):
         self.parse_multilingual(
             [
                 MultilingualCorpusConfig(
-                    dialect_id=None, data_file=path, dict=dict, oversampling=1
+                    dialect_id=None, data_file=path, dict=dictionary, oversampling=1
                 )
             ],
             reverse_order=reverse_order,
             append_eos=append_eos,
+            already_numberized=already_numberized,
         )
 
     def parse_multilingual(
-        self, corpora, reverse_order=False, append_eos=False, prepend_language_id=True
+        self,
+        corpora,
+        reverse_order=False,
+        append_eos=False,
+        prepend_language_id=True,
+        already_numberized=False,
     ):
         """Add sentences from text files to the dataset.
 
@@ -110,6 +123,12 @@ class InMemoryNumpyDataset(indexed_dataset.IndexedDataset):
             prepend_language_id (bool): Only used if dialect_id is not None. If
                 true, add ID at the begin of the token sequence. Otherwise, add
                 it at the end of the token sequence.
+            already_numberized (bool): If data_file contains lines of
+                numberized tokens, then already_numberized should be set to True
+                If data_file contains raw text sentences, then
+                already_numberized should be False (default) -- in which case
+                each line is tokenized with tokenizer then numberized with the
+                dictionary before being added to the output buffer.
 
         """
         array_list = []
@@ -127,12 +146,18 @@ class InMemoryNumpyDataset(indexed_dataset.IndexedDataset):
                     append_inds.append(corpus_config.dialect_id)
             with open(corpus_config.data_file, "r") as f:
                 for line in f:
-                    words = tokenizer.tokenize_line(line)
+                    if already_numberized:
+                        inds = line.strip().split()
+                        inds = [int(ind) for ind in inds]
+                    else:
+                        words = tokenizer.tokenize_line(line)
+                        inds = [corpus_config.dict.index(w) for w in words]
+
                     if reverse_order:
-                        words.reverse()
+                        inds.reverse()
                     inds = (
                         prepend_inds
-                        + [corpus_config.dict.index(w) for w in words]
+                        + inds
                         + append_inds
                     )
                     for _ in range(corpus_config.oversampling):
