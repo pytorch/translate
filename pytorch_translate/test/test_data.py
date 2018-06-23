@@ -30,6 +30,9 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
             [102, 102, 104, 104, 106, 106],
             [102, 104, 106, 108],
         ]
+        self.src_txt_numberized, self.trg_txt_numberized = test_utils.create_test_numberized_data_files(
+            self.src_ref, self.trg_ref, reverse_source=True
+        )
         self.lua_eos = self.d.eos_index + 1
         self.num_sentences = 4
 
@@ -47,6 +50,32 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
             )
             trg_dataset.parse(
                 self.trg_txt, self.d, reverse_order=False, append_eos=True
+            )
+            self.assertEqual(self.num_sentences, len(src_dataset))
+            self.assertEqual(self.num_sentences, len(trg_dataset))
+            for i in range(self.num_sentences):
+                self.assertListEqual(self.src_ref[i], src_dataset[i].tolist())
+                self.assertListEqual(
+                    self.trg_ref[i] + [self.lua_eos], trg_dataset[i].tolist()
+                )
+
+    def test_parse_numberize(self):
+        src_dataset = data.InMemoryNumpyDataset()
+        trg_dataset = data.InMemoryNumpyDataset()
+        for _ in range(2):
+            src_dataset.parse(
+                self.src_txt_numberized,
+                self.d,
+                reverse_order=True,
+                append_eos=False,
+                already_numberized=True,
+            )
+            trg_dataset.parse(
+                self.trg_txt_numberized,
+                self.d,
+                reverse_order=False,
+                append_eos=True,
+                already_numberized=True,
             )
             self.assertEqual(self.num_sentences, len(src_dataset))
             self.assertEqual(self.num_sentences, len(trg_dataset))
