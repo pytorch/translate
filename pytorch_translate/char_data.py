@@ -114,15 +114,17 @@ class LanguagePairSourceCharDataset(torch.utils.data.Dataset):
     Right-padded only.
     """
 
-    def __init__(self, src, dst, pad_idx, eos_idx):
+    def __init__(self, src, dst, pad_idx, eos_idx, weights=None):
         """
         src : InMemoryNumpyWordCharDataset
         dst : InMemoryNumpyDataset
+        weights: Optional[IndexedInMemoryDataset]
         """
         self.src = src
         self.dst = dst
         self.pad_idx = pad_idx
         self.eos_idx = eos_idx
+        self.weights = weights
 
     def __getitem__(self, i):
         example = {
@@ -133,6 +135,10 @@ class LanguagePairSourceCharDataset(torch.utils.data.Dataset):
         if self.dst:
             # subtract 1 for 0-based indexing (fairseq legacy)
             example["target"] = self.dst[i].long() - 1
+        if self.weights:
+            example["weight"] = self.weights[i]
+        else:
+            example["weight"] = 1.0
 
         return example
 
@@ -150,6 +156,8 @@ class LanguagePairSourceCharDataset(torch.utils.data.Dataset):
 
         id = torch.LongTensor([s["id"] for s in samples])
         src_lengths = torch.LongTensor([len(s["source_tokens"]) for s in samples])
+
+        weights = torch.FloatTensor([s["weight"] for s in samples])
 
         word_lengths = torch.LongTensor(len(samples), max_words).fill_(0)
         for i, s in enumerate(samples):
@@ -207,4 +215,5 @@ class LanguagePairSourceCharDataset(torch.utils.data.Dataset):
                 "prev_output_tokens": prev_output_tokens,
             },
             "target": target,
+            "weights": weights,
         }

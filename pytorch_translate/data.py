@@ -9,6 +9,7 @@ from fairseq import data, indexed_dataset, tokenizer
 from typing import NamedTuple, Optional
 
 from pytorch_translate import char_data
+from pytorch_translate import weighted_data
 from pytorch_translate import dictionary as pytorch_translate_dictionary
 
 
@@ -32,6 +33,7 @@ class MultilingualCorpusConfig(NamedTuple):
 class ParallelCorpusConfig(NamedTuple):
     source: CorpusConfig
     target: CorpusConfig
+    weights_file: Optional[str]
 
 
 class InMemoryNumpyDataset(indexed_dataset.IndexedDataset):
@@ -323,6 +325,12 @@ def load_binarized_dataset(
             raise ValueError(f"{corpus.target.data_file} for {split} not found!")
 
         dst_dataset = InMemoryNumpyDataset.create_from_file(corpus.target.data_file)
+        weights_dataset = None
+        if corpus.weights_file and os.path.exists(corpus.weights_file):
+            weights_dataset = weighted_data.IndexedWeightsDataset(
+                corpus.weights_file)
+            assert len(dst_dataset) == len(weights_dataset)
+
         if use_char_source:
             src_dataset = char_data.InMemoryNumpyWordCharDataset.create_from_file(
                 corpus.source.data_file
@@ -332,14 +340,16 @@ def load_binarized_dataset(
                 dst=dst_dataset,
                 pad_idx=source_dict.pad(),
                 eos_idx=source_dict.eos(),
+                weights=weights_dataset,
             )
         else:
             src_dataset = InMemoryNumpyDataset.create_from_file(corpus.source.data_file)
-            dataset.splits[split] = data.LanguagePairDataset(
+            dataset.splits[split] = weighted_data.WeightedLanguagePairDataset(
                 src=src_dataset,
                 dst=dst_dataset,
                 pad_idx=source_dict.pad(),
                 eos_idx=source_dict.eos(),
+                weights=weights_dataset,
             )
 
     return dataset

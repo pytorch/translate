@@ -188,6 +188,13 @@ def add_preprocessing_args(parser):
         help="Path for the binary file containing target training examples.",
     )
     group.add_argument(
+        "--train-weights-path",
+        default="",
+        metavar="FILE",
+        help="Path to text file of weight (0 to 1) for each train example.."
+        "If left empty, all examples will receive equal weights.",
+    )
+    group.add_argument(
         "--eval-source-binary-path",
         default="",
         help="Path for the binary file containing source eval examples for "

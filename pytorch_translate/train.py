@@ -30,6 +30,7 @@ from pytorch_translate import generate
 from pytorch_translate import preprocess
 from pytorch_translate import rnn  # noqa
 from pytorch_translate.utils import ManagedCheckpoints
+from pytorch_translate import weighted_criterions  # noqa
 from pytorch_translate.research.word_prediction import word_prediction_criterion  # noqa
 from pytorch_translate.research.word_prediction import word_prediction_model  # noqa
 from pytorch_translate.research.knowledge_distillation import knowledge_distillation_loss # noqa
@@ -152,7 +153,10 @@ def setup_training(args):
         target=pytorch_translate_data.CorpusConfig(
             dialect=args.target_lang, data_file=args.train_target_binary_path
         ),
+        weights_file=args.train_weights_path if
+        hasattr(args, "train_weights_path") else None,
     )
+
     eval_corpus = pytorch_translate_data.ParallelCorpusConfig(
         source=pytorch_translate_data.CorpusConfig(
             dialect=args.source_lang, data_file=args.eval_source_binary_path
@@ -160,6 +164,7 @@ def setup_training(args):
         target=pytorch_translate_data.CorpusConfig(
             dialect=args.target_lang, data_file=args.eval_target_binary_path
         ),
+        weights_file=None,
     )
 
     if args.log_verbose:
@@ -187,6 +192,7 @@ def setup_training(args):
 
     # Build model and criterion
     model = models.build_model(args, dataset.src_dict, dataset.dst_dict)
+    print("building criterion")
     criterion = criterions.build_criterion(args, dataset.src_dict, dataset.dst_dict)
     print(f"| model {args.arch}, criterion {criterion.__class__.__name__}")
     print(
