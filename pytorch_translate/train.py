@@ -273,6 +273,8 @@ def train(args, extra_state, trainer, dataset):
     do_prune = (args.pruning_percentile > 0)
     extra_state["retraining"] = False
     prune_masks = None
+    stop_training_mid_epoch = False
+    stop_training_end_of_epoch = False
     while lr > args.min_lr and extra_state["epoch"] <= max_epoch:
         """Train the model for one epoch."""
 
