@@ -29,11 +29,14 @@ from pytorch_translate import dictionary as pytorch_translate_dictionary
 from pytorch_translate import generate
 from pytorch_translate import preprocess
 from pytorch_translate import rnn  # noqa
-from pytorch_translate.utils import ManagedCheckpoints
 from pytorch_translate import weighted_criterions  # noqa
+from pytorch_translate.utils import ManagedCheckpoints  # noqa
+from pytorch_translate import multi_model
 from pytorch_translate.research.word_prediction import word_prediction_criterion  # noqa
 from pytorch_translate.research.word_prediction import word_prediction_model  # noqa
-from pytorch_translate.research.knowledge_distillation import knowledge_distillation_loss # noqa
+from pytorch_translate.research.knowledge_distillation import (  # noqa
+    knowledge_distillation_loss
+)
 
 
 def get_parser_with_args():
@@ -62,10 +65,8 @@ def get_parser_with_args():
     return parser
 
 
-def load_existing_checkpoint(save_dir, restore_file, trainer):
+def load_existing_checkpoint(checkpoint_path, trainer):
     # Load the latest checkpoint if one is available
-    os.makedirs(save_dir, exist_ok=True)
-    checkpoint_path = os.path.join(save_dir, restore_file)
     extra_state = trainer.load_checkpoint(checkpoint_path)
     if extra_state is not None:
         print(
@@ -217,10 +218,15 @@ def setup_training(args):
         flush=True,
     )
 
-    extra_state = load_existing_checkpoint(
-        args.save_dir, args.restore_file, trainer
-    )
-
+    os.makedirs(args.save_dir, exist_ok=True)
+    checkpoint_path = os.path.join(args.save_dir, args.restore_file)
+    if not os.path.isfile(checkpoint_path) and args.multi_model_restore_files:
+        print(f"| Restoring individual models from {args.multi_model_restore_files}")
+        extra_state = multi_model.import_individual_models(
+            args.multi_model_restore_files, trainer
+        )
+    else:
+        extra_state = load_existing_checkpoint(checkpoint_path, trainer)
     return extra_state, trainer, dataset
 
 
@@ -340,7 +346,7 @@ def train(args, extra_state, trainer, dataset):
                 val_ppl,
                 val_bleu,
                 stop_training_mid_epoch,
-                translation_samples
+                translation_samples,
             ) = validate_save_and_evaluate_bleu(
                 args=args,
                 trainer=trainer,
@@ -841,8 +847,13 @@ def validate_save_and_evaluate_bleu(
                 args=args, dataset=dataset, extra_state=extra_state
             )
 
-    return (val_loss, val_ppl, val_bleu,
-            stop_due_to_val_loss or stop_due_to_val_bleu, translation_samples)
+    return (
+        val_loss,
+        val_ppl,
+        val_bleu,
+        stop_due_to_val_loss or stop_due_to_val_bleu,
+        translation_samples,
+    )
 
 
 class ErrorHandler(object):

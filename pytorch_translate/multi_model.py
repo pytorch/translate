@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
 import abc
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from fairseq.models import FairseqEncoder, FairseqIncrementalDecoder
 from pytorch_translate.common_layers import Linear, OutputProjection
 from pytorch_translate import vocab_reduction
+from torch.serialization import default_restore_location
 
 
 def average_tensors(tensor_list, prob_space=False):
@@ -437,3 +439,57 @@ class MultiDecoder(FairseqIncrementalDecoder):
     def max_positions(self):
         """Maximum output length supported by the decoder."""
         return int(1e5)  # an arbitrary large number
+
+
+def import_individual_models(restore_files, trainer):
+    param2size = {}
+    for name, param in trainer.model.named_parameters():
+        param2size[name] = param.size()
+    cuda_device = torch.cuda.current_device()
+    model_state = {}
+    for idx, filename in enumerate(restore_files):
+        sub_state = torch.load(
+            filename,
+            map_location=lambda s, l: default_restore_location(
+                s, "cuda:{}".format(cuda_device)
+            ),
+        )
+        for name, value in sub_state["model"].items():
+            new_name = None
+            if name.startswith("encoder."):
+                subname = name[8:]
+                new_name = f"encoder.encoders.{idx}.{subname}"
+            elif name == "decoder.output_projection_w":
+                new_name = (
+                    f"decoder.combi_strat.output_projections.{idx}."
+                    f"output_projection_w"
+                )
+            elif name == "decoder.output_projection_b":
+                new_name = (
+                    f"decoder.combi_strat.output_projections.{idx}."
+                    f"output_projection_b"
+                )
+            elif name.startswith("decoder."):
+                subname = name[8:]
+                new_name = f"decoder.decoders.{idx}.{subname}"
+            if new_name is None:
+                print(f"WARN: Ignoring {name} in {filename} (no match)")
+            elif new_name not in param2size:
+                print(f"WARN: Could not find {new_name}. Check architectures")
+            elif value.size() != param2size[new_name]:
+                print(
+                    f"WARN: Tried to map {name} to {new_name}, but sizes do not match "
+                    f"({value.size()} != {param2size[new_name]})"
+                )
+            else:
+                model_state[new_name] = value
+    trainer.model.load_state_dict(model_state, strict=False)
+    print(f"|  Imported {len(model_state)} parameters.")
+    trainer._optim_history = []
+    return {
+        "epoch": 1,
+        "batch_offset": 0,
+        "val_loss": None,
+        "start_time": time.time(),
+        "last_bleu_eval": 0,
+    }
