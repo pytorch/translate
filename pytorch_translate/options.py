@@ -542,6 +542,17 @@ def expand_generation_args(group, train=False):
                 "checkpoint, beginning after the specified number of epochs. "
             ),
         )
+        group.add_argument(
+            "--multi-model-restore-files",
+            default=None,
+            type=str,
+            nargs="+",
+            help=(
+                "If --multi-encoder = --multi-decoder > 1, this option makes "
+                "it possible to initialize individual model weights from "
+                "existing checkpoints of separate training runs."
+            ),
+        )
     return group
 
 
