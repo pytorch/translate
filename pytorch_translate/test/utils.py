@@ -189,6 +189,24 @@ def create_test_text_files():
     return src, trg
 
 
+def create_test_numberized_data_files(src_ref, trg_ref, reverse_source=True):
+    """
+    Reformat ref from [[#, #, #], [#, #, #]] --> ["# # #", "# # #"]
+    """
+    if reverse_source:
+        src_ref = [reversed(line) for line in src_ref]
+
+    # we subtract 1 because the reference has +1 added for Lua compatibility
+    # during parsing
+    src = write_lines_to_temp_file(
+        [" ".join([str(ind - 1) for ind in line]) for line in src_ref]
+    )
+    trg = write_lines_to_temp_file(
+        [" ".join([str(ind - 1) for ind in line]) for line in trg_ref]
+    )
+    return src, trg
+
+
 def write_lines_to_temp_file(lines):
     temp_file_path = make_temp_file()
     with codecs.open(temp_file_path, "w", "utf-8") as temp_file:
