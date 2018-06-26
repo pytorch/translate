@@ -456,13 +456,35 @@ def expand_checkpointing_args(group):
         "to allow BLEU to work properly.",
     )
     group.add_argument(
-        "--pretrained-weights-file",
+        "--restore-checkpoint-dir",
         default="",
         type=str,
-        help="Load the model weights from this file. This is different from "
-        "--restore-file in that it only loads the weights (and not the optimizer "
-        "state). This option is superseded by --restore-file so don't use both.",
+        help=(
+            "Allows the user to resume or fine-tune training (possibly with "
+            "different parameter) from another run's checkpoint. Will look for "
+            "the previous checkpoint under "
+            "os.path.join(--restore-checkpoint-dir, --restore-file). Note that "
+            "if --restore-file is already present under --save-dir, this "
+            "flag will have no effect. We prefer using --save-dir over this "
+            "flag to ensure that if user resumes training on a model that "
+            "was originaly initialized from another run's checkpoint, we won't "
+            "wipe out all progress in --save-dir by re-loading the previous "
+            "run's checkpoint."
+        ),
     )
+    group.add_argument(
+        "--restore-checkpoint-state",
+        type=utils.bool_flag,
+        nargs="?",
+        const=True,
+        default=True,
+        help=(
+            "Whether to also restore optimizer extra_state (epoch, "
+            "training time, etc) when loading from --restore-file. "
+            "If false, only model weights are loaded from that file."
+        ),
+    )
+
     return group
 
 
