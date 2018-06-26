@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import collections
+import numpy as np
 import os
 import torch
 from typing import NamedTuple
@@ -33,6 +34,7 @@ class TranslationInfo(NamedTuple):
     src_str: str
     target_str: str
     hypo_str: str
+    hypo_score: float
 
 
 def _generate_score(models, args, dataset, dataset_split, optimize=True):
@@ -78,7 +80,9 @@ def _generate_score(models, args, dataset, dataset_split, optimize=True):
 
     # Keep track of translations
     # Initialize with empty translations
+    # and zero probs scores
     translated_sentences = [""] * len(dataset.splits[dataset_split])
+    translated_scores = [0.0] * len(dataset.splits[dataset_split])
 
     # Generate and compute BLEU score
     scorer = bleu.Scorer(
@@ -125,6 +129,7 @@ def _generate_score(models, args, dataset, dataset_split, optimize=True):
         ):
             scorer.add(trans_info.target_tokens, trans_info.hypo_tokens)
             translated_sentences[trans_info.sample_id] = trans_info.hypo_str
+            translated_scores[trans_info.sample_id] = trans_info.hypo_score
             translation_samples.append(
                 collections.OrderedDict(
                     {
@@ -145,6 +150,11 @@ def _generate_score(models, args, dataset, dataset_split, optimize=True):
         with open(args.translation_output_file, "w") as out_file:
             for hypo_str in translated_sentences:
                 print(hypo_str, file=out_file)
+
+    if getattr(args, "translation_probs_file", False):
+        with open(args.translation_probs_file, "w") as out_file:
+            for hypo_score in translated_scores:
+                print(np.exp(hypo_score), file=out_file)
 
     return scorer, num_sentences, gen_timer, translation_samples
 
@@ -211,6 +221,18 @@ def _iter_first_best_bilingual(args, dataset, dataset_split, translations, align
                     target_tokens = tokenizer.Tokenizer.tokenize(
                         target_str, dataset.dst_dict, add_if_not_exist=True
                     )
+                # The probs score for the hypo_str; whether it's normalized by
+                # sequence length or not depends on normalize_scores, which is
+                # set by arg.nonormalize.
+                # However, as I tried, whether normalize_scores is set or not,
+                # the returned scores are the same (to be investigated).
+                # Here, the probs are normalized by hypo length so the value
+                # is big enough to be used as weights in
+                hypo_score = (
+                    hypo['score'] / len(hypo_tokens)
+                    if len(hypo_tokens) > 0 else 0.0
+                )
+
                 yield TranslationInfo(
                     sample_id=sample_id,
                     src_tokens=src_tokens,
@@ -219,6 +241,7 @@ def _iter_first_best_bilingual(args, dataset, dataset_split, translations, align
                     src_str=src_str,
                     target_str=target_str,
                     hypo_str=hypo_str,
+                    hypo_score=hypo_score,
                 )
 
 
@@ -298,6 +321,8 @@ def _iter_first_best_multilingual(
                     target_tokens = tokenizer.Tokenizer.tokenize(
                         target_str, target_dict, add_if_not_exist=True
                     )
+                hypo_score = hypo['score'] / len(hypo_tokens)
+
                 yield TranslationInfo(
                     sample_id=sample_id,
                     src_tokens=src_tokens,
@@ -306,6 +331,7 @@ def _iter_first_best_multilingual(
                     src_str=src_str,
                     target_str=target_str,
                     hypo_str=hypo_str,
+                    hypo_score=hypo_score,
                 )
 
 
@@ -384,6 +410,13 @@ def get_parser_with_args():
         type=str,
         metavar="FILE",
         help="Path to text file to store the output of the model. ",
+    )
+    generation_group.add_argument(
+        "--translation-probs-file",
+        default="",
+        type=str,
+        metavar="FILE",
+        help="Path to text file to store the probs of translation output. ",
     )
     generation_group.add_argument(
         "--multiling-source-lang-id",
