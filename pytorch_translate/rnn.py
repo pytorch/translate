@@ -244,6 +244,8 @@ class RNNModel(FairseqModel):
                 "- uniform: Separate projection layers, average predictions\n"
                 "- uniform-probspace: Separate projection layers, average "
                 "in probability space.\n"
+                "- uniform-logprobspace: Separate projection layers, average "
+                "in log-probability space.\n"
                 "- unprojected: Shared projection layer, unprojected "
                 "decoder outputs are averaged.\n"
                 "- weighted: Separate projection layers, weighted average "
@@ -251,6 +253,8 @@ class RNNModel(FairseqModel):
                 "outputs.\n"
                 "- weighted-probspace: Like 'weighted', but average in "
                 "probability space.\n"
+                "- weighted-logprobspace: Like 'weighted', but average in "
+                "log-probability space.\n"
                 "- weighted-unprojected: Shared projection layer, weighted "
                 "average of decoder outputs. Weights are learned from "
                 "unprojected decoder outputs.\n"
@@ -261,6 +265,8 @@ class RNNModel(FairseqModel):
                 "matrix.\n"
                 "- multiplicative-unprojected: Shared projection layer, element"
                 "-wise product of decoder outputs after ReLU.\n"
+                "- max-unprojected: Shared projection layer, element"
+                "-wise max of decoder outputs.\n"
             ),
         )
         parser.add_argument(

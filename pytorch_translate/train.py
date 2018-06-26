@@ -245,6 +245,7 @@ def prune(args, trainer):
 
     return prune_masks
 
+
 def single_process_main(args):
     """Train the model for multiple epochs."""
     extra_state, trainer, dataset = setup_training(args)
