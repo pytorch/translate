@@ -177,3 +177,38 @@ def load_diverse_ensemble_for_inference(filenames, src_dict, dst_dict):
         model.load_state_dict(state["model"])
         ensemble.append(model)
     return ensemble, [s["args"] for s in states]
+
+
+def average_tensors(tensor_list, norm_fn=None, weights=None):
+    """Averages a list of tensors.
+
+    Average the elements in tensor_list as follows:
+      w1*norm_fn(t1) + w2*norm_fn(t2) + ...
+    The default behavior corresponds to a [weighted] mean. You can set norm_fn
+    to F.softmax or F.log_softmax to average in probability or logprob space.
+
+    Note: This implementation favours memory efficiency over numerical
+    stability, and iterates through `tensor_list` in a Python for-loop rather
+    than stacking it to a PyTorch tensor.
+
+    Arguments:
+        tensor_list (list): Python list of tensors of the same size and same type
+        norm_fn (function): If set, apply norm_fn() to elements in `tensor_list`
+            before averaging.
+        weights (list): List of tensors or floats to use to weight models. Must
+            be of the same length as `tensor_list`. If none, use uniform weights.
+
+    Returns:
+        Average of the tensors in `tensor_list`
+    """
+    if weights is None:
+        weights = [1.0 / float(len(tensor_list))] * len(tensor_list)
+    assert len(tensor_list) == len(weights)
+    if norm_fn is None:
+        def id_fn(x, dim):
+            return x
+        norm_fn = id_fn
+    acc = torch.zeros_like(tensor_list[0])
+    for w, t in zip(weights, tensor_list):
+        acc += w * norm_fn(t, dim=-1)
+    return acc
