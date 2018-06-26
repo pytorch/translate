@@ -567,3 +567,40 @@ def validate_generation_args(args):
         "--length-penalty instead."
     )
     pass
+
+
+def add_verbosity_args(parser, train=False):
+    verbosity_group = parser.add_argument_group("Verbosity")
+
+    if train:
+        verbosity_group.add_argument(
+            "--log-verbose",
+            action="store_true",
+            help="Whether to output more verbose logs for debugging/profiling.",
+        )
+
+    verbosity_group.add_argument(
+        "--args-verbosity",
+        default=1,
+        type=int,
+        choices=[0, 1, 2],
+        help="Level of verbosity when printing the arguments (0: don't print "
+        "the arguments; 1: print the Namespace object; 2: print all the "
+        "arguments, one per line). The default is 1."
+        "one per line)",
+    )
+    return verbosity_group
+
+
+def print_args(args):
+    args_verbosity = getattr(args, "args_verbosity", 1)
+    if args_verbosity == 2:
+        args_sorted = sorted(vars(args).items())
+        for name, value in args_sorted:
+            print(f"{name}={value}")
+    elif args_verbosity == 1:
+        print(args)
+    elif args_verbosity == 0:
+        return
+    else:
+        raise ValueError("Please specify an argument verbosity level between 0 and 2")

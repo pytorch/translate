@@ -41,11 +41,7 @@ from pytorch_translate.research.knowledge_distillation import (  # noqa
 
 def get_parser_with_args():
     parser = options.get_parser("Trainer")
-    parser.add_argument(
-        "--log-verbose",
-        action="store_true",
-        help="Whether to output more verbose logs for debugging/profiling.",
-    )
+    pytorch_translate_options.add_verbosity_args(parser, train=True)
     pytorch_translate_options.add_dataset_args(parser, train=True, gen=True)
     options.add_distributed_training_args(parser)
     # Adds args related to training (validation and stopping criterions).
@@ -941,5 +937,5 @@ if __name__ == "__main__":
     parser = get_parser_with_args()
     args = options.parse_args_and_arch(parser)
     validate_and_set_default_args(args)
-    print(args)
+    pytorch_translate_options.print_args(args)
     main(args, single_process_main)

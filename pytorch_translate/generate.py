@@ -360,6 +360,7 @@ def add_args(parser):
 
 def get_parser_with_args():
     parser = options.get_parser("Generation")
+    pytorch_translate_options.add_verbosity_args(parser)
     pytorch_translate_options.add_dataset_args(parser, gen=True)
     generation_group = options.add_generation_args(parser)
     pytorch_translate_options.expand_generation_args(generation_group)
@@ -474,7 +475,7 @@ def validate_args(args):
 
 
 def generate(args):
-    print(args)
+    pytorch_translate_options.print_args(args)
 
     src_dict = pytorch_translate_dictionary.Dictionary.load(args.source_vocab_file)
     dst_dict = pytorch_translate_dictionary.Dictionary.load(args.target_vocab_file)

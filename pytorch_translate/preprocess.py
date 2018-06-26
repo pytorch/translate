@@ -342,9 +342,11 @@ def preprocess_corpora_multilingual(args):
 
 def main():
     parser = argparse.ArgumentParser(description="PyTorch Translate - preprocessing")
+    pytorch_translate_options.add_verbosity_args(parser)
     pytorch_translate_options.add_preprocessing_args(parser)
     args = parser.parse_args()
     pytorch_translate_options.validate_preprocessing_args(args)
+    pytorch_translate_options.print_args(args)
     preprocess_corpora(args)
 
 
