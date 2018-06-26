@@ -22,11 +22,31 @@ def average_tensors(tensor_list, prob_space=False):
 class MultiEncoder(FairseqEncoder):
     """Concatenates the outputs of multiple encoders."""
 
-    def __init__(self, dictionary, encoders):
+    def __init__(self, dictionary, encoders, training_schedule="complete"):
         super().__init__(dictionary)
         self.encoders = nn.ModuleList(encoders)
+        self.unfreeze_single = False
+        self.unfreeze_idx = -1
+        if self.training:
+            if training_schedule == "freeze_all":
+                for encoder in self.encoders:
+                    for p in encoder.parameters():
+                        p.requires_grad = False
+            elif training_schedule == "unfreeze_single":
+                self.unfreeze_single = True
+                self.unfreeze_mod = len(encoders)
+            elif training_schedule == "separate":
+                self.unfreeze_single = True
+                self.unfreeze_mod = len(encoders) + 1
+            elif training_schedule != "complete":
+                raise RuntimeError(f"Unknown training schedule '{training_schedule}'")
 
     def forward(self, src_tokens, src_lengths):
+        if self.unfreeze_single:
+            self.unfreeze_idx = (self.unfreeze_idx + 1) % self.unfreeze_mod
+            for encoder_id, encoder in enumerate(self.encoders):
+                for p in encoder.parameters():
+                    p.requires_grad = encoder_id == self.unfreeze_idx
         all_encoder_outs = [
             encoder(src_tokens, src_lengths) for encoder in self.encoders
         ]
@@ -64,6 +84,7 @@ class MultiDecoderCombinationStrategy(nn.Module):
         src_tokens=None,
         input_tokens=None,
         possible_translation_tokens=None,
+        select_single=None,
     ):
         """Combine decoder outputs and project.
 
@@ -76,6 +97,7 @@ class MultiDecoderCombinationStrategy(nn.Module):
             input_tokens (Tensor): Tensor with target-side decoder input tokens
                 for vocab reduction.
             possible_translation_tokens: For vocab reduction.
+            select_single (None or int): Only use the n-th decoder output.
 
         Return:
             A tuple (logits, possible_translation_tokens), where logits is a
@@ -105,8 +127,13 @@ class UniformStrategy(MultiDecoderCombinationStrategy):
         src_tokens=None,
         input_tokens=None,
         possible_translation_tokens=None,
+        select_single=None,
     ):
         assert possible_translation_tokens is None
+        if select_single is not None:
+            return self.output_projections[select_single](
+                unprojected_outs[select_single]
+            )
         logits = [p(o)[0] for p, o in zip(self.output_projections, unprojected_outs)]
         return average_tensors(logits, prob_space=self.prob_space), None
 
@@ -128,9 +155,12 @@ class UnprojectedStrategy(MultiDecoderCombinationStrategy):
         src_tokens=None,
         input_tokens=None,
         possible_translation_tokens=None,
+        select_single=None,
     ):
         return self.output_projection(
-            average_tensors(unprojected_outs),
+            average_tensors(unprojected_outs)
+            if select_single is None
+            else unprojected_outs[select_single],
             src_tokens,
             input_tokens,
             possible_translation_tokens,
@@ -155,9 +185,15 @@ class MultiplicativeUnprojectedStrategy(MultiDecoderCombinationStrategy):
         src_tokens=None,
         input_tokens=None,
         possible_translation_tokens=None,
+        select_single=None,
     ):
+        stacked = (
+            torch.stack(unprojected_outs)
+            if select_single is None
+            else torch.unsqueeze(unprojected_outs[select_single], 0)
+        )
         return self.output_projection(
-            torch.prod(self.activation(torch.stack(unprojected_outs)), dim=0),
+            torch.prod(self.activation(stacked), dim=0),
             src_tokens,
             input_tokens,
             possible_translation_tokens,
@@ -179,7 +215,9 @@ class ConcatStrategy(MultiDecoderCombinationStrategy):
         src_tokens=None,
         input_tokens=None,
         possible_translation_tokens=None,
+        select_single=None,
     ):
+        assert select_single is None
         return self.output_projection(
             torch.cat(unprojected_outs, 2),
             src_tokens,
@@ -205,7 +243,9 @@ class BottleneckStrategy(MultiDecoderCombinationStrategy):
         src_tokens=None,
         input_tokens=None,
         possible_translation_tokens=None,
+        select_single=None,
     ):
+        assert select_single is None
         return self.output_projection(
             self.bottleneck(torch.cat(unprojected_outs, 2)),
             src_tokens,
@@ -223,17 +263,23 @@ class BaseWeightedStrategy(MultiDecoderCombinationStrategy):
             sum(out_embed_dims), len(out_embed_dims), bias=True
         )
 
-    def compute_weights(self, unprojected_outs):
+    def compute_weights(self, unprojected_outs, select_single=None):
         """Derive interpolation weights from unprojected decoder outputs.
 
         Args:
             unprojected_outs: List of [batch_size, seq_len, out_embed_dim]
                 tensors with unprojected decoder outputs.
+            select_single: If not None, put all weighton n-th model.
 
         Returns:
             A [batch_size, seq_len, num_decoders] float32 tensor with
             normalized decoder interpolation weights.
         """
+        if select_single is not None:
+            sz = unprojected_outs[0].size()
+            ret = torch.zeros((sz[0], sz[1], len(unprojected_outs))).cuda()
+            ret[:, :, select_single] = 1.0
+            return ret
         logits = torch.exp(self.weight_projection(torch.cat(unprojected_outs, 2)))
         return logits / torch.sum(logits, dim=2, keepdim=True)
 
@@ -257,9 +303,10 @@ class WeightedStrategy(BaseWeightedStrategy):
         src_tokens=None,
         input_tokens=None,
         possible_translation_tokens=None,
+        select_single=None,
     ):
         assert possible_translation_tokens is None
-        weights = self.compute_weights(unprojected_outs)
+        weights = self.compute_weights(unprojected_outs, select_single)
         logits = [
             weights[:, :, i : i + 1] * p(o)[0]
             for i, (p, o) in enumerate(zip(self.output_projections, unprojected_outs))
@@ -284,8 +331,9 @@ class WeightedUnprojectedStrategy(BaseWeightedStrategy):
         src_tokens=None,
         input_tokens=None,
         possible_translation_tokens=None,
+        select_single=None,
     ):
-        weights = self.compute_weights(unprojected_outs)
+        weights = self.compute_weights(unprojected_outs, select_single)
         averaged_unprojected = average_tensors(
             [weights[:, :, i : i + 1] * o for i, o in enumerate(unprojected_outs)]
         )
@@ -339,6 +387,7 @@ class MultiDecoder(FairseqIncrementalDecoder):
         combination_strategy,
         split_encoder=False,
         vocab_reduction_params=None,
+        training_schedule="complete",
     ):
         """Create a new multi-decoder instance.
 
@@ -351,6 +400,7 @@ class MultiDecoder(FairseqIncrementalDecoder):
             split_encoder (bool): If true, split encoder output, each decoder
                 gets its own split.
             vocab_reduction_params: For vocabular reduction.
+            training_schedule (str): Training strategy.
         """
         super().__init__(dst_dict)
         assert not any(decoder.project_output for decoder in decoders)
@@ -367,6 +417,23 @@ class MultiDecoder(FairseqIncrementalDecoder):
             vocab_reduction_module,
         )
         self.split_encoder = split_encoder
+        self.unfreeze_single = False
+        self.separate_training = False
+        self.unfreeze_idx = -1
+        if self.training:
+            if training_schedule == "freeze_all":
+                for decoder in self.decoders:
+                    for p in decoder.parameters():
+                        p.requires_grad = False
+            elif training_schedule == "unfreeze_single":
+                self.unfreeze_single = True
+                self.unfreeze_mod = len(decoders)
+            elif training_schedule == "separate":
+                self.unfreeze_single = True
+                self.unfreeze_mod = len(decoders) + 1
+                self.separate_training = True
+            elif training_schedule != "complete":
+                raise RuntimeError(f"Unknown training schedule '{training_schedule}'")
 
     def forward(
         self,
@@ -375,6 +442,15 @@ class MultiDecoder(FairseqIncrementalDecoder):
         incremental_state=None,
         possible_translation_tokens=None,
     ):
+        if self.unfreeze_single:
+            self.unfreeze_idx = (self.unfreeze_idx + 1) % self.unfreeze_mod
+            for decoder_id, decoder in enumerate(self.decoders):
+                for p in decoder.parameters():
+                    p.requires_grad = decoder_id == self.unfreeze_idx
+            if self.separate_training:
+                unfreeze_combi_strat = len(self.decoders) == self.unfreeze_idx
+                for p in self.combi_strat.parameters():
+                    p.requires_grad = unfreeze_combi_strat
         if incremental_state is None:
             incremental_state = {
                 decoder_id: None for decoder_id in range(len(self.decoders))
@@ -394,11 +470,15 @@ class MultiDecoder(FairseqIncrementalDecoder):
         mean_attn_scores = average_tensors(
             [attn_scores for _, attn_scores in decoder_outs if attn_scores is not None]
         )
+        select_single = None
+        if self.separate_training and not unfreeze_combi_strat:
+            select_single = self.unfreeze_idx
         logits, possible_translation_tokens = self.combi_strat(
             [x for x, _ in decoder_outs],
             src_tokens=encoder_out[4],
             input_tokens=input_tokens if self.training else None,
             possible_translation_tokens=possible_translation_tokens,
+            select_single=select_single,
         )
         return logits, mean_attn_scores, possible_translation_tokens
 

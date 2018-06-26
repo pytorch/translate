@@ -263,6 +263,23 @@ class RNNModel(FairseqModel):
                 "-wise product of decoder outputs after ReLU.\n"
             ),
         )
+        parser.add_argument(
+            "--multi-model-training-schedule",
+            default="complete",
+            type=str,
+            metavar="EXPR",
+            help=(
+                "Only used if --multi-decoder is positive.\n"
+                "- 'complete': Jointly train entire network on all batches.\n"
+                "- 'unfreeze_single': Freeze all submodels except one for each "
+                "training batch.\n"
+                "- 'freeze_all': Freeze all submodels, only train combination "
+                "strategy.\n"
+                "- 'separate': Each training batch is used for only one of the "
+                "following: Train the n-th submodel, or train combination "
+                "strategy."
+            ),
+        )
 
         # Args for vocab reduction
         vocab_reduction.add_args(parser)
@@ -350,7 +367,9 @@ class RNNModel(FairseqModel):
                 RNNModel.build_single_encoder(args, src_dict)
                 for _ in range(args.multi_encoder)
             ]
-            encoder = MultiEncoder(src_dict, encoders)
+            encoder = MultiEncoder(
+                src_dict, encoders, training_schedule=args.multi_model_training_schedule
+            )
         else:
             encoder = RNNModel.build_single_encoder(args, src_dict)
         return encoder
@@ -378,6 +397,7 @@ class RNNModel(FairseqModel):
                 combination_strategy=args.multi_decoder_combination_strategy,
                 split_encoder=args.multi_encoder is not None,
                 vocab_reduction_params=args.vocab_reduction_params,
+                training_schedule=args.multi_model_training_schedule,
             )
         else:
             if args.multi_encoder:
@@ -1023,6 +1043,9 @@ def base_architecture(args):
     args.multi_encoder = getattr(args, "multi_encoder", None)
     args.multi_decoder = getattr(args, "multi_decoder", None)
     args.multiling_encoder_lang = getattr(args, "multiling_encoder_lang", None)
+    args.multi_model_training_schedule = getattr(
+        args, "multi_model_training_schedule", "complete"
+    )
     args.cell_type = getattr(args, "cell_type", "lstm")
     args.ngram_activation_type = getattr(args, "ngram_activation_type", "relu")
     vocab_reduction.set_arg_defaults(args)
