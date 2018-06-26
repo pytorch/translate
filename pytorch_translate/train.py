@@ -16,7 +16,15 @@ import torch
 
 from typing import Any, Dict, Optional, Tuple
 
-from fairseq import criterions, distributed_utils, models, options, progress_bar, utils
+from fairseq import (
+    criterions,
+    distributed_utils,
+    models,
+    optim,
+    options,
+    progress_bar,
+    utils,
+)
 from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
 
@@ -61,9 +69,31 @@ def get_parser_with_args():
     return parser
 
 
-def load_existing_checkpoint(checkpoint_path, trainer):
-    # Load the latest checkpoint if one is available
-    extra_state = trainer.load_checkpoint(checkpoint_path)
+def load_existing_checkpoint(checkpoint_path, trainer, restore_state=True):
+    extra_state = None
+    if restore_state:
+        extra_state = trainer.load_checkpoint(checkpoint_path)
+        if extra_state is None:
+            print(f"Failed to load checkpoint and state from {checkpoint_path}.")
+    else:
+        # TODO(weiho): use trainer.load_checkpoint(load_optim=False) after
+        # that's been synced to open-source fairseq.
+        dummy_state, _, _ = utils.load_model_state(
+            checkpoint_path, trainer.model, cuda_device=torch.cuda.current_device()
+        )
+        trainer.optimizer = optim.build_optimizer(
+            trainer.args, trainer.model.parameters()
+        )
+        trainer.lr_scheduler = optim.lr_scheduler.build_lr_scheduler(
+            trainer.args, trainer.optimizer
+        )
+        trainer._optim_history = []
+
+        if dummy_state is None:
+            print(f"Failed to load checkpoint weights from {checkpoint_path}.")
+        else:
+            print(f"Loaded checkpoint weights from {checkpoint_path}.")
+
     if extra_state is not None:
         print(
             f"| loaded checkpoint {checkpoint_path} (epoch {extra_state['epoch']})\n"
@@ -197,14 +227,6 @@ def setup_training(args):
         {sum(p.numel() for p in model.parameters())}"
     )
 
-    # Load pretrained model weights if applicable
-    if args.pretrained_weights_file:
-        utils.load_model_state(
-            args.pretrained_weights_file,
-            model,
-            cuda_device=torch.cuda.current_device()
-        )
-
     # Build trainer
     trainer = Trainer(args, model, criterion)
     print(f"| training on {args.distributed_world_size} GPUs")
@@ -215,22 +237,54 @@ def setup_training(args):
     )
 
     os.makedirs(args.save_dir, exist_ok=True)
+
+    # If --restore-file is already present under --save-dir, use that one
+    # instead of the --restore-file that may be present under
+    # --restore-checkpoint-dir. The idea is that --restore-checkpoint-dir
+    # allows the user to specify restoring from a different run's
+    # checkpoint (possibly with different training params), while not
+    # polluting the previous run's checkpoint directory with new checkpoints.
+    # However, if training gets interrupted and the user restarts training,
+    # we want to resume from the checkpoints under --save-dir, instead of
+    # restarting again from the old run's checkpoint under
+    # --restore-checkpoint-dir.
+    #
+    # Note that if args.restore_file is an absolute path, os.path.join() will
+    # ignore previous directory args and just use the absolute path as is.
     checkpoint_path = os.path.join(args.save_dir, args.restore_file)
+    if os.path.exists(checkpoint_path):
+        print(
+            f"Using --save-dir={args.save_dir}, "
+            f"--restore-file={args.restore_file}."
+        )
+    elif args.restore_checkpoint_dir:
+        checkpoint_path = os.path.join(
+            args.restore_checkpoint_dir, args.restore_file
+        )
+        print(
+            f"Using --restore-checkpoint-dir={args.restore_checkpoint_dir}, "
+            f"--restore-file={args.restore_file}."
+        )
+
     if not os.path.isfile(checkpoint_path) and args.multi_model_restore_files:
         print(f"| Restoring individual models from {args.multi_model_restore_files}")
         extra_state = multi_model.import_individual_models(
             args.multi_model_restore_files, trainer
         )
     else:
-        extra_state = load_existing_checkpoint(checkpoint_path, trainer)
+        extra_state = load_existing_checkpoint(
+            checkpoint_path=checkpoint_path,
+            trainer=trainer,
+            restore_state=args.restore_checkpoint_state,
+        )
     return extra_state, trainer, dataset
 
 
 def prune(args, trainer):
     """Sets some model weights to zero based on pruning scheme"""
-    assert args.pruning_percentile > 0 and args.pruning_percentile < 100, (
-        "--pruning-percentile must be in (0, 100)"
-    )
+    assert (
+        args.pruning_percentile > 0 and args.pruning_percentile < 100
+    ), "--pruning-percentile must be in (0, 100)"
     all_params = []
     for name, params in trainer.model.named_parameters():
         if "weight" in name:
@@ -240,7 +294,7 @@ def prune(args, trainer):
     prune_masks = {}
     for name, params in trainer.model.named_parameters():
         if "weight" in name:
-            prune_masks[name] = (np.abs(params.data) < threshold)
+            prune_masks[name] = np.abs(params.data) < threshold
             params.data[prune_masks[name]] = 0.0
 
     return prune_masks
@@ -267,7 +321,7 @@ def train(args, extra_state, trainer, dataset):
     lr = trainer.get_lr()
     train_meter = StopwatchMeter()
     train_meter.start()
-    do_prune = (args.pruning_percentile > 0)
+    do_prune = args.pruning_percentile > 0
     extra_state["retraining"] = False
     prune_masks = None
     stop_training_mid_epoch = False
@@ -698,7 +752,7 @@ def validate(args, trainer, dataset, subset, extra_state):
         stop_due_to_val_loss = True
         print(
             f"Stopping training due to validation score stagnation - last best "
-            f"validation loss of {extra_state['validate']['lowest_loss']} (current loss: {val_loss})"
+            f"validation loss of {extra_state['validate']['lowest_loss']} (current loss: {val_loss}) "
             f"was {extra_state['validate']['num_since_best']} validations ago."
         )
     return val_loss, val_ppl, stop_due_to_val_loss
@@ -806,7 +860,7 @@ def evaluate_bleu(args, dataset, extra_state):
         print(
             f"Stopping training due to BLEU score stagnation on valid set - "
             f"last best BLEU score of {extra_state['evaluate_bleu']['best']} "
-            f"(current score: {val_bleu}) was"
+            f"(current score: {val_bleu}) was "
             f"{extra_state['evaluate_bleu']['num_since_best']} evals ago."
         )
     return val_bleu, stop_due_to_val_bleu, translation_samples
