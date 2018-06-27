@@ -134,6 +134,7 @@ def binarize_text_file_multilingual(
     append_eos: bool,
     reverse_order: bool,
     prepend_language_id: bool,
+    already_numberized: bool = False,
 ) -> str:
     output_path = maybe_generate_temp_file_path(output_path)
     dataset = pytorch_translate_data.InMemoryNumpyDataset()
@@ -142,6 +143,7 @@ def binarize_text_file_multilingual(
         reverse_order=reverse_order,
         append_eos=append_eos,
         prepend_language_id=prepend_language_id,
+        already_numberized=already_numberized,
     )
     dataset.save(output_path)
     return output_path
