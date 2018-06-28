@@ -1048,19 +1048,11 @@ class ForcedDecoder(torch.jit.ScriptModule):
         num_steps = target_length + 1
         score = zero
 
-        (step_score, *states) = self.decoder_ens(
-            input_tokens.index_select(dim=1, index=0).view((1, 1)),
-            output_tokens.index_select(dim=1, index=0).view((1,)),
-            0,
-            *states,
-        )
-        score += step_score
-
-        for i in range(num_steps - 1):
+        for i in range(num_steps):
             (step_score, *states) = self.decoder_ens(
-                input_tokens.index_select(dim=1, index=i + 1).view((1, 1)),
-                output_tokens.index_select(dim=1, index=i + 1).view((1,)),
-                i + 1,
+                input_tokens.index_select(dim=1, index=i).view((1, 1)),
+                output_tokens.index_select(dim=1, index=i).view((1,)),
+                i,
                 *states,
             )
             score += step_score
