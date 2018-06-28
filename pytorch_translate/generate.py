@@ -9,6 +9,7 @@ from typing import NamedTuple
 from fairseq import bleu, data, options, progress_bar, tokenizer, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
 from pytorch_translate import beam_decode
+from pytorch_translate import char_data
 from pytorch_translate import char_source_model
 from pytorch_translate import data as pytorch_translate_data
 from pytorch_translate import options as pytorch_translate_options
@@ -229,8 +230,7 @@ def _iter_first_best_bilingual(args, dataset, dataset_split, translations, align
                 # Here, the probs are normalized by hypo length so the value
                 # is big enough to be used as weights in
                 hypo_score = (
-                    hypo['score'] / len(hypo_tokens)
-                    if len(hypo_tokens) > 0 else 0.0
+                    hypo["score"] / len(hypo_tokens) if len(hypo_tokens) > 0 else 0.0
                 )
 
                 yield TranslationInfo(
@@ -321,7 +321,7 @@ def _iter_first_best_multilingual(
                     target_tokens = tokenizer.Tokenizer.tokenize(
                         target_str, target_dict, add_if_not_exist=True
                     )
-                hypo_score = hypo['score'] / len(hypo_tokens)
+                hypo_score = hypo["score"] / len(hypo_tokens)
 
                 yield TranslationInfo(
                     sample_id=sample_id,
@@ -406,6 +406,20 @@ def get_parser_with_args():
         "This overrides what would be loaded from the data dir.",
     )
     generation_group.add_argument(
+        "--source-binary-file",
+        default="",
+        help="Path for the binary file containing source eval examples. "
+        "(Overrides --source-text-file. Must be used in conjunction with "
+        "--target-binary-file).",
+    )
+    generation_group.add_argument(
+        "--target-binary-file",
+        default="",
+        help="Path for the binary file containing target eval examples. "
+        "(Overrides --target-text-file. Must be used in conjunction with "
+        "--source-binary-file).",
+    )
+    generation_group.add_argument(
         "--translation-output-file",
         default="",
         type=str,
@@ -443,7 +457,7 @@ def get_parser_with_args():
         "--source-ensembling",
         action="store_true",
         help="If this flag is present, the model will ensemble the predictions "
-        "conditioned on multiple source sentences (one per source-text-file)"
+        "conditioned on multiple source sentences (one per source-text-file)",
     )
 
     return parser
@@ -466,12 +480,18 @@ def validate_args(args):
     assert args.target_vocab_file and os.path.isfile(
         args.target_vocab_file
     ), "Please specify a valid file for --target-vocab_file"
-    assert (all(
-        (src_file and os.path.isfile(src_file)) for src_file in args.source_text_file
-    )), "Please specify a valid file for --source-text-file"
-    assert (
-        args.target_text_file and os.path.isfile(args.target_text_file)
-    ), "Please specify a valid file for --target-text-file"
+    if args.source_binary_file != "":
+        assert args.target_binary_file != ""
+        assert os.path.isfile(args.source_binary_file)
+        assert os.path.isfile(args.target_binary_file)
+    else:
+        assert all(
+            (src_file and os.path.isfile(src_file))
+            for src_file in args.source_text_file
+        ), "Please specify a valid file for --source-text-file"
+        assert args.target_text_file and os.path.isfile(
+            args.target_text_file
+        ), "Please specify a valid file for --target-text-file"
 
 
 def generate(args):
@@ -502,7 +522,32 @@ def generate(args):
         and a.reverse_source == reverse_source
         for a in model_args
     )
-    if pytorch_translate_data.is_multilingual(args):
+    if args.source_binary_file != "":
+        assert args.target_binary_file != ""
+        dst_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
+            args.target_binary_file
+        )
+        if use_char_source:
+            src_dataset = char_data.InMemoryNumpyWordCharDataset.create_from_file(
+                args.source_binary_file
+            )
+            gen_split = char_data.LanguagePairSourceCharDataset(
+                src=src_dataset,
+                dst=dst_dataset,
+                pad_idx=src_dict.pad(),
+                eos_idx=dst_dict.eos(),
+            )
+        else:
+            src_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
+                args.source_binary_file
+            )
+            gen_split = data.LanguagePairDataset(
+                src=src_dataset,
+                dst=dst_dataset,
+                pad_idx=src_dict.pad(),
+                eos_idx=dst_dict.eos(),
+            )
+    elif pytorch_translate_data.is_multilingual(args):
         gen_split = pytorch_translate_data.make_language_pair_dataset_from_text_multilingual(
             source_text_file=args.source_text_file[0],
             target_text_file=args.target_text_file,
