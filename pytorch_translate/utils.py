@@ -179,6 +179,20 @@ def load_diverse_ensemble_for_inference(filenames, src_dict, dst_dict):
     return ensemble, [s["args"] for s in states]
 
 
+def densify(t):
+    """Removes holes in an array.
+
+    This function converts a 1-dimensional tensor of length n without duplicates
+    to a 1-dimensional tensor of the same length with all elements less than n
+    while preserving the order. For example,
+
+        [1, 0, 4, 5, 10, 9] -> [1, 0, 2, 3, 5, 4]
+    """
+    _, sorted_indices = torch.sort(t)
+    _, dense_t = torch.sort(sorted_indices)
+    return dense_t
+
+
 def average_tensors(tensor_list, norm_fn=None, weights=None):
     """Averages a list of tensors.
 
