@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from fairseq.models import FairseqEncoder, FairseqIncrementalDecoder
 from pytorch_translate import data as pytorch_translate_data
+from pytorch_translate import utils
 
 
 class MultilingualEncoder(FairseqEncoder):
@@ -141,14 +142,25 @@ class MultilingualDecoder(FairseqIncrementalDecoder):
             )
             all_attn_scores[indices, :, :max_source_length] = lang_attn_scores
             all_logits[indices, 1:, : lang_logits.size(2)] = lang_logits
+        incremental_state["lang_ids"] = lang_ids
         return all_logits, all_attn_scores, None
 
     def reorder_incremental_state(self, incremental_state, new_order):
         """Reorder buffered internal state (for incremental generation)."""
         if not incremental_state:
             return
+        bsz = new_order.size(0)
         for lang_id, decoder in enumerate(self.decoders):
-            decoder.reorder_incremental_state(incremental_state[lang_id], new_order)
+            indices = torch.nonzero(incremental_state["lang_ids"] == lang_id)
+            lang_bsz = indices.size(0)
+            if lang_bsz > 0:
+                if lang_bsz == bsz:
+                    lang_new_order = new_order
+                else:
+                    lang_new_order = utils.densify(new_order[indices.squeeze(1)])
+                decoder.reorder_incremental_state(
+                    incremental_state[lang_id], lang_new_order
+                )
 
     def max_positions(self):
         """Maximum output length supported by the decoder."""
