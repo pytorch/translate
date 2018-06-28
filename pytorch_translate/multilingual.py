@@ -7,6 +7,23 @@ from pytorch_translate import data as pytorch_translate_data
 from pytorch_translate import utils
 
 
+def rescale_grad_hook(module, idx, grad):
+    lang_bsz = module.last_lang_bszs[idx]
+    if lang_bsz > 0:
+        return grad * float(module.last_bsz) / float(lang_bsz)
+    return grad
+
+
+def create_hook_fn(module, idx):
+    return lambda grad: rescale_grad_hook(module, idx, grad)
+
+
+def register_hooks(module, submodules):
+    for idx, submodule in enumerate(submodules):
+        for p in submodule.parameters():
+            p.register_hook(create_hook_fn(module, idx))
+
+
 class MultilingualEncoder(FairseqEncoder):
     """Multilingual encoder.
 
@@ -14,12 +31,16 @@ class MultilingualEncoder(FairseqEncoder):
     begin of the source sentence selects the encoder to use.
     """
 
-    def __init__(self, dictionary, encoders, hidden_dim, num_layers):
+    def __init__(
+        self, dictionary, encoders, hidden_dim, num_layers, rescale_grads=False
+    ):
         super().__init__(dictionary)
         self.dictionary = dictionary
         self.encoders = nn.ModuleList(encoders)
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
+        if rescale_grads and len(encoders) > 1:
+            register_hooks(self, encoders)
 
     def forward(self, src_tokens, src_lengths):
         # Fetch language IDs and remove them from src_tokens
@@ -38,9 +59,12 @@ class MultilingualEncoder(FairseqEncoder):
         # from LongInt to Int
         all_src_lengths = torch.zeros(bsz, dtype=torch.int).cuda()
         all_src_tokens = torch.zeros_like(src_tokens)
+        self.last_bsz = bsz
+        self.last_lang_bszs = []
         for lang_id, encoder in enumerate(self.encoders):
             indices = torch.nonzero(lang_ids == lang_id)
             lang_bsz = indices.size(0)
+            self.last_lang_bszs.append(lang_bsz)
             if lang_bsz == 0:  # Language not in this batch
                 for p in encoder.parameters():
                     p.grad = torch.zeros_like(p.data)
@@ -75,11 +99,13 @@ class MultilingualEncoder(FairseqEncoder):
 class MultilingualDecoder(FairseqIncrementalDecoder):
     """Multilingual decoder."""
 
-    def __init__(self, dictionary, decoders, hidden_dim):
+    def __init__(self, dictionary, decoders, hidden_dim, rescale_grads=False):
         super().__init__(dictionary)
         self.decoders = nn.ModuleList(decoders)
         self.hidden_dim = hidden_dim
         self.max_vocab_size = max(len(d.dictionary) for d in decoders)
+        if rescale_grads and len(decoders) > 1:
+            register_hooks(self, decoders)
 
     def forward(
         self,
@@ -118,11 +144,14 @@ class MultilingualDecoder(FairseqIncrementalDecoder):
         # +1 for language ID
         all_logits = torch.zeros(bsz, seq_len + 1, self.max_vocab_size).cuda()
         all_attn_scores = torch.zeros(bsz, seq_len, encoder_out[0].size(0)).cuda()
+        self.last_bsz = bsz
+        self.last_lang_bszs = []
         for lang_id, decoder in enumerate(self.decoders):
             if lang_id not in incremental_state:
                 incremental_state[lang_id] = {}
             indices = torch.nonzero(lang_ids == lang_id)
             lang_bsz = indices.size(0)
+            self.last_lang_bszs.append(lang_bsz)
             if lang_bsz == 0:  # Language not in this batch
                 for p in decoder.parameters():
                     p.grad = torch.zeros_like(p.data)

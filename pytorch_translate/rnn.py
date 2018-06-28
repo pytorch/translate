@@ -436,6 +436,7 @@ class RNNModel(FairseqModel):
             encoders,
             hidden_dim=args.encoder_hidden_dim,
             num_layers=args.encoder_layers,
+            rescale_grads=args.multiling_rescale_grads,
         )
         decoders = []
         dst_dict = pytorch_translate_dictionary.MaxVocabDictionary()
@@ -444,7 +445,10 @@ class RNNModel(FairseqModel):
             dst_dict.push(d)
             decoders.append(RNNModel.build_decoder(args, None, d))
         decoder = MultilingualDecoder(
-            dst_dict, decoders, hidden_dim=args.encoder_hidden_dim
+            dst_dict,
+            decoders,
+            hidden_dim=args.encoder_hidden_dim,
+            rescale_grads=args.multiling_rescale_grads,
         )
         return cls(encoder, decoder)
 

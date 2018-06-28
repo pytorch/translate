@@ -297,6 +297,17 @@ def add_preprocessing_args(parser):
         "specify paths to eval target samples. The n-th entry should be "
         "in the n-th language in --multiling-target-lang.",
     )
+    group.add_argument(
+        "--multiling-rescale-grads",
+        type=utils.bool_flag,
+        nargs="?",
+        const=True,
+        default=False,
+        help=(
+            "If true, rescale gradients based on the number of training "
+            "samples a specific component has received in a training batch."
+        ),
+    )
 
     group.add_argument(
         "--penalized-target-tokens-file",
