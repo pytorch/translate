@@ -426,6 +426,18 @@ def expand_optimization_args(group):
         "in the first place. A value of < 0 disables this.",
     )
     group.add_argument(
+        "--shrink-lr-no-best-bleu-eval",
+        default=5,
+        type=int,
+        metavar="N",
+        help="Decay learning rate after N evals have been run without "
+        "achieving a better BLEU score than before. This is to achieve "
+        "decay lr within an epoch, independent of lr_scheduler. "
+        "Note that this is affected by --generate-bleu-eval-interval in "
+        "how frequently we run BLEU eval in the first place. "
+        "A value of < 0 disables this.",
+    )
+    group.add_argument(
         "--pruning-percentile",
         type=int,
         default=0,

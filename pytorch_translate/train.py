@@ -400,6 +400,7 @@ def train(args, extra_state, trainer, dataset):
                 val_bleu,
                 stop_training_mid_epoch,
                 translation_samples,
+                lr,
             ) = validate_save_and_evaluate_bleu(
                 args=args,
                 trainer=trainer,
@@ -437,6 +438,7 @@ def train(args, extra_state, trainer, dataset):
                 val_bleu,
                 stop_training_end_of_epoch,
                 translation_samples,
+                lr,
             ) = validate_save_and_evaluate_bleu(
                 args=args,
                 trainer=trainer,
@@ -851,6 +853,14 @@ def evaluate_bleu(args, dataset, extra_state):
     else:
         extra_state["evaluate_bleu"]["num_since_best"] += 1
 
+    decay_lr = False
+    if (
+        args.shrink_lr_no_best_bleu_eval > 0
+        and extra_state["evaluate_bleu"]["num_since_best"]
+        > args.shrink_lr_no_best_bleu_eval
+    ):
+        decay_lr = True
+
     stop_due_to_val_bleu = False
     if (
         args.stop_no_best_bleu_eval >= 0
@@ -863,7 +873,7 @@ def evaluate_bleu(args, dataset, extra_state):
             f"(current score: {val_bleu}) was "
             f"{extra_state['evaluate_bleu']['num_since_best']} evals ago."
         )
-    return val_bleu, stop_due_to_val_bleu, translation_samples
+    return val_bleu, stop_due_to_val_bleu, translation_samples, decay_lr
 
 
 def validate_save_and_evaluate_bleu(
@@ -874,7 +884,7 @@ def validate_save_and_evaluate_bleu(
     do_validate: bool,
     do_save: bool,
     do_eval_bleu: bool,
-) -> Tuple[Optional[float], Optional[float], Optional[float], bool, Optional[list]]:
+) -> Tuple[Optional[float], Optional[float], Optional[float], bool, Optional[list], float]:
     # evaluate on validate set
     val_loss = None
     val_ppl = None
@@ -889,6 +899,7 @@ def validate_save_and_evaluate_bleu(
         )
     extra_state["val_loss"] = val_loss
 
+    lr = trainer.optimizer.get_lr()
     val_bleu = None
     stop_due_to_val_bleu = False
     translation_samples = None
@@ -896,9 +907,19 @@ def validate_save_and_evaluate_bleu(
         # save checkpoint
         save_checkpoint(trainer=trainer, args=args, extra_state=extra_state)
         if do_eval_bleu:
-            val_bleu, stop_due_to_val_bleu, translation_samples = evaluate_bleu(
+            (
+                val_bleu,
+                stop_due_to_val_bleu,
+                translation_samples,
+                decay_lr
+            ) = evaluate_bleu(
                 args=args, dataset=dataset, extra_state=extra_state
             )
+            if decay_lr:
+                current_lr = lr
+                trainer.optimizer.set_lr(lr * args.lr_shrink)
+                lr = trainer.optimizer.get_lr()
+                print(f"Decay lr from {current_lr} to {lr}.")
 
     return (
         val_loss,
@@ -906,6 +927,7 @@ def validate_save_and_evaluate_bleu(
         val_bleu,
         stop_due_to_val_loss or stop_due_to_val_bleu,
         translation_samples,
+        lr,
     )
 
 
