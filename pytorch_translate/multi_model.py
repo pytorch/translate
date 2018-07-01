@@ -12,6 +12,13 @@ from pytorch_translate.utils import average_tensors
 import torch.nn.functional as F
 
 
+def unfreeze_nth_component(components, unfreeze_idx=-1):
+    """Freeze weights in all components except the `unfreeze_idx`-th one."""
+    for idx, component in enumerate(components):
+        for p in component.parameters():
+            p.requires_grad = (idx == unfreeze_idx)
+
+
 class MultiEncoder(FairseqEncoder):
     """Concatenates the outputs of multiple encoders."""
 
@@ -21,11 +28,14 @@ class MultiEncoder(FairseqEncoder):
         self.unfreeze_single = False
         self.unfreeze_idx = -1
         if self.training:
-            if training_schedule == "freeze_all":
-                for encoder in self.encoders:
-                    for p in encoder.parameters():
-                        p.requires_grad = False
-            elif training_schedule == "unfreeze_single":
+            if training_schedule in ["freeze_all", "freeze_all_encoders"]:
+                unfreeze_nth_component(self.encoders)
+            elif training_schedule.startswith(
+                "unfreeze_enc_"
+            ) or training_schedule.startswith("unfreeze_encdec_"):
+                _, _, n = training_schedule.split("_")
+                unfreeze_nth_component(self.encoders, int(n))
+            elif training_schedule in ["unfreeze_single", "unfreeze_single_encoder"]:
                 self.unfreeze_single = True
                 self.unfreeze_mod = len(encoders)
             elif training_schedule == "separate":
@@ -37,9 +47,7 @@ class MultiEncoder(FairseqEncoder):
     def forward(self, src_tokens, src_lengths):
         if self.unfreeze_single:
             self.unfreeze_idx = (self.unfreeze_idx + 1) % self.unfreeze_mod
-            for encoder_id, encoder in enumerate(self.encoders):
-                for p in encoder.parameters():
-                    p.requires_grad = encoder_id == self.unfreeze_idx
+            unfreeze_nth_component(self.encoders, self.unfreeze_idx)
         all_encoder_outs = [
             encoder(src_tokens, src_lengths) for encoder in self.encoders
         ]
@@ -476,11 +484,14 @@ class MultiDecoder(FairseqIncrementalDecoder):
         self.separate_training = False
         self.unfreeze_idx = -1
         if self.training:
-            if training_schedule == "freeze_all":
-                for decoder in self.decoders:
-                    for p in decoder.parameters():
-                        p.requires_grad = False
-            elif training_schedule == "unfreeze_single":
+            if training_schedule in ["freeze_all", "freeze_all_decoders"]:
+                self.freeze_decoders()
+            elif training_schedule.startswith(
+                "unfreeze_dec_"
+            ) or training_schedule.startswith("unfreeze_encdec_"):
+                _, _, n = training_schedule.split("_")
+                self.freeze_decoders(int(n))
+            elif training_schedule in ["unfreeze_single", "unfreeze_single_decoder"]:
                 self.unfreeze_single = True
                 self.unfreeze_mod = len(decoders)
             elif training_schedule == "separate":
@@ -489,6 +500,14 @@ class MultiDecoder(FairseqIncrementalDecoder):
                 self.separate_training = True
             elif training_schedule != "complete":
                 raise RuntimeError(f"Unknown training schedule '{training_schedule}'")
+
+    def freeze_decoders(self, except_idx=-1):
+        """Freezes weights in all decoders except `except_idx`."""
+        unfreeze_nth_component(self.decoders, except_idx)
+        try:
+            unfreeze_nth_component(self.combi_strat.output_projections, except_idx)
+        except AttributeError:
+            pass  # combi_strat does not have multiple output projections
 
     def forward(
         self,
@@ -499,13 +518,11 @@ class MultiDecoder(FairseqIncrementalDecoder):
     ):
         if self.unfreeze_single:
             self.unfreeze_idx = (self.unfreeze_idx + 1) % self.unfreeze_mod
-            for decoder_id, decoder in enumerate(self.decoders):
-                for p in decoder.parameters():
-                    p.requires_grad = decoder_id == self.unfreeze_idx
             if self.separate_training:
                 unfreeze_combi_strat = len(self.decoders) == self.unfreeze_idx
                 for p in self.combi_strat.parameters():
                     p.requires_grad = unfreeze_combi_strat
+            self.freeze_decoders(self.unfreeze_idx)
         if incremental_state is None:
             incremental_state = {
                 decoder_id: None for decoder_id in range(len(self.decoders))
