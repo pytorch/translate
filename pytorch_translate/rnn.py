@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, PackedSequence, pad_packed_sequence
@@ -31,6 +30,7 @@ from pytorch_translate.common_layers import (
     DecoderWithOutputProjection,
 )
 from pytorch_translate import attention
+from pytorch_translate.utils import maybe_cat
 
 
 def torch_find(index, query, vocab_size):
@@ -303,6 +303,8 @@ class RNNModel(FairseqModel):
 
     @staticmethod
     def build_single_encoder(args, src_dict):
+        if not args.encoder_hidden_dim:
+            return DummyEncoder(src_dict, num_layers=args.encoder_layers)
         if args.sequence_lstm:
             encoder_class = LSTMSequenceEncoder
         else:
@@ -655,6 +657,24 @@ class LSTMSequenceEncoder(FairseqEncoder):
         return int(1e5)  # an arbitrary large number
 
 
+class DummyEncoder(FairseqEncoder):
+    """Dummy encoder which outputs None. Used for LM training."""
+
+    def __init__(self, dictionary, num_layers=1):
+        super().__init__(dictionary)
+        self.num_layers = num_layers
+
+    def forward(self, src_tokens, src_lengths):
+        bsz = src_lengths.size(0)
+        ones = torch.ones((self.num_layers, bsz, 1)).cuda()
+        dummy_out = torch.ones((1, bsz, 1))
+        return dummy_out, ones, ones, src_lengths, src_tokens
+
+    def max_positions(self):
+        """Maximum input length supported by the encoder."""
+        return int(1e5)  # an arbitrary large number
+
+
 class RNNEncoder(FairseqEncoder):
     """RNN encoder."""
 
@@ -821,6 +841,7 @@ class RNNDecoder(DecoderWithOutputProjection):
             out_embed_dim,
             project_output=project_output,
         )
+        encoder_hidden_dim = max(1, encoder_hidden_dim)
         self.encoder_hidden_dim = encoder_hidden_dim
         self.embed_dim = embed_dim
         self.hidden_dim = hidden_dim
@@ -864,28 +885,22 @@ class RNNDecoder(DecoderWithOutputProjection):
                 cell_init_fc_list.append(Linear(encoder_hidden_dim, hidden_dim))
             self.hidden_init_fc_list = nn.ModuleList(hidden_init_fc_list)
             self.cell_init_fc_list = nn.ModuleList(cell_init_fc_list)
-        self.initial_attn_context = nn.Parameter(
-            torch.Tensor(encoder_hidden_dim).zero_()
-        )
 
-        if attention_type is not None:
-            self.attention = attention.build_attention(
-                attention_type=attention_type,
-                decoder_hidden_state_dim=hidden_dim,
-                encoder_output_dim=encoder_hidden_dim,
+        self.attention = attention.build_attention(
+            attention_type=attention_type,
+            decoder_hidden_state_dim=hidden_dim,
+            context_dim=encoder_hidden_dim,
+        )
+        if self.attention.context_dim:
+            self.initial_attn_context = nn.Parameter(
+                torch.Tensor(self.attention.context_dim).zero_()
             )
-            self.combined_output_and_context_dim = encoder_hidden_dim + hidden_dim
-        else:
-            self.attention = None
-            self.combined_output_and_context_dim = hidden_dim
+        self.combined_output_and_context_dim = self.attention.context_dim + hidden_dim
 
         layers = []
         for layer in range(num_layers):
             if layer == 0:
-                if self.attention is not None:
-                    cell_input_dim = encoder_hidden_dim + embed_dim
-                else:
-                    cell_input_dim = embed_dim
+                cell_input_dim = embed_dim + self.attention.context_dim
             else:
                 cell_input_dim = hidden_dim
             layers.append(cell_class(input_dim=cell_input_dim, hidden_dim=hidden_dim))
@@ -914,21 +929,22 @@ class RNNDecoder(DecoderWithOutputProjection):
         cached_state = utils.get_incremental_state(
             self, incremental_state, "cached_state"
         )
+        input_feed = None
         if cached_state is not None:
             prev_hiddens, prev_cells, input_feed = cached_state
         else:
             # first time step, initialize previous states
             prev_hiddens, prev_cells = self._init_prev_states(encoder_out)
-            input_feed = self.initial_attn_context.expand(bsz, self.encoder_hidden_dim)
+            if self.attention.context_dim:
+                input_feed = self.initial_attn_context.expand(
+                    bsz, self.attention.context_dim
+                )
 
         attn_scores_per_step = []
         outs = []
         for j in range(seqlen):
             # input feeding: concatenate context vector from previous time step
-            if self.attention is not None:
-                step_input = torch.cat((x[j, :, :], input_feed), dim=1)
-            else:
-                step_input = x[j, :, :]
+            step_input = maybe_cat((x[j, :, :], input_feed), dim=1)
             previous_layer_input = step_input
             for i, rnn in enumerate(self.layers):
                 # recurrent cell
@@ -950,24 +966,13 @@ class RNNDecoder(DecoderWithOutputProjection):
                 prev_hiddens[i] = hidden
                 prev_cells[i] = cell
 
-            if self.attention is not None:
-                out, step_attn_scores = self.attention(
-                    hidden, encoder_outs, src_lengths
-                )
-                input_feed = out
-            else:
-                combined_output_and_context = hidden
-                step_attn_scores = Variable(
-                    torch.ones(src_lengths.shape[0], src_lengths.max()).type_as(
-                        encoder_outs
-                    ),
-                    requires_grad=False,
-                ).t()
+            out, step_attn_scores = self.attention(hidden, encoder_outs, src_lengths)
+            input_feed = out
             attn_scores_per_step.append(step_attn_scores.unsqueeze(1))
             attn_scores = torch.cat(attn_scores_per_step, dim=1)
             # srclen x tgtlen x bsz -> bsz x tgtlen x srclen
             attn_scores = attn_scores.transpose(0, 2)
-            combined_output_and_context = torch.cat((hidden, out), dim=1)
+            combined_output_and_context = maybe_cat((hidden, out), dim=1)
 
             # save final output
             outs.append(combined_output_and_context)
@@ -1003,6 +1008,8 @@ class RNNDecoder(DecoderWithOutputProjection):
             return
 
         def reorder_state(state):
+            if state is None:
+                return None
             if isinstance(state, list):
                 return [reorder_state(state_i) for state_i in state]
             return state.index_select(0, new_order)

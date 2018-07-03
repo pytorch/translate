@@ -13,13 +13,13 @@ from pytorch_translate.attention import (
 @register_attention('pooling')
 class PoolingAttention(BaseAttention):
 
-    def __init__(self, decoder_hidden_state_dim, encoder_output_dim, **kwargs):
-        super().__init__(decoder_hidden_state_dim, encoder_output_dim)
+    def __init__(self, decoder_hidden_state_dim, context_dim, **kwargs):
+        super().__init__(decoder_hidden_state_dim, context_dim)
 
         self.pool_type = kwargs.get("pool_type", "mean")
 
     def forward(self, decoder_state, source_hids, src_lengths):
-        assert self.decoder_hidden_state_dim == self.encoder_output_dim
+        assert self.decoder_hidden_state_dim == self.context_dim
         max_src_len = source_hids.size()[0]
         assert max_src_len == src_lengths.data.max()
         batch_size = source_hids.size()[1]
@@ -53,19 +53,19 @@ class PoolingAttention(BaseAttention):
 
 @register_attention('max')
 class MaxPoolingAttention(PoolingAttention):
-    def __init__(self, decoder_hidden_state_dim, encoder_output_dim, **kwargs):
+    def __init__(self, decoder_hidden_state_dim, context_dim, **kwargs):
         super().__init__(
             decoder_hidden_state_dim,
-            encoder_output_dim,
+            context_dim,
             pool_type="max",
         )
 
 
 @register_attention('mean')
 class MeanPoolingAttention(PoolingAttention):
-    def __init__(self, decoder_hidden_state_dim, encoder_output_dim, **kwargs):
+    def __init__(self, decoder_hidden_state_dim, context_dim, **kwargs):
         super().__init__(
             decoder_hidden_state_dim,
-            encoder_output_dim,
+            context_dim,
             pool_type="mean",
         )

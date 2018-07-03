@@ -13,6 +13,7 @@ from pytorch_translate.common_layers import (
     DecoderWithOutputProjection,
 )
 from pytorch_translate import attention
+from pytorch_translate.utils import maybe_cat
 
 
 class NGramDecoder(DecoderWithOutputProjection):
@@ -86,12 +87,10 @@ class NGramDecoder(DecoderWithOutputProjection):
         self.attention = attention.build_attention(
             attention_type=attention_type,
             decoder_hidden_state_dim=hidden_dim,
-            encoder_output_dim=encoder_hidden_dim,
+            context_dim=encoder_hidden_dim,
             force_projection=True,
         )
-        self.combined_output_and_context_dim = (
-            self.attention.encoder_output_dim + hidden_dim
-        )
+        self.combined_output_and_context_dim = self.attention.context_dim + hidden_dim
         if self.combined_output_and_context_dim != out_embed_dim:
             self.additional_fc = Linear(
                 self.combined_output_and_context_dim, out_embed_dim
@@ -138,9 +137,10 @@ class NGramDecoder(DecoderWithOutputProjection):
             encoder_outs.repeat(1, seqlen, 1),
             src_lengths.repeat(seqlen),
         )
-        attn_out = attn_out.view(seqlen, bsz, -1).transpose(1, 0)
+        if attn_out is not None:
+            attn_out = attn_out.view(seqlen, bsz, -1).transpose(1, 0)
         attn_scores = attn_scores.view(-1, seqlen, bsz).transpose(0, 2)
-        x = torch.cat((x, attn_out), dim=2)
+        x = maybe_cat((x, attn_out), dim=2)
 
         # bottleneck layer
         if hasattr(self, "additional_fc"):
