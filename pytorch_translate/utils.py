@@ -105,10 +105,7 @@ class BucketStopwatchMeter(object):
     def stop(self, n=1):
         if self.start_time is not None:
             delta = time.time() - self.start_time
-            bucket_id = min(
-                self.n_buckets - 1,
-                n // self.increment,
-            )
+            bucket_id = min(self.n_buckets - 1, n // self.increment)
             self.sum[bucket_id] += delta
             self.n[bucket_id] += n
             self.count[bucket_id] += 1
@@ -193,6 +190,34 @@ def densify(t):
     return dense_t
 
 
+def maybe_cat(tensors, dim, nullable=None):
+    """Like torch.cat, but skips elements in `tensors` which are None.
+
+    Args:
+        tensors: List of tensors (compare torch.cat())
+        dim: Dimension along which to concatenate (compare to torch.cat())
+        nullable: List of the same length as `tensors`. If specified, throw
+            a RuntimeError if the i-th element in `tensors` is None and the
+            i-th element in nullable is False.
+
+    Returns:
+        Concatenation of all tensors in `tensors` along `dim` which are not
+        None.
+
+    Throws:
+        RuntimeError is `nullable` constraint is violated or all alements in
+        `tensors` are None.
+    """
+    if nullable is not None and any(
+        (t is None) and not n for t, n in zip(tensors, nullable)
+    ):
+        raise RuntimeError("Unexpected element in tensors is None.")
+    filtered = [t for t in tensors if t is not None]
+    if len(filtered) == 1:
+        return filtered[0]
+    return torch.cat(filtered, dim=dim)
+
+
 def average_tensors(tensor_list, norm_fn=None, weights=None):
     """Averages a list of tensors.
 
@@ -219,8 +244,10 @@ def average_tensors(tensor_list, norm_fn=None, weights=None):
         weights = [1.0 / float(len(tensor_list))] * len(tensor_list)
     assert len(tensor_list) == len(weights)
     if norm_fn is None:
+
         def id_fn(x, dim):
             return x
+
         norm_fn = id_fn
     acc = torch.zeros_like(tensor_list[0])
     for w, t in zip(weights, tensor_list):

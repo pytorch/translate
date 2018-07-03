@@ -12,12 +12,12 @@ ATTENTION_REGISTRY = {}
 def build_attention(
     attention_type,
     decoder_hidden_state_dim,
-    encoder_output_dim,
+    context_dim,
     **kwargs
 ):
     return ATTENTION_REGISTRY[attention_type](
         decoder_hidden_state_dim,
-        encoder_output_dim,
+        context_dim,
         **kwargs
     )
 
