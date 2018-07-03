@@ -34,3 +34,29 @@ class TestAverageTensors(unittest.TestCase):
         npt.assert_allclose(
             pytorch_utils.average_tensors([a, b], norm_fn=F.softmax), expected
         )
+
+
+class TestMaybeCat(unittest.TestCase):
+    def test_cat(self):
+        a = torch.IntTensor([[1, 2, 3], [4, 5, 6]])
+        b = torch.IntTensor([[11, 12, 13], [14, 15, 16]])
+        ab = torch.IntTensor([[1, 2, 3, 11, 12, 13], [4, 5, 6, 14, 15, 16]])
+        npt.assert_array_equal(pytorch_utils.maybe_cat([a, b], dim=1), ab)
+        npt.assert_array_equal(
+            pytorch_utils.maybe_cat([a, None, b, None, None], dim=1), ab
+        )
+        npt.assert_array_equal(
+            pytorch_utils.maybe_cat([None, None, a, None], dim=1), a
+        )
+
+    def test_nullable(self):
+        a = torch.IntTensor([[1, 2, 3], [4, 5, 6]])
+        pytorch_utils.maybe_cat([a, None], 1)
+        pytorch_utils.maybe_cat([a, None], 1, nullable=[True, True])
+        pytorch_utils.maybe_cat([a, None], 1, nullable=[False, True])
+        with self.assertRaises(RuntimeError):
+            pytorch_utils.maybe_cat([a, None], 1, nullable=[False, False])
+        with self.assertRaises(RuntimeError):
+            pytorch_utils.maybe_cat([None, None], 1)
+        with self.assertRaises(RuntimeError):
+            pytorch_utils.maybe_cat([], 1)

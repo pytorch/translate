@@ -15,19 +15,19 @@ from pytorch_translate.common_layers import Linear
 @register_attention('dot')
 class DotAttention(BaseAttention):
 
-    def __init__(self, decoder_hidden_state_dim, encoder_output_dim, **kwargs):
-        super().__init__(decoder_hidden_state_dim, encoder_output_dim)
+    def __init__(self, decoder_hidden_state_dim, context_dim, **kwargs):
+        super().__init__(decoder_hidden_state_dim, context_dim)
 
         self.input_proj = None
         force_projection = kwargs.get("force_projection", False)
-        if force_projection or decoder_hidden_state_dim != encoder_output_dim:
+        if force_projection or decoder_hidden_state_dim != context_dim:
             self.input_proj = Linear(
-                decoder_hidden_state_dim, encoder_output_dim, bias=True
+                decoder_hidden_state_dim, context_dim, bias=True
             )
         self.src_length_masking = kwargs.get("src_length_masking", True)
 
     def forward(self, decoder_state, source_hids, src_lengths):
-        # decoder_state: bsz x encoder_output_dim
+        # decoder_state: bsz x context_dim
         if self.input_proj is not None:
             decoder_state = self.input_proj(decoder_state)
         # compute attention
