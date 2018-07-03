@@ -303,6 +303,8 @@ class RNNModel(FairseqModel):
 
     @staticmethod
     def build_single_encoder(args, src_dict):
+        if not args.encoder_hidden_dim:
+            return DummyEncoder(src_dict, num_layers=args.encoder_layers)
         if args.sequence_lstm:
             encoder_class = LSTMSequenceEncoder
         else:
@@ -649,6 +651,24 @@ class LSTMSequenceEncoder(FairseqEncoder):
         )
 
         return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
+
+    def max_positions(self):
+        """Maximum input length supported by the encoder."""
+        return int(1e5)  # an arbitrary large number
+
+
+class DummyEncoder(FairseqEncoder):
+    """Dummy encoder which outputs None. Used for LM training."""
+
+    def __init__(self, dictionary, num_layers=1):
+        super().__init__(dictionary)
+        self.num_layers = num_layers
+
+    def forward(self, src_tokens, src_lengths):
+        bsz = src_lengths.size(0)
+        ones = torch.ones((self.num_layers, bsz, 1)).cuda()
+        dummy_out = torch.ones((1, bsz, 1))
+        return dummy_out, ones, ones, src_lengths, src_tokens
 
     def max_positions(self):
         """Maximum input length supported by the encoder."""
