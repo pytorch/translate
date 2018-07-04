@@ -137,7 +137,7 @@ class MultiheadAttention(BaseAttention):
     Inputs
       init:
         decoder_hidden_state_dim : dimensionality of decoder hidden state
-        encoder_output_dim : dimensionality of encoder output
+        context_dim : dimensionality of encoder output
         kwargs :
           nheads : integer # of attention heads
           unseen_mask: if True, only attend to previous sequence positions
@@ -156,9 +156,9 @@ class MultiheadAttention(BaseAttention):
     Output
       result : [batch_size, sequence length, d_model]
     """
-    def __init__(self, decoder_hidden_state_dim, encoder_output_dim, **kwargs):
-        super().__init__(decoder_hidden_state_dim, encoder_output_dim)
-        assert decoder_hidden_state_dim == encoder_output_dim
+    def __init__(self, decoder_hidden_state_dim, context_dim, **kwargs):
+        super().__init__(decoder_hidden_state_dim, context_dim)
+        assert decoder_hidden_state_dim == context_dim
         d_model = decoder_hidden_state_dim  # for brevity
         self.nheads = kwargs.get("nheads", 1)
         assert d_model % self.nheads == 0
