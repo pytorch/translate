@@ -16,7 +16,7 @@ def unfreeze_nth_component(components, unfreeze_idx=-1):
     """Freeze weights in all components except the `unfreeze_idx`-th one."""
     for idx, component in enumerate(components):
         for p in component.parameters():
-            p.requires_grad = (idx == unfreeze_idx)
+            p.requires_grad = idx == unfreeze_idx
 
 
 class MultiEncoder(FairseqEncoder):
@@ -295,12 +295,34 @@ class BottleneckStrategy(MultiDecoderCombinationStrategy):
 class BaseWeightedStrategy(MultiDecoderCombinationStrategy):
     """Base class for strategies with explicitly learned weights."""
 
-    def __init__(self, out_embed_dims, vocab_size, vocab_reduction_module=None):
+    def __init__(
+        self,
+        out_embed_dims,
+        vocab_size,
+        vocab_reduction_module=None,
+        hidden_layer_size=32,
+        activation_fn=torch.nn.ReLU,
+        norm_fn=torch.exp,
+    ):
+        """Initializes a combination strategy with explicit weights.
+
+        Args:
+            out_embed_dims (list): List of output dimensionalities of the
+                decoders.
+            vocab_size (int): Size of the output projection.
+            vocab_reduction_module: For vocabulary reduction
+            hidden_layer_size (int): Size of the hidden layer of the gating
+                network.
+            activation_fn: Non-linearity at the hidden layer.
+            norm_fn: Function to use for normalization (exp or sigmoid).
+        """
         super().__init__(out_embed_dims, vocab_size, vocab_reduction_module)
-        self.weight_projection = Linear(
-            sum(out_embed_dims), len(out_embed_dims), bias=True
+        self.gating_network = nn.Sequential(
+            Linear(sum(out_embed_dims), hidden_layer_size, bias=True),
+            activation_fn(),
+            Linear(hidden_layer_size, len(out_embed_dims), bias=True),
         )
-        self.activation_fn = torch.nn.Sigmoid()
+        self.norm_fn = norm_fn
 
     def compute_weights(self, unprojected_outs, select_single=None):
         """Derive interpolation weights from unprojected decoder outputs.
@@ -319,9 +341,7 @@ class BaseWeightedStrategy(MultiDecoderCombinationStrategy):
             ret = torch.zeros((sz[0], sz[1], len(unprojected_outs))).cuda()
             ret[:, :, select_single] = 1.0
             return ret
-        logits = self.activation_fn(
-            self.weight_projection(torch.cat(unprojected_outs, 2))
-        )
+        logits = self.norm_fn(self.gating_network(torch.cat(unprojected_outs, 2)))
         return logits / torch.sum(logits, dim=2, keepdim=True)
 
 
