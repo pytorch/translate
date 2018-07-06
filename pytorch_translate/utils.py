@@ -44,6 +44,12 @@ class ManagedCheckpoints:
         assert max_num_checkpoints > 0, "Empty listing is not supported"
         self.kept_checkpoints = collections.deque(maxlen=max_num_checkpoints)
 
+    def __repr__(self):
+        return (
+            f"ManagedCheckpoints(kept_checkpoints={self.kept_checkpoints}, "
+            f"auto_clear={self.auto_clear})"
+        )
+
     def append(self, checkpoint_filename):
         # If we append a filename that we already manage, we would need
         # to remove it from its current position otherwise it may get deleted

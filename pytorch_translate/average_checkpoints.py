@@ -27,10 +27,9 @@ def average_checkpoints(inputs: Iterable[str]) -> Dict[str, Any]:
                 lambda s, _: torch.serialization.default_restore_location(s, "cpu")
             ),
         )
-        # Copies over the settings from the first checkpoint
-        # TODO: maybe also delete other keys from the new state?
-        if len(new_state) == 0:
-            new_state = state
+        # We want to use the extra_state and other params from the last
+        # (most recent) checkpoint.
+        new_state = state
 
         model_params: collections.OrderedDict = state["model"]
 
