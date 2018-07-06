@@ -799,7 +799,7 @@ def _save_averaged_checkpoint(args, extra_state):
             f"epoch {epoch}, offset {offset}.",
             flush=True,
         )
-    torch.save(averaged_state, filename)
+    utils.torch_persistent_save(averaged_state, filename)
     if args.log_verbose:
         print(
             f"Finished saving averaged checkpoint for "
