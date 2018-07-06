@@ -71,10 +71,32 @@ def get_parser_with_args():
 
 def load_existing_checkpoint(checkpoint_path, trainer, restore_state=True):
     extra_state = None
+    loaded = False
     if restore_state:
         extra_state = trainer.load_checkpoint(checkpoint_path)
         if extra_state is None:
+            loaded = False
             print(f"Failed to load checkpoint and state from {checkpoint_path}.")
+        else:
+            loaded = True
+            print(
+                f"| loaded checkpoint {checkpoint_path} (epoch {extra_state['epoch']})\n"
+                f"| extra_state {extra_state}"
+            )
+            # batch_offset being None denotes this was a checkpoint saved at
+            # the end of an epoch (after the last batch).
+            if extra_state["batch_offset"] is None:
+                trainer.lr_step(extra_state["epoch"])
+                extra_state["epoch"] += 1
+                extra_state["batch_offset"] = 0
+
+            # check availability for checkpoint backward compatiblity
+            if "start_time" not in extra_state:
+                extra_state["start_time"] = time.time()
+
+            if "last_bleu_eval" not in extra_state:
+                extra_state["last_bleu_eval"] = 0
+
     else:
         # TODO(weiho): use trainer.load_checkpoint(load_optim=False) after
         # that's been synced to open-source fairseq.
@@ -90,30 +112,13 @@ def load_existing_checkpoint(checkpoint_path, trainer, restore_state=True):
         trainer._optim_history = []
 
         if dummy_state is None:
+            loaded = False
             print(f"Failed to load checkpoint weights from {checkpoint_path}.")
         else:
+            loaded = True
             print(f"Loaded checkpoint weights from {checkpoint_path}.")
 
-    if extra_state is not None:
-        print(
-            f"| loaded checkpoint {checkpoint_path} (epoch {extra_state['epoch']})\n"
-            f"| extra_state {extra_state}"
-        )
-        # batch_offset being None denotes this was a checkpoint saved at
-        # the end of an epoch (after the last batch).
-        if extra_state["batch_offset"] is None:
-            trainer.lr_step(extra_state["epoch"])
-            extra_state["epoch"] += 1
-            extra_state["batch_offset"] = 0
-
-        # check availability for checkpoint backward compatiblity
-        if "start_time" not in extra_state:
-            extra_state["start_time"] = time.time()
-
-        if "last_bleu_eval" not in extra_state:
-            extra_state["last_bleu_eval"] = 0
-
-    else:
+    if extra_state is None:
         extra_state = {
             "epoch": 1,
             "batch_offset": 0,
@@ -121,7 +126,8 @@ def load_existing_checkpoint(checkpoint_path, trainer, restore_state=True):
             "start_time": time.time(),
             "last_bleu_eval": 0,
         }
-    return extra_state
+
+    return loaded, extra_state
 
 
 def validate_and_set_default_args(args):
@@ -180,8 +186,9 @@ def setup_training(args):
         target=pytorch_translate_data.CorpusConfig(
             dialect=args.target_lang, data_file=args.train_target_binary_path
         ),
-        weights_file=args.train_weights_path if
-        hasattr(args, "train_weights_path") else None,
+        weights_file=args.train_weights_path
+        if hasattr(args, "train_weights_path")
+        else None,
     )
 
     eval_corpus = pytorch_translate_data.ParallelCorpusConfig(
@@ -254,13 +261,10 @@ def setup_training(args):
     checkpoint_path = os.path.join(args.save_dir, args.restore_file)
     if os.path.exists(checkpoint_path):
         print(
-            f"Using --save-dir={args.save_dir}, "
-            f"--restore-file={args.restore_file}."
+            f"Using --save-dir={args.save_dir}, --restore-file={args.restore_file}."
         )
     elif args.restore_checkpoint_dir:
-        checkpoint_path = os.path.join(
-            args.restore_checkpoint_dir, args.restore_file
-        )
+        checkpoint_path = os.path.join(args.restore_checkpoint_dir, args.restore_file)
         print(
             f"Using --restore-checkpoint-dir={args.restore_checkpoint_dir}, "
             f"--restore-file={args.restore_file}."
@@ -272,11 +276,21 @@ def setup_training(args):
             args.multi_model_restore_files, trainer
         )
     else:
-        extra_state = load_existing_checkpoint(
+        loaded, extra_state = load_existing_checkpoint(
             checkpoint_path=checkpoint_path,
             trainer=trainer,
             restore_state=args.restore_checkpoint_state,
         )
+        if loaded:
+            args.path = [checkpoint_path]
+            calculate_bleu_on_subset(
+                args=args,
+                dataset=dataset,
+                epoch_str="initial loaded checkpoint",
+                offset=None,
+                dataset_split=args.valid_subset,
+            )
+
     return extra_state, trainer, dataset
 
 
@@ -809,13 +823,13 @@ def _save_averaged_checkpoint(args, extra_state):
     return filename
 
 
-def calculate_bleu_on_subset(args, dataset, epoch, offset, dataset_split):
+def calculate_bleu_on_subset(args, dataset, epoch_str: str, offset, dataset_split):
     scorer, num_sentences, gen_timer, translation_samples = generate.generate_score(
         args=args, dataset=dataset, dataset_split=dataset_split
     )
 
     print(
-        f"| epoch {epoch:03d} | offset {offset} "
+        f"| epoch {epoch_str} | offset {offset} "
         f"| Eval on {dataset_split} subset "
         f"with beam={args.beam}: {scorer.result_string()}. "
         f"Generated {num_sentences} sentences ({gen_timer.n} tokens) "
@@ -832,7 +846,7 @@ def evaluate_bleu(args, dataset, extra_state):
     val_bleu, translation_samples = calculate_bleu_on_subset(
         args=args,
         dataset=dataset,
-        epoch=epoch,
+        epoch_str=f"{epoch:03d}",
         offset=offset,
         dataset_split=args.valid_subset,
     )
@@ -884,7 +898,9 @@ def validate_save_and_evaluate_bleu(
     do_validate: bool,
     do_save: bool,
     do_eval_bleu: bool,
-) -> Tuple[Optional[float], Optional[float], Optional[float], bool, Optional[list], float]:
+) -> Tuple[
+    Optional[float], Optional[float], Optional[float], bool, Optional[list], float
+]:
     # evaluate on validate set
     val_loss = None
     val_ppl = None
@@ -911,10 +927,8 @@ def validate_save_and_evaluate_bleu(
                 val_bleu,
                 stop_due_to_val_bleu,
                 translation_samples,
-                decay_lr
-            ) = evaluate_bleu(
-                args=args, dataset=dataset, extra_state=extra_state
-            )
+                decay_lr,
+            ) = evaluate_bleu(args=args, dataset=dataset, extra_state=extra_state)
             if decay_lr:
                 current_lr = lr
                 trainer.optimizer.set_lr(lr * args.lr_shrink)
@@ -1000,10 +1014,11 @@ def main(args, single_process_train):
     for i in range(args.distributed_world_size):
         args.distributed_rank = i
         args.device_id = i
-        procs.append(mp.Process(
-            target=run,
-            args=(args, single_process_train, error_queue),
-            daemon=True))
+        procs.append(
+            mp.Process(
+                target=run, args=(args, single_process_train, error_queue), daemon=True
+            )
+        )
         procs[i].start()
         error_handler.add_child(procs[i].pid)
     for p in procs:
