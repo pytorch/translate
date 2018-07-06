@@ -270,6 +270,16 @@ class RNNModel(FairseqModel):
             ),
         )
         parser.add_argument(
+            "--multi-model-fixed-weights",
+            default=None,
+            type=float,
+            nargs="+",
+            help=(
+                "Used for weighted* combination strategies. If specified, use "
+                "these fixed model weights rather than a gating network."
+            ),
+        )
+        parser.add_argument(
             "--multi-model-training-schedule",
             default="complete",
             type=str,
@@ -435,6 +445,7 @@ class RNNModel(FairseqModel):
                 split_encoder=args.multi_encoder is not None,
                 vocab_reduction_params=args.vocab_reduction_params,
                 training_schedule=args.multi_model_training_schedule,
+                fixed_weights=args.multi_model_fixed_weights,
             )
         else:
             if args.multi_encoder:
@@ -1093,6 +1104,7 @@ def base_architecture(args):
     args.multi_model_training_schedule = getattr(
         args, "multi_model_training_schedule", "complete"
     )
+    args.multi_model_fixed_weights = getattr(args, "multi_model_fixed_weights", None)
     args.cell_type = getattr(args, "cell_type", "lstm")
     args.ngram_activation_type = getattr(args, "ngram_activation_type", "relu")
     vocab_reduction.set_arg_defaults(args)
