@@ -30,7 +30,7 @@ from pytorch_translate.common_layers import (
     DecoderWithOutputProjection,
 )
 from pytorch_translate import attention
-from pytorch_translate.utils import maybe_cat
+from pytorch_translate.utils import maybe_cat, maybe_cuda
 
 
 def torch_find(index, query, vocab_size):
@@ -40,12 +40,8 @@ def torch_find(index, query, vocab_size):
     preconditions:  (1) index and query are flat arrays (can be different sizes)
                     (2) all tokens in index and query have values < vocab_size
     """
-    full_to_index = (torch.zeros(vocab_size)).long()
-    if torch.cuda.is_available():
-        full_to_index = full_to_index.cuda()
-    index_shape_range = torch.arange(index.shape[0]).long()
-    if torch.cuda.is_available():
-        index_shape_range = index_shape_range.cuda()
+    full_to_index = maybe_cuda(torch.zeros(vocab_size).long())
+    index_shape_range = maybe_cuda(torch.arange(index.shape[0]).long())
     full_to_index[index] = index_shape_range
     result = full_to_index[query]
     return result
@@ -270,6 +266,16 @@ class RNNModel(FairseqModel):
             ),
         )
         parser.add_argument(
+            "--multi-model-fixed-weights",
+            default=None,
+            type=float,
+            nargs="+",
+            help=(
+                "Used for weighted* combination strategies. If specified, use "
+                "these fixed model weights rather than a gating network."
+            ),
+        )
+        parser.add_argument(
             "--multi-model-training-schedule",
             default="complete",
             type=str,
@@ -293,6 +299,16 @@ class RNNModel(FairseqModel):
                 "- 'separate': Each training batch is used for only one of the "
                 "following: Train the n-th submodel, or train combination "
                 "strategy."
+            ),
+        )
+        parser.add_argument(
+            "--multi-decoder-is-lm",
+            default=None,
+            type=int,
+            nargs="+",
+            help=(
+                "If specified, sets --attention-type=no and --encoder-hidden-dim=0"
+                "for the n-th decoder in an adaptive ensemble."
             ),
         )
 
@@ -325,8 +341,13 @@ class RNNModel(FairseqModel):
 
     @staticmethod
     def build_single_decoder(
-        args, src_dict, dst_dict, ngram_decoder=None, project_output=True
+        args, src_dict, dst_dict, ngram_decoder=None, project_output=True, is_lm=False
     ):
+        attention_type = args.attention_type
+        encoder_hidden_dim = args.encoder_hidden_dim
+        if is_lm:
+            attention_type = "no"
+            encoder_hidden_dim = 0
         if ngram_decoder:
             if args.ngram_activation_type == "relu":
                 activation_fn = nn.ReLU
@@ -341,13 +362,13 @@ class RNNModel(FairseqModel):
                 src_dict=src_dict,
                 dst_dict=dst_dict,
                 n=ngram_decoder,
-                encoder_hidden_dim=args.encoder_hidden_dim,
+                encoder_hidden_dim=encoder_hidden_dim,
                 embed_dim=args.decoder_embed_dim,
                 freeze_embed=args.decoder_freeze_embed,
                 out_embed_dim=args.decoder_out_embed_dim,
                 num_layers=args.decoder_layers,
                 hidden_dim=args.decoder_hidden_dim,
-                attention_type=args.attention_type,
+                attention_type=attention_type,
                 dropout_in=args.decoder_dropout_in,
                 dropout_out=args.decoder_dropout_out,
                 residual_level=args.residual_level,
@@ -359,14 +380,14 @@ class RNNModel(FairseqModel):
                 src_dict=src_dict,
                 dst_dict=dst_dict,
                 vocab_reduction_params=args.vocab_reduction_params,
-                encoder_hidden_dim=args.encoder_hidden_dim,
+                encoder_hidden_dim=encoder_hidden_dim,
                 embed_dim=args.decoder_embed_dim,
                 freeze_embed=args.decoder_freeze_embed,
                 out_embed_dim=args.decoder_out_embed_dim,
                 cell_type=args.cell_type,
                 num_layers=args.decoder_layers,
                 hidden_dim=args.decoder_hidden_dim,
-                attention_type=args.attention_type,
+                attention_type=attention_type,
                 dropout_in=args.decoder_dropout_in,
                 dropout_out=args.decoder_dropout_out,
                 residual_level=args.residual_level,
@@ -401,20 +422,26 @@ class RNNModel(FairseqModel):
                 if len(ngram_decoder_args) == 1:
                     ngram_decoder_args = [ngram_decoder_args[0]] * args.multi_decoder
                 assert len(ngram_decoder_args) == args.multi_decoder
+            is_lm_args = [False] * args.multi_decoder
+            if args.multi_decoder_is_lm is not None:
+                is_lm_args = list(map(bool, args.multi_decoder_is_lm))
+            assert len(is_lm_args) == args.multi_decoder
             decoders = [
                 RNNModel.build_single_decoder(
-                    args, src_dict, dst_dict, n, project_output=False
+                    args, src_dict, dst_dict, n, project_output=False, is_lm=is_lm
                 )
-                for n in ngram_decoder_args
+                for is_lm, n in zip(is_lm_args, ngram_decoder_args)
             ]
             decoder = MultiDecoder(
                 src_dict,
                 dst_dict,
                 decoders=decoders,
                 combination_strategy=args.multi_decoder_combination_strategy,
+                is_lm=is_lm_args,
                 split_encoder=args.multi_encoder is not None,
                 vocab_reduction_params=args.vocab_reduction_params,
                 training_schedule=args.multi_model_training_schedule,
+                fixed_weights=args.multi_model_fixed_weights,
             )
         else:
             if args.multi_encoder:
@@ -666,7 +693,7 @@ class DummyEncoder(FairseqEncoder):
 
     def forward(self, src_tokens, src_lengths):
         bsz = src_lengths.size(0)
-        ones = torch.ones((self.num_layers, bsz, 1)).cuda()
+        ones = maybe_cuda(torch.ones((self.num_layers, bsz, 1)))
         dummy_out = torch.ones((1, bsz, 1))
         return dummy_out, ones, ones, src_lengths, src_tokens
 
@@ -1068,10 +1095,12 @@ def base_architecture(args):
     args.ngram_decoder = getattr(args, "ngram_decoder", None)
     args.multi_encoder = getattr(args, "multi_encoder", None)
     args.multi_decoder = getattr(args, "multi_decoder", None)
+    args.multi_decoder_is_lm = getattr(args, "multi_decoder_is_lm", None)
     args.multiling_encoder_lang = getattr(args, "multiling_encoder_lang", None)
     args.multi_model_training_schedule = getattr(
         args, "multi_model_training_schedule", "complete"
     )
+    args.multi_model_fixed_weights = getattr(args, "multi_model_fixed_weights", None)
     args.cell_type = getattr(args, "cell_type", "lstm")
     args.ngram_activation_type = getattr(args, "ngram_activation_type", "relu")
     vocab_reduction.set_arg_defaults(args)
