@@ -52,12 +52,16 @@ class MultilingualEncoder(FairseqEncoder):
         src_lengths -= 1
         # Create tensors for collecting encoder outputs
         bsz, seq_len = src_tokens.size()[:2]
-        all_encoder_outs = torch.zeros(seq_len, bsz, self.hidden_dim).cuda()
-        all_final_hidden = torch.zeros(self.num_layers, bsz, self.hidden_dim).cuda()
-        all_final_cell = torch.zeros(self.num_layers, bsz, self.hidden_dim).cuda()
+        all_encoder_outs = utils.maybe_cuda(torch.zeros(seq_len, bsz, self.hidden_dim))
+        all_final_hidden = utils.maybe_cuda(
+            torch.zeros(self.num_layers, bsz, self.hidden_dim)
+        )
+        all_final_cell = utils.maybe_cuda(
+            torch.zeros(self.num_layers, bsz, self.hidden_dim)
+        )
         # We cannot use zeros_like() for src_lengths because dtype changes
         # from LongInt to Int
-        all_src_lengths = torch.zeros(bsz, dtype=torch.int).cuda()
+        all_src_lengths = utils.maybe_cuda(torch.zeros(bsz, dtype=torch.int))
         all_src_tokens = torch.zeros_like(src_tokens)
         self.last_bsz = bsz
         self.last_lang_bszs = []
@@ -119,8 +123,8 @@ class MultilingualDecoder(FairseqIncrementalDecoder):
             # flat scores, and wait for the real work in the next time step
             bsz = input_tokens.size(0)
             return (
-                torch.zeros(bsz, 1, self.max_vocab_size).cuda(),
-                torch.zeros(bsz, 1, encoder_out[0].size(0)).cuda(),
+                utils.maybe_cuda(torch.zeros(bsz, 1, self.max_vocab_size)),
+                utils.maybe_cuda(torch.zeros(bsz, 1, encoder_out[0].size(0))),
                 None,
             )
         # Vocab reduction not implemented
@@ -142,8 +146,12 @@ class MultilingualDecoder(FairseqIncrementalDecoder):
             seq_len = 1
         # Create tensors for collecting encoder outputs
         # +1 for language ID
-        all_logits = torch.zeros(bsz, seq_len + 1, self.max_vocab_size).cuda()
-        all_attn_scores = torch.zeros(bsz, seq_len, encoder_out[0].size(0)).cuda()
+        all_logits = utils.maybe_cuda(
+            torch.zeros(bsz, seq_len + 1, self.max_vocab_size)
+        )
+        all_attn_scores = utils.maybe_cuda(
+            torch.zeros(bsz, seq_len, encoder_out[0].size(0))
+        )
         self.last_bsz = bsz
         self.last_lang_bszs = []
         for lang_id, decoder in enumerate(self.decoders):

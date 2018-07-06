@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq import utils
+from pytorch_translate.utils import maybe_cuda
 
 
 @register_criterion('word_prediction')
@@ -32,7 +33,7 @@ class WordPredictionCriterion(FairseqCriterion):
         prediction_lprobs = model.get_predictor_normalized_probs(
             predictor_output, log_probs=True)
         # prevent domination of padding idx
-        non_padding_mask = torch.ones(prediction_lprobs.size(1)).cuda()
+        non_padding_mask = maybe_cuda(torch.ones(prediction_lprobs.size(1)))
         non_padding_mask[model.encoder.padding_idx] = 0
         prediction_lprobs = prediction_lprobs * non_padding_mask.unsqueeze(0)
 
