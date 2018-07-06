@@ -300,6 +300,7 @@ class BaseWeightedStrategy(MultiDecoderCombinationStrategy):
         out_embed_dims,
         vocab_size,
         vocab_reduction_module=None,
+        fixed_weights=None,
         hidden_layer_size=32,
         activation_fn=torch.nn.ReLU,
         norm_fn=torch.exp,
@@ -311,18 +312,25 @@ class BaseWeightedStrategy(MultiDecoderCombinationStrategy):
                 decoders.
             vocab_size (int): Size of the output projection.
             vocab_reduction_module: For vocabulary reduction
+            fixed_weights (list): If not None, use these fixed weights rather
+                than a gating network.
             hidden_layer_size (int): Size of the hidden layer of the gating
                 network.
             activation_fn: Non-linearity at the hidden layer.
             norm_fn: Function to use for normalization (exp or sigmoid).
         """
         super().__init__(out_embed_dims, vocab_size, vocab_reduction_module)
-        self.gating_network = nn.Sequential(
-            Linear(sum(out_embed_dims), hidden_layer_size, bias=True),
-            activation_fn(),
-            Linear(hidden_layer_size, len(out_embed_dims), bias=True),
-        )
-        self.norm_fn = norm_fn
+        if fixed_weights is None:
+            self.fixed_weights = None
+            self.gating_network = nn.Sequential(
+                Linear(sum(out_embed_dims), hidden_layer_size, bias=True),
+                activation_fn(),
+                Linear(hidden_layer_size, len(out_embed_dims), bias=True),
+            )
+            self.norm_fn = norm_fn
+        else:
+            assert len(fixed_weights) == len(out_embed_dims)
+            self.fixed_weights = torch.Tensor(fixed_weights).view(1, 1, -1).cuda()
 
     def compute_weights(self, unprojected_outs, select_single=None):
         """Derive interpolation weights from unprojected decoder outputs.
@@ -341,6 +349,8 @@ class BaseWeightedStrategy(MultiDecoderCombinationStrategy):
             ret = torch.zeros((sz[0], sz[1], len(unprojected_outs))).cuda()
             ret[:, :, select_single] = 1.0
             return ret
+        if self.fixed_weights is not None:
+            return self.fixed_weights
         logits = self.norm_fn(self.gating_network(torch.cat(unprojected_outs, 2)))
         return logits / torch.sum(logits, dim=2, keepdim=True)
 
@@ -355,8 +365,9 @@ class WeightedStrategy(BaseWeightedStrategy):
         vocab_reduction_module=None,
         norm_fn=None,
         to_log=False,
+        fixed_weights=None,
     ):
-        super().__init__(out_embed_dims, vocab_size)
+        super().__init__(out_embed_dims, vocab_size, fixed_weights=fixed_weights)
         assert vocab_reduction_module is None
         self.output_projections = nn.ModuleList(
             [OutputProjection(dim, vocab_size) for dim in out_embed_dims]
@@ -410,7 +421,9 @@ class WeightedUnprojectedStrategy(BaseWeightedStrategy):
         )
 
 
-def create_strategy(strategy_name, out_embed_dims, vocab_size, vocab_reduction_module):
+def create_strategy(
+    strategy_name, out_embed_dims, vocab_size, vocab_reduction_module, fixed_weights
+):
     if "-" in strategy_name:
         strategy_name, strategy_modifier = strategy_name.split("-")
     else:
@@ -437,6 +450,7 @@ def create_strategy(strategy_name, out_embed_dims, vocab_size, vocab_reduction_m
             vocab_reduction_module,
             norm_fn=norm_fn,
             to_log=to_log,
+            fixed_weights=fixed_weights,
         )
     elif strategy_name == "unprojected":
         return UnprojectedStrategy(out_embed_dims, vocab_size, vocab_reduction_module)
@@ -468,9 +482,11 @@ class MultiDecoder(FairseqIncrementalDecoder):
         dst_dict,
         decoders,
         combination_strategy,
+        is_lm,
         split_encoder=False,
         vocab_reduction_params=None,
         training_schedule="complete",
+        fixed_weights=None,
     ):
         """Create a new multi-decoder instance.
 
@@ -480,13 +496,20 @@ class MultiDecoder(FairseqIncrementalDecoder):
             decoders (list): List of DecoderWithOutputProjection.
             combination_strategy (string): Name of the combination strategy.
                 Passed through to `create_strategy()`.
+            is_lm (list): List of booleans determining whether the n-th
+                decoder is a language model.
             split_encoder (bool): If true, split encoder output, each decoder
                 gets its own split.
             vocab_reduction_params: For vocabular reduction.
             training_schedule (str): Training strategy.
+            fixed_weights (list): None or list of floats. If specified, use
+                these fixed model weights in weighted* combination strategies.
         """
         super().__init__(dst_dict)
         assert not any(decoder.project_output for decoder in decoders)
+        assert len(is_lm) == len(decoders)
+        self.attentive_decoder_ids = [i for i, b in enumerate(is_lm) if not b]
+        self.decoders_is_lm = is_lm
         self.decoders = nn.ModuleList(decoders)
         vocab_reduction_module = None
         if vocab_reduction_params:
@@ -498,6 +521,7 @@ class MultiDecoder(FairseqIncrementalDecoder):
             [decoder.out_embed_dim for decoder in decoders],
             len(dst_dict),
             vocab_reduction_module,
+            fixed_weights,
         )
         self.split_encoder = split_encoder
         self.unfreeze_single = False
@@ -560,7 +584,7 @@ class MultiDecoder(FairseqIncrementalDecoder):
                 )
             )
         mean_attn_scores = average_tensors(
-            [attn_scores for _, attn_scores in decoder_outs if attn_scores is not None]
+            [decoder_outs[decoder_id][1] for decoder_id in self.attentive_decoder_ids]
         )
         select_single = None
         if self.separate_training and not unfreeze_combi_strat:
@@ -575,14 +599,8 @@ class MultiDecoder(FairseqIncrementalDecoder):
         return logits, mean_attn_scores, possible_translation_tokens
 
     def _get_contexts(self, encoder_out):
+        encoder_outs, final_hidden, final_cell, src_lengths, src_tokens = encoder_out
         if self.split_encoder:
-            (
-                encoder_outs,
-                final_hidden,
-                final_cell,
-                src_lengths,
-                src_tokens,
-            ) = encoder_out
             split_encoder_outs = []
             offset = 0
             for decoder in self.decoders:
@@ -598,8 +616,16 @@ class MultiDecoder(FairseqIncrementalDecoder):
                 )
                 offset = next_offset
             assert offset == encoder_outs.size(2)
-            return split_encoder_outs
-        return [encoder_out] * len(self.decoders)
+        else:
+            split_encoder_outs = [encoder_out] * len(self.decoders)
+        if any(self.decoders_is_lm):
+            num_layers, bsz, _ = final_cell.size()
+            ones = torch.ones((num_layers, bsz, 1)).cuda()
+            lm_encoder_outs = None, ones, ones, src_lengths, src_tokens
+            for decoder_id, is_lm in enumerate(self.decoders_is_lm):
+                if is_lm:
+                    split_encoder_outs[decoder_id] = lm_encoder_outs
+        return split_encoder_outs
 
     def reorder_incremental_state(self, incremental_state, new_order):
         """Reorder buffered internal state (for incremental generation)."""
