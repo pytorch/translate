@@ -468,6 +468,7 @@ class MultiDecoder(FairseqIncrementalDecoder):
         dst_dict,
         decoders,
         combination_strategy,
+        is_lm,
         split_encoder=False,
         vocab_reduction_params=None,
         training_schedule="complete",
@@ -480,6 +481,8 @@ class MultiDecoder(FairseqIncrementalDecoder):
             decoders (list): List of DecoderWithOutputProjection.
             combination_strategy (string): Name of the combination strategy.
                 Passed through to `create_strategy()`.
+            is_lm (list): List of booleans determining whether the n-th
+                decoder is a language model.
             split_encoder (bool): If true, split encoder output, each decoder
                 gets its own split.
             vocab_reduction_params: For vocabular reduction.
@@ -487,6 +490,9 @@ class MultiDecoder(FairseqIncrementalDecoder):
         """
         super().__init__(dst_dict)
         assert not any(decoder.project_output for decoder in decoders)
+        assert len(is_lm) == len(decoders)
+        self.attentive_decoder_ids = [i for i, b in enumerate(is_lm) if not b]
+        self.decoders_is_lm = is_lm
         self.decoders = nn.ModuleList(decoders)
         vocab_reduction_module = None
         if vocab_reduction_params:
@@ -560,7 +566,7 @@ class MultiDecoder(FairseqIncrementalDecoder):
                 )
             )
         mean_attn_scores = average_tensors(
-            [attn_scores for _, attn_scores in decoder_outs if attn_scores is not None]
+            [decoder_outs[decoder_id][1] for decoder_id in self.attentive_decoder_ids]
         )
         select_single = None
         if self.separate_training and not unfreeze_combi_strat:
@@ -575,14 +581,8 @@ class MultiDecoder(FairseqIncrementalDecoder):
         return logits, mean_attn_scores, possible_translation_tokens
 
     def _get_contexts(self, encoder_out):
+        encoder_outs, final_hidden, final_cell, src_lengths, src_tokens = encoder_out
         if self.split_encoder:
-            (
-                encoder_outs,
-                final_hidden,
-                final_cell,
-                src_lengths,
-                src_tokens,
-            ) = encoder_out
             split_encoder_outs = []
             offset = 0
             for decoder in self.decoders:
@@ -598,8 +598,16 @@ class MultiDecoder(FairseqIncrementalDecoder):
                 )
                 offset = next_offset
             assert offset == encoder_outs.size(2)
-            return split_encoder_outs
-        return [encoder_out] * len(self.decoders)
+        else:
+            split_encoder_outs = [encoder_out] * len(self.decoders)
+        if any(self.decoders_is_lm):
+            num_layers, bsz, _ = final_cell.size()
+            ones = torch.ones((num_layers, bsz, 1)).cuda()
+            lm_encoder_outs = None, ones, ones, src_lengths, src_tokens
+            for decoder_id, is_lm in enumerate(self.decoders_is_lm):
+                if is_lm:
+                    split_encoder_outs[decoder_id] = lm_encoder_outs
+        return split_encoder_outs
 
     def reorder_incremental_state(self, incremental_state, new_order):
         """Reorder buffered internal state (for incremental generation)."""
