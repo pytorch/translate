@@ -367,21 +367,6 @@ def train(args, extra_state, trainer, dataset):
                 log_output=log_output,
             )
 
-            if (
-                args.continuous_averaging_after_epochs >= 0
-                and extra_state["epoch"] > args.continuous_averaging_after_epochs
-            ):
-                model_param_dict = trainer.model.state_dict()
-                if "param_totals" not in extra_state:
-                    extra_state["param_totals"] = {}
-                    for name, value in model_param_dict.items():
-                        extra_state["param_totals"][name] = value.clone()
-                    extra_state["param_accum_count"] = 1
-                else:
-                    for name, value in model_param_dict.items():
-                        extra_state["param_totals"][name] += value
-                    extra_state["param_accum_count"] += 1
-
             if i == starting_offset:
                 # ignore the first mini-batch in words-per-second calculation
                 trainer.get_meter("wps").reset()
@@ -607,32 +592,6 @@ def get_training_stats(trainer):
     return stats
 
 
-def save_checkpoint_maybe_continuous(filename, trainer, extra_state):
-    if "param_totals" not in extra_state:
-        trainer.save_checkpoint(filename, extra_state)
-        return
-
-    # trainer.save_checkpoint generates the structure used to save checkpoints
-    with tempfile.TemporaryFile() as buffer:
-        trainer.save_checkpoint(buffer, extra_state)
-        buffer.seek(0)
-        state = torch.load(
-            buffer,
-            map_location=(
-                lambda s, _: torch.serialization.default_restore_location(s, "cpu")
-            ),
-        )
-        buffer.close()
-
-    param_accum_count = extra_state["param_accum_count"]
-    for param_name, param_value in extra_state["param_totals"].items():
-        state["model"][param_name] = param_value / param_accum_count
-    torch.save(state, filename)
-
-    # begin averaging anew after saving checkpoint
-    extra_state.pop("param_totals")
-
-
 def save_checkpoint(trainer, args, extra_state):
     epoch = extra_state["epoch"]
     batch_offset = extra_state["batch_offset"]
@@ -663,7 +622,7 @@ def save_checkpoint(trainer, args, extra_state):
     if batch_offset is None:
         if not args.no_epoch_checkpoints:
             epoch_filename = os.path.join(args.save_dir, f"checkpoint{epoch}.pt")
-            save_checkpoint_maybe_continuous(epoch_filename, trainer, extra_state)
+            trainer.save_checkpoint(epoch_filename, extra_state)
             extra_state["last_checkpoints"].append(epoch_filename)
 
         assert val_loss is not None
@@ -674,18 +633,18 @@ def save_checkpoint(trainer, args, extra_state):
         ):
             extra_state["checkpoint_lowest_loss"] = val_loss
             best_filename = os.path.join(args.save_dir, "checkpoint_best.pt")
-            save_checkpoint_maybe_continuous(best_filename, trainer, extra_state)
+            trainer.save_checkpoint(best_filename, extra_state)
 
     # Otherwise, we're in the middle of an epoch.
     elif not args.no_epoch_checkpoints:
         epoch_filename = os.path.join(
             args.save_dir, f"checkpoint{epoch}_{batch_offset}.pt"
         )
-        save_checkpoint_maybe_continuous(epoch_filename, trainer, extra_state)
+        trainer.save_checkpoint(epoch_filename, extra_state)
         extra_state["last_checkpoints"].append(epoch_filename)
 
     last_filename = os.path.join(args.save_dir, "checkpoint_last.pt")
-    save_checkpoint_maybe_continuous(last_filename, trainer, extra_state)
+    trainer.save_checkpoint(last_filename, extra_state)
 
     # This ensures we'll always have at least one checkpoint in the list to use
     # for BLEU eval, even if we're not saving epoch checkpoints.
