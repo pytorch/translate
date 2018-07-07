@@ -30,7 +30,7 @@ from pytorch_translate.common_layers import (
     DecoderWithOutputProjection,
 )
 from pytorch_translate import attention
-from pytorch_translate.utils import maybe_cat
+from pytorch_translate.utils import maybe_cat, maybe_cuda
 
 
 def torch_find(index, query, vocab_size):
@@ -40,12 +40,8 @@ def torch_find(index, query, vocab_size):
     preconditions:  (1) index and query are flat arrays (can be different sizes)
                     (2) all tokens in index and query have values < vocab_size
     """
-    full_to_index = (torch.zeros(vocab_size)).long()
-    if torch.cuda.is_available():
-        full_to_index = full_to_index.cuda()
-    index_shape_range = torch.arange(index.shape[0]).long()
-    if torch.cuda.is_available():
-        index_shape_range = index_shape_range.cuda()
+    full_to_index = maybe_cuda(torch.zeros(vocab_size).long())
+    index_shape_range = maybe_cuda(torch.arange(index.shape[0]).long())
     full_to_index[index] = index_shape_range
     result = full_to_index[query]
     return result
@@ -697,7 +693,7 @@ class DummyEncoder(FairseqEncoder):
 
     def forward(self, src_tokens, src_lengths):
         bsz = src_lengths.size(0)
-        ones = torch.ones((self.num_layers, bsz, 1)).cuda()
+        ones = maybe_cuda(torch.ones((self.num_layers, bsz, 1)))
         dummy_out = torch.ones((1, bsz, 1))
         return dummy_out, ones, ones, src_lengths, src_tokens
 
