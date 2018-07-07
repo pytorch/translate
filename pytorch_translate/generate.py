@@ -38,20 +38,8 @@ class TranslationInfo(NamedTuple):
     hypo_score: float
 
 
-def _generate_score(models, args, dataset, dataset_split, optimize=True):
+def build_sequence_generator(args, models):
     use_cuda = torch.cuda.is_available() and not args.cpu
-
-    # Load ensemble
-    if not args.quiet:
-        print("| loading model(s) from {}".format(", ".join(args.path)))
-
-    # Optimize ensemble for generation
-    if optimize:
-        for model in models:
-            model.make_generation_fast_(
-                beamable_mm_beam_size=None if args.no_beamable_mm else args.beam
-            )
-
     # Initialize generator
     model_weights = None
     if args.model_weights:
@@ -75,6 +63,40 @@ def _generate_score(models, args, dataset, dataset_split, optimize=True):
     )
     if use_cuda:
         translator.cuda()
+    return translator
+
+
+def get_eval_itr(args, models, dataset, dataset_split):
+    max_positions = min(model.max_encoder_positions() for model in models)
+    itr = dataset.eval_dataloader(
+        dataset_split,
+        max_tokens=args.max_tokens,
+        max_sentences=args.max_sentences,
+        max_positions=max_positions,
+        skip_invalid_size_inputs_valid_test=(args.skip_invalid_size_inputs_valid_test),
+    )
+    if args.num_shards > 1:
+        if args.shard_id < 0 or args.shard_id >= args.num_shards:
+            raise ValueError("--shard-id must be between 0 and num_shards")
+        itr = data.sharded_iterator(itr, args.num_shards, args.shard_id)
+    return itr
+
+
+def _generate_score(models, args, dataset, dataset_split, optimize=True):
+    use_cuda = torch.cuda.is_available() and not args.cpu
+
+    # Load ensemble
+    if not args.quiet:
+        print("| loading model(s) from {}".format(", ".join(args.path)))
+
+    # Optimize ensemble for generation
+    if optimize:
+        for model in models:
+            model.make_generation_fast_(
+                beamable_mm_beam_size=None if args.no_beamable_mm else args.beam
+            )
+
+    translator = build_sequence_generator(args, models)
     # Load alignment dictionary for unknown word replacement
     # (None if no unknown word replacement, empty if no path to align dictionary)
     align_dict = utils.load_align_dict(args.replace_unk)
@@ -89,18 +111,7 @@ def _generate_score(models, args, dataset, dataset_split, optimize=True):
     scorer = bleu.Scorer(
         dataset.dst_dict.pad(), dataset.dst_dict.eos(), dataset.dst_dict.unk()
     )
-    max_positions = min(model.max_encoder_positions() for model in models)
-    itr = dataset.eval_dataloader(
-        dataset_split,
-        max_tokens=args.max_tokens,
-        max_sentences=args.max_sentences,
-        max_positions=max_positions,
-        skip_invalid_size_inputs_valid_test=(args.skip_invalid_size_inputs_valid_test),
-    )
-    if args.num_shards > 1:
-        if args.shard_id < 0 or args.shard_id >= args.num_shards:
-            raise ValueError("--shard-id must be between 0 and num_shards")
-        itr = data.sharded_iterator(itr, args.num_shards, args.shard_id)
+    itr = get_eval_itr(args, models, dataset, dataset_split)
 
     num_sentences = 0
     translation_samples = []
