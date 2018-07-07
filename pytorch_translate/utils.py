@@ -224,6 +224,13 @@ def maybe_cat(tensors, dim, nullable=None):
     return torch.cat(filtered, dim=dim)
 
 
+def maybe_cuda(t):
+    """Calls `cuda()` on `t` if cuda is available."""
+    if torch.cuda.is_available():
+        return t.cuda()
+    return t
+
+
 def average_tensors(tensor_list, norm_fn=None, weights=None):
     """Averages a list of tensors.
 
