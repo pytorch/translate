@@ -260,9 +260,7 @@ def setup_training(args):
     # ignore previous directory args and just use the absolute path as is.
     checkpoint_path = os.path.join(args.save_dir, args.restore_file)
     if os.path.exists(checkpoint_path):
-        print(
-            f"Using --save-dir={args.save_dir}, --restore-file={args.restore_file}."
-        )
+        print(f"Using --save-dir={args.save_dir}, --restore-file={args.restore_file}.")
     elif args.restore_checkpoint_dir:
         checkpoint_path = os.path.join(args.restore_checkpoint_dir, args.restore_file)
         print(
@@ -419,6 +417,12 @@ def train(args, extra_state, trainer, dataset):
                 },
             )
 
+            stop_training_mid_epoch = (
+                stop_training_mid_epoch
+                or is_training_over_time_limit(
+                    extra_state["start_time"], args.stop_time_hr
+                )
+            )
             if stop_training_mid_epoch:
                 break
 
@@ -474,9 +478,6 @@ def train(args, extra_state, trainer, dataset):
         extra_state["epoch"] += 1
         extra_state["batch_offset"] = 0
         starting_offset = 0
-
-        if is_training_over_time_limit(extra_state["start_time"], args.stop_time_hr):
-            break
 
     train_meter.stop()
     print(f"| done training in {train_meter.sum:.1f} seconds")
