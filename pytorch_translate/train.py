@@ -38,6 +38,7 @@ from pytorch_translate import generate
 from pytorch_translate import preprocess
 from pytorch_translate import rnn  # noqa
 from pytorch_translate import weighted_criterions  # noqa
+from pytorch_translate import sequence_criterions  # noqa
 from pytorch_translate.utils import ManagedCheckpoints  # noqa
 from pytorch_translate import multi_model
 from pytorch_translate.research.word_prediction import word_prediction_criterion  # noqa
