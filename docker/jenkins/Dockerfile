@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openmpi-bin \
     openmpi-doc \
     protobuf-compiler \
+    sudo \
     wget
 
 # Sometimes needed to avoid SSL CA issues.
@@ -42,7 +43,6 @@ RUN update-ca-certificates
 
 ENV HOME /home
 WORKDIR ${HOME}/
-ADD install_prereqs.sh ${HOME}/install_prereqs.sh
 
 RUN wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh && \
     chmod +x miniconda.sh && \
@@ -67,5 +67,14 @@ ENV LC_ALL en_US.UTF-8
 ENV NCCL_ROOT_DIR ${HOME}/translate/nccl_2.1.15-1+cuda9.0_x86_64
 ENV LD_LIBRARY_PATH ${CONDA_PATH}/lib:${NCCL_ROOT_DIR}/lib:${LD_LIBRARY_PATH}
 
+ADD ./install_prereqs.sh install_prereqs.sh
 RUN ./install_prereqs.sh
-RUN rm ${HOME}/install_prereqs.sh
+RUN rm install_prereqs.sh
+
+# Add Jenkins user
+ARG JENKINS
+ARG JENKINS_UID
+ARG JENKINS_GID
+ADD ./add_jenkins_user.sh add_jenkins_user.sh
+RUN if [ -n "${JENKINS}" ]; then bash ./add_jenkins_user.sh ${JENKINS_UID} ${JENKINS_GID}; fi
+RUN rm add_jenkins_user.sh
