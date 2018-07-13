@@ -453,6 +453,13 @@ def expand_optimization_args(group):
         "Retraining is not performed if --pruning-percentile is set to disable "
         "pruning.",
     )
+    group.add_argument(
+        "--loss-beam",
+        type=int,
+        default=0,
+        help="Beam size to use for 'sequence_nll' loss and 'sequence_risk' "
+        "loss. If zero, use --beam.",
+    )
 
     return group
 
