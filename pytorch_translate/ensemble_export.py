@@ -41,13 +41,20 @@ def onnx_export_ensemble(module, output_path, input_tuple, input_names, output_n
 
 
 def load_models_from_checkpoints(
-    checkpoint_filenames, src_dict_filename, dst_dict_filename
+    checkpoint_filenames, src_dict_filename, dst_dict_filename, lexical_dict_paths=None
 ):
     src_dict = dictionary.Dictionary.load(src_dict_filename)
     dst_dict = dictionary.Dictionary.load(dst_dict_filename)
     models = []
     for filename in checkpoint_filenames:
         checkpoint_data = torch.load(filename, map_location="cpu")
+        if lexical_dict_paths is not None:
+            assert (
+                checkpoint_data["args"].vocab_reduction_params is not None
+            ), "lexical dictionaries can only be replaced in vocab-reduction models"
+            checkpoint_data["args"].vocab_reduction_params[
+                "lexical_dictionaries"
+            ] = lexical_dict_paths
         if checkpoint_data["args"].arch == "char_source":
             model = char_source_model.CharSourceModel.build_model(
                 checkpoint_data["args"], src_dict, dst_dict
@@ -206,10 +213,16 @@ class EncoderEnsemble(nn.Module):
 
     @staticmethod
     def build_from_checkpoints(
-        checkpoint_filenames, src_dict_filename, dst_dict_filename
+        checkpoint_filenames,
+        src_dict_filename,
+        dst_dict_filename,
+        lexical_dict_paths=None,
     ):
         models = load_models_from_checkpoints(
-            checkpoint_filenames, src_dict_filename, dst_dict_filename
+            checkpoint_filenames,
+            src_dict_filename,
+            dst_dict_filename,
+            lexical_dict_paths,
         )
         return EncoderEnsemble(models)
 
@@ -379,9 +392,13 @@ class DecoderStepEnsemble(nn.Module):
         beam_size=1,
         word_reward=0,
         unk_reward=0,
+        lexical_dict_paths=None,
     ):
         models = load_models_from_checkpoints(
-            checkpoint_filenames, src_dict_filename, dst_dict_filename
+            checkpoint_filenames,
+            src_dict_filename,
+            dst_dict_filename,
+            lexical_dict_paths,
         )
         return DecoderStepEnsemble(
             models, beam_size=beam_size, word_reward=word_reward, unk_reward=unk_reward
@@ -624,9 +641,13 @@ class DecoderBatchedStepEnsemble(nn.Module):
         beam_size,
         word_reward=0,
         unk_reward=0,
+        lexical_dict_paths=None,
     ):
         models = load_models_from_checkpoints(
-            checkpoint_filenames, src_dict_filename, dst_dict_filename
+            checkpoint_filenames,
+            src_dict_filename,
+            dst_dict_filename,
+            lexical_dict_paths,
         )
         return DecoderBatchedStepEnsemble(
             models, beam_size=beam_size, word_reward=word_reward, unk_reward=unk_reward
@@ -806,10 +827,14 @@ class BeamSearch(torch.jit.ScriptModule):
         beam_size,
         word_reward=0,
         unk_reward=0,
+        lexical_dict_paths=None,
     ):
         length = 10
         models = load_models_from_checkpoints(
-            checkpoint_filenames, src_dict_filename, dst_dict_filename
+            checkpoint_filenames,
+            src_dict_filename,
+            dst_dict_filename,
+            lexical_dict_paths,
         )
         src_tokens = torch.LongTensor(np.ones((length, 1), dtype="int64"))
         src_lengths = torch.IntTensor(np.array([length], dtype="int32"))
@@ -1097,9 +1122,13 @@ class ForcedDecoder(torch.jit.ScriptModule):
         dst_dict_filename,
         word_reward=0,
         unk_reward=0,
+        lexical_dict_paths=None,
     ):
         models = load_models_from_checkpoints(
-            checkpoint_filenames, src_dict_filename, dst_dict_filename
+            checkpoint_filenames,
+            src_dict_filename,
+            dst_dict_filename,
+            lexical_dict_paths,
         )
         return ForcedDecoder(models, word_reward=word_reward, unk_reward=unk_reward)
 
@@ -1203,10 +1232,16 @@ class CharSourceEncoderEnsemble(nn.Module):
 
     @staticmethod
     def build_from_checkpoints(
-        checkpoint_filenames, src_dict_filename, dst_dict_filename
+        checkpoint_filenames,
+        src_dict_filename,
+        dst_dict_filename,
+        lexical_dict_paths=None,
     ):
         models = load_models_from_checkpoints(
-            checkpoint_filenames, src_dict_filename, dst_dict_filename
+            checkpoint_filenames,
+            src_dict_filename,
+            dst_dict_filename,
+            lexical_dict_paths,
         )
         return CharSourceEncoderEnsemble(models)
 
