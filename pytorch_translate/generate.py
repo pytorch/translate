@@ -18,6 +18,7 @@ from pytorch_translate import utils as pytorch_translate_utils
 from pytorch_translate import rnn  # noqa
 from pytorch_translate.research.multisource import multisource_decode
 from pytorch_translate.research.multisource import multisource_data
+from pytorch_translate.research.beam_search import competing_completed
 
 
 def generate_score(args, dataset, dataset_split):
@@ -48,6 +49,8 @@ def build_sequence_generator(args, models):
     # Use a different sequence generator in the multisource setting
     if getattr(args, "source_ensembling", False):
         translator_class = multisource_decode.MultiSourceSequenceGenerator
+    elif getattr(args, "competing_completed_beam_search", False):
+        translator_class = competing_completed.CompetingCompletedSequenceGenerator
     else:
         translator_class = beam_decode.SequenceGenerator
     translator = translator_class(
@@ -469,6 +472,14 @@ def get_parser_with_args():
         action="store_true",
         help="If this flag is present, the model will ensemble the predictions "
         "conditioned on multiple source sentences (one per source-text-file)",
+    )
+    generation_group.add_argument(
+        "--competing-completed-beam-search",
+        action="store_true",
+        help="If this flag is present, use the alternative beam search "
+        "implementation in research/beam_search. This beam search keeps completed "
+        "hypos in the beam and let them compete against hypo expansions in the "
+        "next time step.",
     )
 
     return parser
