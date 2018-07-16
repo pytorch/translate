@@ -334,11 +334,13 @@ def train(args, extra_state, trainer, dataset):
     lr = trainer.get_lr()
     train_meter = StopwatchMeter()
     train_meter.start()
-    do_prune = args.pruning_percentile > 0
-    extra_state["retraining"] = False
-    prune_masks = None
     stop_training_mid_epoch = False
     stop_training_end_of_epoch = False
+
+    do_prune = args.pruning_percentile > 0
+    if do_prune:
+        prune_masks = prune(args, trainer)
+
     while lr > args.min_lr and extra_state["epoch"] <= max_epoch:
         """Train the model for one epoch."""
 
@@ -351,13 +353,12 @@ def train(args, extra_state, trainer, dataset):
         )
 
         for i, sample in enumerate(itr, start=starting_offset):
+            log_output = trainer.train_step(sample)
 
-            if extra_state["retraining"]:
+            if do_prune:
                 for name, params in trainer.model.named_parameters():
                     if "weight" in name:
                         params.data[prune_masks[name]] = 0.0
-
-            log_output = trainer.train_step(sample)
 
             train_stats = log_mid_epoch_stats(
                 trainer=trainer,
@@ -463,17 +464,7 @@ def train(args, extra_state, trainer, dataset):
                 },
             )
         if stop_training_mid_epoch or stop_training_end_of_epoch:
-            if do_prune and not extra_state["retraining"]:
-                lr *= args.retrain_lr_ratio
-                extra_state["validate"]["lowest_loss"] = np.inf
-                extra_state["evaluate_bleu"]["best"] = 0
-                stop_training_mid_epoch = False
-                stop_training_end_of_epoch = False
-                prune_masks = prune(args, trainer)
-                extra_state["retraining"] = True
-                print("| Finished pruning and switching to retraining")
-            else:
-                break
+            break
 
         lr = trainer.lr_step(extra_state["epoch"], val_loss)
         extra_state["epoch"] += 1

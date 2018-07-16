@@ -441,17 +441,8 @@ def expand_optimization_args(group):
         "--pruning-percentile",
         type=int,
         default=0,
-        help="Proportion of weights to prune after initially training to either "
-        "BLEU score stagnation or time limit. A value <=0 disables pruning.",
-    )
-    group.add_argument(
-        "--retrain-lr-ratio",
-        type=float,
-        default=0.0,
-        help="Learning rate for retraining the model after pruning is performed "
-        "relative to learning rate before pruning. Affected by lr scheduler. "
-        "Retraining is not performed if --pruning-percentile is set to disable "
-        "pruning.",
+        help="Proportion of weights to prune. A value <=0 disables pruning."
+        " By default, prunes weights uniformly and ignores bias terms.",
     )
     group.add_argument(
         "--loss-beam",
