@@ -2,7 +2,7 @@
 # Builds PyTorch Translate and runs basic tests.
 
 pip uninstall -y pytorch-translate
-python3 setup.py build develop
+sudo python3 setup.py build develop
 pushd pytorch_translate/cpp || exit
 
 mkdir build && pushd build || exit
