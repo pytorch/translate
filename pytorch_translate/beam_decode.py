@@ -29,7 +29,7 @@ class SequenceGenerator(torch.nn.Module):
 
         Args:
             models: List of FairseqModel objects. Each one must implement
-                expand_encoder_output() method to replicate encoder outputs.
+                reorder_encoder_output() method to replicate encoder outputs.
             min/maxlen: The length of the generated output will be bounded by
                 minlen and maxlen (not including the end-of-sentence marker).
             stop_early: Stop generation immediately after we finalize beam_size
@@ -147,8 +147,12 @@ class SequenceGenerator(torch.nn.Module):
             beam_size < self.vocab_size
         ), "Beam size must be smaller than target vocabulary"
 
-        # Encode
-        encoder_outs, incremental_states = self._encode(encoder_input, beam_size)
+        # Encode, expanding outputs for each example beam_size times
+        reorder_indices = torch.arange(bsz).view(-1, 1).repeat(1, beam_size).view(-1)
+        encoder_outs, incremental_states = self._encode(
+            encoder_input=encoder_input,
+            reorder_indices=reorder_indices.type_as(src_tokens),
+        )
 
         # initialize buffers
         scores = src_tokens.new(bsz * beam_size, maxlen + 1).float().fill_(0)
@@ -158,7 +162,10 @@ class SequenceGenerator(torch.nn.Module):
         tokens[:, 0] = self.eos
 
         # may differ from input length
-        src_encoding_len = encoder_outs[0][0].size(0)
+        if isinstance(encoder_outs[0], (list, tuple)):
+            src_encoding_len = encoder_outs[0][0].size(0)
+        elif isinstance(encoder_outs[0], dict):
+            src_encoding_len = encoder_outs[0]['encoder_out'].size(0)
 
         attn = scores.new(bsz * beam_size, src_encoding_len, maxlen + 2)
         attn_buf = attn.clone()
@@ -490,7 +497,7 @@ class SequenceGenerator(torch.nn.Module):
 
         return finalized
 
-    def _encode(self, encoder_input, beam_size):
+    def _encode(self, encoder_input, reorder_indices):
         encoder_outs = []
         incremental_states = {}
         for model in self.models:
@@ -504,7 +511,10 @@ class SequenceGenerator(torch.nn.Module):
             encoder_out = model.encoder(*encoder_input)
 
             # expand outputs for each example beam_size times
-            encoder_out = model.expand_encoder_output(encoder_out, beam_size)
+            encoder_out = model.encoder.reorder_encoder_out(
+                encoder_out=encoder_out,
+                reorder_indices=reorder_indices,
+            )
             encoder_outs.append(encoder_out)
         return encoder_outs, incremental_states
 

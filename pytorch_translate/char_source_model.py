@@ -380,6 +380,10 @@ class CharRNNEncoder(FairseqEncoder):
 
         return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
 
+    def reorder_encoder_out(self, encoder_out, new_order):
+        """Reorder all outputs according to new_order."""
+        return rnn.reorder_encoder_output(encoder_out, new_order)
+
     def max_positions(self):
         """Maximum input length supported by the encoder."""
         return int(1e5)  # an arbitrary large number
@@ -541,6 +545,10 @@ class CharCNNEncoder(FairseqEncoder):
         unpacked_output, _ = pad_packed_sequence(packed_input)
 
         return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
+
+    def reorder_encoder_out(self, encoder_out, new_order):
+        """Reorder all outputs according to new_order."""
+        return rnn.reorder_encoder_output(encoder_out, new_order)
 
     def max_positions(self):
         """Maximum input length supported by the encoder."""
