@@ -481,7 +481,7 @@ def train(args, extra_state, trainer, dataset):
         )
 
 
-def is_training_over_time_limit(start_time, stop_time):
+def is_training_over_time_limit(start_time: float, stop_time: float):
     elapsed_hr = (time.time() - start_time) / (60 * 60)
     training_over_time_limit = False
     if stop_time >= 0 and elapsed_hr > stop_time:
