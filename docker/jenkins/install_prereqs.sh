@@ -39,3 +39,6 @@ conda install -y numpy==1.14 --no-deps --force
 echo "Starting to install ONNX"
 git clone --recursive https://github.com/onnx/onnx.git
 yes | pip install ./onnx 2>&1 | tee ONNX_OUT
+
+# train with tensorboard
+yes | pip install tensorboard_logger

@@ -28,5 +28,5 @@ setup(
     dependency_links=[
         'git+https://github.com/pytorch/fairseq.git@v0.4.0#egg=fairseq',
     ],
-    test_suite='tests',
+    test_suite='pytorch_translate',
 )
