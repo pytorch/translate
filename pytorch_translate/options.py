@@ -399,11 +399,11 @@ def expand_optimization_args(group):
     )
     group.add_argument(
         "--stop-time-hr",
-        default=-1,
-        type=int,
+        default=-1.0,
+        type=float,
         metavar="N",
-        help="Stops training after N hours have elapsed. "
-        "A value of < 0 disables this.",
+        help="Stops training after N hours have elapsed. Use decimal values "
+        "for sub-hourly granularity. A value of < 0 disables this.",
     )
     group.add_argument(
         "--stop-no-best-validate-loss",
