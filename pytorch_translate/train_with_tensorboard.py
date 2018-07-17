@@ -22,10 +22,14 @@ def single_process_tensorboard(args):
         tensorboard_logger.configure(
             args.save_dir + "/runs/" + args.tensorboard_dir)
 
-    extra_state, trainer, dataset = train.setup_training(args)
+    extra_state, trainer, task, epoch_itr = train.setup_training(args)
 
     train_iterator = train.train(
-        args=args, extra_state=extra_state, trainer=trainer, dataset=dataset
+        args=args,
+        extra_state=extra_state,
+        trainer=trainer,
+        task=task,
+        epoch_itr=epoch_itr,
     )
 
     for num_updates, stats in train_iterator:

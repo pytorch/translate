@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 @register_model("char_source")
 class CharSourceModel(rnn.RNNModel):
-    def __init__(self, encoder, decoder):
-        super().__init__(encoder, decoder)
+    def __init__(self, task, encoder, decoder):
+        super().__init__(task, encoder, decoder)
 
     @staticmethod
     def add_args(parser):
@@ -75,8 +75,9 @@ class CharSourceModel(rnn.RNNModel):
         )
 
     @classmethod
-    def build_model(cls, args, src_dict, dst_dict):
+    def build_model(cls, args, task):
         """Build a new model instance."""
+        src_dict, dst_dict = task.source_dictionary, task.target_dictionary
         base_architecture(args)
 
         assert args.sequence_lstm, "CharRNNModel only supports sequence_lstm"
@@ -141,7 +142,7 @@ class CharSourceModel(rnn.RNNModel):
             residual_level=args.residual_level,
             averaging_encoder=args.averaging_encoder,
         )
-        return cls(encoder, decoder)
+        return cls(task, encoder, decoder)
 
     def forward(
         self, src_tokens, src_lengths, char_inds, word_lengths, prev_output_tokens

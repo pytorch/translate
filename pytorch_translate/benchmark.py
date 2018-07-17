@@ -4,7 +4,7 @@ import os
 import random
 import torch
 
-from fairseq import bleu, data, options, progress_bar, tokenizer, utils
+from fairseq import options, tasks
 from fairseq.meters import TimeMeter
 from pytorch_translate import beam_decode
 from pytorch_translate import generate as pytorch_translate_generate
@@ -12,6 +12,7 @@ from pytorch_translate import data as pytorch_translate_data
 from pytorch_translate import dictionary as pytorch_translate_dictionary
 from pytorch_translate import utils as pytorch_translate_utils
 from pytorch_translate import rnn  # noqa
+from pytorch_translate import tasks as pytorch_translate_tasks  # noqa
 
 
 def get_parser_with_args():
@@ -109,23 +110,19 @@ def generate(args):
     args.source_lang = "src"
     args.target_lang = "tgt"
 
-    src_dict = pytorch_translate_dictionary.Dictionary.load(args.source_vocab_file)
-    dst_dict = pytorch_translate_dictionary.Dictionary.load(args.target_vocab_file)
+    task = tasks.setup_task(args)
+    models, model_args = pytorch_translate_utils.load_diverse_ensemble_for_inference(
+        args.path.split(':'), task
+    )
 
     # Generate synthetic raw text files
     source_text_file = generate_synthetic_text(
-        args.source_lang, src_dict.symbols, args
+        args.source_lang, task.source_dictionary.symbols, args
     )
     target_text_file = generate_synthetic_text(
-        args.target_lang, src_dict.symbols, args
+        args.target_lang, task.target_dictionary.symbols, args
     )
 
-    dataset = data.LanguageDatasets(
-        src=args.source_lang, dst=args.target_lang, src_dict=src_dict, dst_dict=dst_dict
-    )
-    models, model_args = pytorch_translate_utils.load_diverse_ensemble_for_inference(
-        args.path, dataset.src_dict, dataset.dst_dict
-    )
     append_eos_to_source = model_args[0].append_eos_to_source
     reverse_source = model_args[0].reverse_source
     assert all(
@@ -133,11 +130,11 @@ def generate(args):
         and a.reverse_source == reverse_source
         for a in model_args
     )
-    dataset.splits[args.gen_subset] = pytorch_translate_data.make_language_pair_dataset_from_text(
+
+    task.load_dataset_from_text(
+        args.gen_subset,
         source_text_file=source_text_file,
         target_text_file=target_text_file,
-        source_dict=src_dict,
-        target_dict=dst_dict,
         append_eos=append_eos_to_source,
         reverse_source=reverse_source,
     )
@@ -146,16 +143,9 @@ def generate(args):
     os.remove(source_text_file)
     os.remove(target_text_file)
 
-    if args.source_lang is None or args.target_lang is None:
-        # record inferred languages in args
-        args.source_lang, args.target_lang = dataset.src, dataset.dst
-
-    print(f"| [{dataset.src}] dictionary: {len(dataset.src_dict)} types")
-    print(f"| [{dataset.dst}] dictionary: {len(dataset.dst_dict)} types")
-    print(f"| {args.gen_subset} {len(dataset.splits[args.gen_subset])} examples")
     args.keep_detailed_timing = True
     scorer, num_sentences, gen_timer, _ = pytorch_translate_generate._generate_score(
-        models=models, args=args, dataset=dataset, dataset_split=args.gen_subset
+        models=models, args=args, task=task, dataset_split=args.gen_subset
     )
 
     # Remove contribution of primer sentence

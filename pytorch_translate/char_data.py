@@ -3,13 +3,13 @@
 import numpy as np
 import torch
 
-from fairseq import data, indexed_dataset, tokenizer
+from fairseq import data, tokenizer
 
 from pytorch_translate.dictionary import TAGS
 
 
-class InMemoryNumpyWordCharDataset(indexed_dataset.IndexedDataset):
-    """analogous to fairseq.indexed_dataset.IndexedInMemoryDataset"""
+class InMemoryNumpyWordCharDataset(data.IndexedDataset):
+    """analogous to fairseq.data.IndexedInMemoryDataset"""
 
     def __init__(self):
         """Initialize empty dataset"""
@@ -90,7 +90,6 @@ class InMemoryNumpyWordCharDataset(indexed_dataset.IndexedDataset):
                     char_array_list.append(np.array(char_inds, dtype=np.int32))
                     char_offsets.append(char_offsets[-1] + len(char_inds))
 
-        # note: no Lua compatibility (unlike InMemoryNumpyDataset)
         self.word_buffer = np.concatenate(word_array_list)
         self.word_offsets = np.array(word_offsets, dtype=np.int32)
         self.char_buffer = np.concatenate(char_array_list)
@@ -106,7 +105,7 @@ class InMemoryNumpyWordCharDataset(indexed_dataset.IndexedDataset):
         return result
 
 
-class LanguagePairSourceCharDataset(torch.utils.data.Dataset):
+class LanguagePairSourceCharDataset(data.LanguagePairDataset):
     """
     Version of fairseq.data.LanguagePairDataset which represents source
     sentences as sequences of words, each represented as a sequence of
@@ -114,16 +113,23 @@ class LanguagePairSourceCharDataset(torch.utils.data.Dataset):
     Right-padded only.
     """
 
-    def __init__(self, src, dst, pad_idx, eos_idx, weights=None):
+    def __init__(
+        self, src, src_sizes, src_dict,
+        tgt=None, tgt_sizes=None, tgt_dict=None,
+        weights=None,
+    ):
         """
         src : InMemoryNumpyWordCharDataset
-        dst : InMemoryNumpyDataset
+        tgt : InMemoryNumpyDataset
         weights: Optional[IndexedInMemoryDataset]
         """
-        self.src = src
-        self.dst = dst
-        self.pad_idx = pad_idx
-        self.eos_idx = eos_idx
+        super().__init__(
+            src, src_sizes, src_dict,
+            tgt, tgt_sizes, tgt_dict,
+            left_pad_source=False, left_pad_target=False,
+        )
+        self.pad_idx = src_dict.pad()
+        self.eos_idx = src_dict.eos()
         self.weights = weights
 
     def __getitem__(self, i):
@@ -132,9 +138,8 @@ class LanguagePairSourceCharDataset(torch.utils.data.Dataset):
             "source_tokens": self.src.get_tokens(i).long(),
             "source_chars_list": self.src.get_chars_list(i),
         }
-        if self.dst:
-            # subtract 1 for 0-based indexing (fairseq legacy)
-            example["target"] = self.dst[i].long() - 1
+        if self.tgt:
+            example["target"] = self.tgt[i].long()
         if self.weights:
             example["weight"] = self.weights[i]
         else:
@@ -188,10 +193,10 @@ class LanguagePairSourceCharDataset(torch.utils.data.Dataset):
         target = None
         prev_output_tokens = None
         ntokens = None
-        if self.dst:
+        if self.tgt:
 
             def merge(move_eos_to_beginning=False):
-                return data.LanguagePairDataset.collate_tokens(
+                return data.data_utils.collate_tokens(
                     [s["target"] for s in samples],
                     self.pad_idx,
                     self.eos_idx,

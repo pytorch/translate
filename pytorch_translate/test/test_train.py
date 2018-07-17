@@ -3,18 +3,19 @@
 import torch
 import unittest
 
-from fairseq import criterions, models
 from fairseq.trainer import Trainer
 from pytorch_translate import rnn  # noqa
+from pytorch_translate import tasks
 from pytorch_translate.test import utils as test_utils
 
 
 class TestRNNModel(unittest.TestCase):
     def _gpu_train_step(self, test_args):
         samples, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
-        model = models.build_model(test_args, src_dict, tgt_dict)
-        criterion = criterions.build_criterion(test_args, src_dict, tgt_dict)
-        trainer = Trainer(test_args, model, criterion)
+        task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
+        model = task.build_model(test_args)
+        criterion = task.build_criterion(test_args)
+        trainer = Trainer(test_args, task, model, criterion)
         logging_dict = trainer.train_step(next(samples))
         return trainer, logging_dict
 

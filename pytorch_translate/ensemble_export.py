@@ -12,7 +12,7 @@ import torch.onnx.operators
 from torch.onnx import ExportTypes
 
 from fairseq import utils
-from pytorch_translate import char_source_model, dictionary, rnn  # noqa
+from pytorch_translate import char_source_model, dictionary, rnn, tasks  # noqa
 
 from caffe2.python.predictor import predictor_exporter
 from caffe2.python import core, dyndep, workspace
@@ -55,19 +55,19 @@ def load_models_from_checkpoints(
             checkpoint_data["args"].vocab_reduction_params[
                 "lexical_dictionaries"
             ] = lexical_dict_paths
+        task = tasks.DictionaryHolderTask(src_dict, dst_dict)
         if checkpoint_data["args"].arch == "char_source":
             model = char_source_model.CharSourceModel.build_model(
-                checkpoint_data["args"], src_dict, dst_dict
+                checkpoint_data["args"], task
             )
         else:
             model = rnn.RNNModel.build_model(
-                checkpoint_data["args"], src_dict, dst_dict
+                checkpoint_data["args"], task
             )
-
         model.load_state_dict(checkpoint_data["model"])
         models.append(model)
 
-    return models
+    return models, src_dict, dst_dict
 
 
 def save_caffe2_rep_to_db(
@@ -124,9 +124,10 @@ def save_caffe2_rep_to_db(
 
 
 class EncoderEnsemble(nn.Module):
-    def __init__(self, models):
+    def __init__(self, models, src_dict=None):
         super().__init__()
         self.models = models
+        self.src_dict = src_dict
         for i, model in enumerate(self.models):
             self._modules[f"model_{i}"] = model
 
@@ -218,32 +219,32 @@ class EncoderEnsemble(nn.Module):
         dst_dict_filename,
         lexical_dict_paths=None,
     ):
-        models = load_models_from_checkpoints(
+        models, src_dict, _ = load_models_from_checkpoints(
             checkpoint_filenames,
             src_dict_filename,
             dst_dict_filename,
             lexical_dict_paths,
         )
-        return EncoderEnsemble(models)
+        return EncoderEnsemble(models, src_dict=src_dict)
 
 
 class DecoderStepEnsemble(nn.Module):
-    def __init__(self, models, beam_size, word_reward=0, unk_reward=0):
+    def __init__(self, models, tgt_dict, beam_size, word_reward=0, unk_reward=0):
         super().__init__()
         self.models = models
         for i, model in enumerate(self.models):
             model.decoder.attention.src_length_masking = False
             self._modules[f"model_{i}"] = model
 
+        self.tgt_dict = tgt_dict
         self.beam_size = beam_size
         self.word_reward = word_reward
         self.unk_reward = unk_reward
 
-        dst_dict = models[0].dst_dict
-        vocab_size = len(dst_dict.indices)
+        vocab_size = len(tgt_dict.indices)
         self.word_rewards = torch.FloatTensor(vocab_size).fill_(word_reward)
-        self.word_rewards[dst_dict.eos()] = 0
-        self.word_rewards[dst_dict.unk()] = word_reward + unk_reward
+        self.word_rewards[tgt_dict.eos()] = 0
+        self.word_rewards[tgt_dict.unk()] = word_reward + unk_reward
 
     def forward(self, input_token, timestep, *inputs):
         """
@@ -370,7 +371,7 @@ class DecoderStepEnsemble(nn.Module):
 
     def onnx_export(self, output_path, encoder_ensemble_outputs):
         # single EOS
-        input_token = torch.LongTensor(np.array([[self.models[0].dst_dict.eos()]]))
+        input_token = torch.LongTensor(np.array([[self.tgt_dict.eos()]]))
         timestep = torch.LongTensor(np.array([[0]]))
 
         # generate input and output names
@@ -394,14 +395,18 @@ class DecoderStepEnsemble(nn.Module):
         unk_reward=0,
         lexical_dict_paths=None,
     ):
-        models = load_models_from_checkpoints(
+        models, _, tgt_dict = load_models_from_checkpoints(
             checkpoint_filenames,
             src_dict_filename,
             dst_dict_filename,
             lexical_dict_paths,
         )
         return DecoderStepEnsemble(
-            models, beam_size=beam_size, word_reward=word_reward, unk_reward=unk_reward
+            models,
+            tgt_dict,
+            beam_size=beam_size,
+            word_reward=word_reward,
+            unk_reward=unk_reward,
         )
 
     def save_to_db(self, output_path, encoder_ensemble_outputs):
@@ -427,7 +432,8 @@ class DecoderStepEnsemble(nn.Module):
 
 class DecoderBatchedStepEnsemble(nn.Module):
     def __init__(
-        self, models, beam_size, word_reward=0, unk_reward=0, tile_internal=False
+        self, models, tgt_dict, beam_size, word_reward=0, unk_reward=0,
+        tile_internal=False
     ):
         super().__init__()
         self.models = models
@@ -435,15 +441,15 @@ class DecoderBatchedStepEnsemble(nn.Module):
             model.decoder.attention.src_length_masking = False
             self._modules[f"model_{i}"] = model
 
+        self.tgt_dict = tgt_dict
         self.beam_size = beam_size
         self.word_reward = word_reward
         self.unk_reward = unk_reward
 
-        dst_dict = models[0].dst_dict
-        vocab_size = len(dst_dict.indices)
+        vocab_size = len(tgt_dict.indices)
         self.word_rewards = torch.FloatTensor(vocab_size).fill_(word_reward)
-        self.word_rewards[dst_dict.eos()] = 0
-        self.word_rewards[dst_dict.unk()] = word_reward + unk_reward
+        self.word_rewards[tgt_dict.eos()] = 0
+        self.word_rewards[tgt_dict.unk()] = word_reward + unk_reward
 
         self.tile_internal = tile_internal
 
@@ -616,7 +622,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
     def onnx_export(self, output_path, encoder_ensemble_outputs):
         # single EOS (as flat array)
-        input_token = torch.LongTensor(np.array([self.models[0].dst_dict.eos()]))
+        input_token = torch.LongTensor(np.array([self.tgt_dict.eos()]))
         prev_scores = torch.FloatTensor(np.array([0.0]))
         timestep = torch.LongTensor(np.array([0]))
 
@@ -643,14 +649,18 @@ class DecoderBatchedStepEnsemble(nn.Module):
         unk_reward=0,
         lexical_dict_paths=None,
     ):
-        models = load_models_from_checkpoints(
+        models, _, tgt_dict = load_models_from_checkpoints(
             checkpoint_filenames,
             src_dict_filename,
             dst_dict_filename,
             lexical_dict_paths,
         )
         return DecoderBatchedStepEnsemble(
-            models, beam_size=beam_size, word_reward=word_reward, unk_reward=unk_reward
+            models,
+            tgt_dict,
+            beam_size=beam_size,
+            word_reward=word_reward,
+            unk_reward=unk_reward,
         )
 
     def save_to_db(self, output_path, encoder_ensemble_outputs):
@@ -681,6 +691,7 @@ class BeamSearch(torch.jit.ScriptModule):
     def __init__(
         self,
         model_list,
+        tgt_dict,
         src_tokens,
         src_lengths,
         beam_size=1,
@@ -689,6 +700,7 @@ class BeamSearch(torch.jit.ScriptModule):
     ):
         super().__init__()
         self.models = model_list
+        self.tgt_dict = tgt_dict
         self.beam_size = beam_size
         self.word_reward = word_reward
         self.unk_reward = unk_reward
@@ -697,10 +709,12 @@ class BeamSearch(torch.jit.ScriptModule):
         example_encoder_outs = encoder_ens(src_tokens, src_lengths)
         self.encoder_ens = torch.jit.trace(src_tokens, src_lengths)(encoder_ens)
         decoder_ens = DecoderBatchedStepEnsemble(
-            self.models, beam_size, word_reward, unk_reward, tile_internal=False
+            self.models, tgt_dict, beam_size, word_reward, unk_reward,
+            tile_internal=False,
         )
         decoder_ens_tile = DecoderBatchedStepEnsemble(
-            self.models, beam_size, word_reward, unk_reward, tile_internal=True
+            self.models, tgt_dict, beam_size, word_reward, unk_reward,
+            tile_internal=True,
         )
         prev_token = torch.LongTensor([0])
         prev_scores = torch.FloatTensor([0.0])
@@ -789,7 +803,7 @@ class BeamSearch(torch.jit.ScriptModule):
         length = 10
         src_tokens = torch.LongTensor(np.ones((length, 1), dtype="int64"))
         src_lengths = torch.IntTensor(np.array([length], dtype="int32"))
-        prev_token = torch.LongTensor([self.models[0].dst_dict.eos()])
+        prev_token = torch.LongTensor([self.tgt_dict.eos()])
         prev_scores = torch.FloatTensor([0.0])
         attn_weights = torch.zeros(length)
         prev_hypos_indices = torch.zeros(self.beam_size, dtype=torch.int64)
@@ -830,7 +844,7 @@ class BeamSearch(torch.jit.ScriptModule):
         lexical_dict_paths=None,
     ):
         length = 10
-        models = load_models_from_checkpoints(
+        models, _, tgt_dict = load_models_from_checkpoints(
             checkpoint_filenames,
             src_dict_filename,
             dst_dict_filename,
@@ -840,6 +854,7 @@ class BeamSearch(torch.jit.ScriptModule):
         src_lengths = torch.IntTensor(np.array([length], dtype="int32"))
         return BeamSearch(
             models,
+            tgt_dict,
             src_tokens,
             src_lengths,
             beam_size=beam_size,
@@ -867,9 +882,10 @@ class BeamSearch(torch.jit.ScriptModule):
 
 
 class KnownOutputDecoderStepEnsemble(nn.Module):
-    def __init__(self, models, word_reward=0, unk_reward=0):
+    def __init__(self, models, tgt_dict, word_reward=0, unk_reward=0):
         super().__init__()
         self.models = models
+        self.tgt_dict = tgt_dict
         for i, model in enumerate(self.models):
             if isinstance(model.encoder, char_source_model.CharRNNEncoder):
                 model.encoder.onnx_export_model = True
@@ -879,13 +895,12 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
         self.word_reward = word_reward
         self.unk_reward = unk_reward
 
-        dst_dict = models[0].dst_dict
-        vocab_size = len(dst_dict.indices)
+        vocab_size = len(tgt_dict.indices)
         self.word_rewards = torch.FloatTensor(vocab_size).fill_(word_reward)
-        self.word_rewards[dst_dict.eos()] = 0
-        self.word_rewards[dst_dict.unk()] = word_reward + unk_reward
+        self.word_rewards[tgt_dict.eos()] = 0
+        self.word_rewards[tgt_dict.unk()] = word_reward + unk_reward
         self.vocab_size = vocab_size
-        self.unk_token = dst_dict.unk()
+        self.unk_token = tgt_dict.unk()
 
     def forward(self, input_token, target_token, timestep, *inputs):
         """
@@ -1018,9 +1033,16 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
 
 
 class ForcedDecoder(torch.jit.ScriptModule):
-    def __init__(self, model_list, word_reward=0, unk_reward=0):
+    def __init__(
+        self,
+        model_list,
+        tgt_dict,
+        word_reward=0,
+        unk_reward=0,
+    ):
         super().__init__()
         self.models = model_list
+        self.tgt_dict = tgt_dict
         self.word_reward = word_reward
         self.unk_reward = unk_reward
 
@@ -1031,7 +1053,7 @@ class ForcedDecoder(torch.jit.ScriptModule):
         example_encoder_outs = encoder_ens(source_tokens, source_length)
         self.encoder_ens = torch.jit.trace(source_tokens, source_length)(encoder_ens)
         decoder_ens = KnownOutputDecoderStepEnsemble(
-            self.models, word_reward, unk_reward
+            self.models, tgt_dict, word_reward, unk_reward
         )
         prev_token = torch.LongTensor([0])
         target_token = torch.LongTensor([0])
@@ -1089,7 +1111,7 @@ class ForcedDecoder(torch.jit.ScriptModule):
         source_length = torch.LongTensor([5])
         target_tokens = torch.LongTensor(np.ones((1, 7), dtype="int64"))
         target_length = torch.LongTensor([7])
-        eos_token = torch.LongTensor([[self.models[0].dst_dict.eos_index]])
+        eos_token = torch.LongTensor([[self.tgt_dict.eos()]])
         zero = torch.FloatTensor([0.0])
 
         input_tuple = (
@@ -1124,13 +1146,18 @@ class ForcedDecoder(torch.jit.ScriptModule):
         unk_reward=0,
         lexical_dict_paths=None,
     ):
-        models = load_models_from_checkpoints(
+        models, _, tgt_dict = load_models_from_checkpoints(
             checkpoint_filenames,
             src_dict_filename,
             dst_dict_filename,
             lexical_dict_paths,
         )
-        return ForcedDecoder(models, word_reward=word_reward, unk_reward=unk_reward)
+        return ForcedDecoder(
+            models,
+            tgt_dict,
+            word_reward=word_reward,
+            unk_reward=unk_reward,
+        )
 
     def save_to_db(self, output_path):
         """
@@ -1237,7 +1264,7 @@ class CharSourceEncoderEnsemble(nn.Module):
         dst_dict_filename,
         lexical_dict_paths=None,
     ):
-        models = load_models_from_checkpoints(
+        models, _, _ = load_models_from_checkpoints(
             checkpoint_filenames,
             src_dict_filename,
             dst_dict_filename,

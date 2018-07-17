@@ -4,7 +4,7 @@ import os
 import re
 from typing import Dict, List, Optional, Set
 
-from fairseq import dictionary
+from fairseq.data import dictionary
 from pytorch_translate import vocab_constants
 
 
@@ -103,6 +103,7 @@ class Dictionary(dictionary.Dictionary):
         max_vocab_size: int,
         tokens_with_penalty: Optional[str] = None,
         is_char_vocab: bool = False,
+        padding_factor: int = 8,
     ) -> "Dictionary":  # https://www.python.org/dev/peps/pep-0484/#forward-references
         d = cls()
 
@@ -124,17 +125,15 @@ class Dictionary(dictionary.Dictionary):
                 if token in lexicon:
                     d.lexicon_indices.add(token_index)
 
-        d.finalize()
-        d.save(vocab_file, threshold=0, nwords=max_vocab_size)
+        nwords = -1 if max_vocab_size <= 0 else max_vocab_size + d.nspecial
+        d.finalize(nwords=nwords, padding_factor=padding_factor)
+        d.save(vocab_file)
         print(f"Generated new vocab file saved at {vocab_file}.")
         if max_vocab_size < 0:
             print("No maximum vocab sized enforced.")
         else:
             print(f"Maximum vocab size {max_vocab_size}")
-
-        # Re-load the dictionary since the max vocab size is only enforced in
-        # the vocab file written by save().
-        return cls.load(vocab_file)
+        return d
 
     @classmethod
     def build_vocab_file_if_nonexistent(
@@ -144,6 +143,7 @@ class Dictionary(dictionary.Dictionary):
         max_vocab_size: int,
         tokens_with_penalty: Optional[str] = None,
         is_char_vocab: bool = False,
+        padding_factor: int = 8,
     ) -> "Dictionary":  # https://www.python.org/dev/peps/pep-0484/#forward-references
         if os.path.isfile(vocab_file):
             d = cls.load(vocab_file)
@@ -163,6 +163,7 @@ class Dictionary(dictionary.Dictionary):
             max_vocab_size=max_vocab_size,
             tokens_with_penalty=tokens_with_penalty,
             is_char_vocab=is_char_vocab,
+            padding_factor=padding_factor,
         )
 
 

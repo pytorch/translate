@@ -16,24 +16,24 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
             corpus_files=[self.src_txt, self.trg_txt],
             vocab_file=self.vocab_file_path,
             max_vocab_size=0,
+            padding_factor=1,  # don't add extra padding symbols
         )
-        # src_ref is reversed, +1 for lua
+        # src_ref is reversed
         self.src_ref = [
-            [107, 105, 103, 101],
-            [105, 105, 103, 103, 101, 101],
-            [103, 103, 103, 103, 101, 101, 101, 101],
-            [101, 101, 101, 101, 101, 101, 101, 101, 101, 101],
+            [106, 104, 102, 100],
+            [104, 104, 102, 102, 100, 100],
+            [102, 102, 102, 102, 100, 100, 100, 100],
+            [100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
         ]
         self.trg_ref = [
-            [102, 102, 102, 102, 102, 102, 102, 102, 102, 102],
-            [102, 102, 102, 102, 104, 104, 104, 104],
-            [102, 102, 104, 104, 106, 106],
-            [102, 104, 106, 108],
+            [101, 101, 101, 101, 101, 101, 101, 101, 101, 101],
+            [101, 101, 101, 101, 103, 103, 103, 103],
+            [101, 101, 103, 103, 105, 105],
+            [101, 103, 105, 107],
         ]
         self.src_txt_numberized, self.trg_txt_numberized = test_utils.create_test_numberized_data_files(
             self.src_ref, self.trg_ref, reverse_source=True
         )
-        self.lua_eos = self.d.eos_index + 1
         self.num_sentences = 4
 
     def tearDown(self):
@@ -56,7 +56,7 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
             for i in range(self.num_sentences):
                 self.assertListEqual(self.src_ref[i], src_dataset[i].tolist())
                 self.assertListEqual(
-                    self.trg_ref[i] + [self.lua_eos], trg_dataset[i].tolist()
+                    self.trg_ref[i] + [self.d.eos_index], trg_dataset[i].tolist()
                 )
 
     def test_parse_numberize(self):
@@ -82,7 +82,7 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
             for i in range(self.num_sentences):
                 self.assertListEqual(self.src_ref[i], src_dataset[i].tolist())
                 self.assertListEqual(
-                    self.trg_ref[i] + [self.lua_eos], trg_dataset[i].tolist()
+                    self.trg_ref[i] + [self.d.eos_index], trg_dataset[i].tolist()
                 )
 
     def test_parse_oversampling(self):
@@ -117,8 +117,8 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
                 dialect_id=11, data_file=self.trg_txt, dict=self.d, oversampling=1
             ),
         ]
-        lang1 = corpora[0].dialect_id + 1  # +1 for lua
-        lang2 = corpora[1].dialect_id + 1  # +1 for lua
+        lang1 = corpora[0].dialect_id
+        lang2 = corpora[1].dialect_id
         prepend_dataset.parse_multilingual(
             corpora, reverse_order=False, append_eos=False, prepend_language_id=True
         )

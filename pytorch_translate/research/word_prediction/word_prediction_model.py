@@ -179,8 +179,9 @@ class RNNWordPredictionModel(FairseqWordPredictionModel):
         vocab_reduction.add_args(parser)
 
     @classmethod
-    def build_model(cls, args, src_dict, dst_dict):
+    def build_model(cls, args, task):
         """Build a new model instance."""
+        src_dict, dst_dict = task.source_dictionary, task.target_dictionary
         base_architecture_wp(args)
         if args.sequence_lstm:
             encoder_class = LSTMSequenceEncoder
