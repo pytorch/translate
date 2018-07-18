@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 @register_model("char_source")
 class CharSourceModel(rnn.RNNModel):
-    def __init__(self, encoder, decoder):
-        super().__init__(encoder, decoder)
+    def __init__(self, task, encoder, decoder):
+        super().__init__(task, encoder, decoder)
 
     @staticmethod
     def add_args(parser):
@@ -75,8 +75,9 @@ class CharSourceModel(rnn.RNNModel):
         )
 
     @classmethod
-    def build_model(cls, args, src_dict, dst_dict):
+    def build_model(cls, args, task):
         """Build a new model instance."""
+        src_dict, dst_dict = task.source_dictionary, task.target_dictionary
         base_architecture(args)
 
         assert args.sequence_lstm, "CharRNNModel only supports sequence_lstm"
@@ -141,7 +142,7 @@ class CharSourceModel(rnn.RNNModel):
             residual_level=args.residual_level,
             averaging_encoder=args.averaging_encoder,
         )
-        return cls(encoder, decoder)
+        return cls(task, encoder, decoder)
 
     def forward(
         self, src_tokens, src_lengths, char_inds, word_lengths, prev_output_tokens
@@ -379,6 +380,10 @@ class CharRNNEncoder(FairseqEncoder):
 
         return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
 
+    def reorder_encoder_out(self, encoder_out, new_order):
+        """Reorder all outputs according to new_order."""
+        return rnn.reorder_encoder_output(encoder_out, new_order)
+
     def max_positions(self):
         """Maximum input length supported by the encoder."""
         return int(1e5)  # an arbitrary large number
@@ -540,6 +545,10 @@ class CharCNNEncoder(FairseqEncoder):
         unpacked_output, _ = pad_packed_sequence(packed_input)
 
         return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
+
+    def reorder_encoder_out(self, encoder_out, new_order):
+        """Reorder all outputs according to new_order."""
+        return rnn.reorder_encoder_output(encoder_out, new_order)
 
     def max_positions(self):
         """Maximum input length supported by the encoder."""

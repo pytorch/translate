@@ -16,26 +16,6 @@ def add_dataset_args(parser, train=False, gen=False):
         "This is not needed but kept for backward compatibility",
     )
     group.add_argument(
-        "-s", "--source-lang", default="src", metavar="SRC", help="source language"
-    )
-    group.add_argument(
-        "-t", "--target-lang", default="tgt", metavar="TARGET", help="target language"
-    )
-    group.add_argument(
-        "--max-source-positions",
-        default=1024,
-        type=int,
-        metavar="N",
-        help="max number of tokens in the source sequence",
-    )
-    group.add_argument(
-        "--max-target-positions",
-        default=1024,
-        type=int,
-        metavar="N",
-        help="max number of tokens in the target sequence",
-    )
-    group.add_argument(
         "--skip-invalid-size-inputs-valid-test",
         action="store_true",
         help="Ignore too long or too short lines in valid and test set",
@@ -463,7 +443,8 @@ def expand_checkpointing_args(group):
         action="store_true",
         help="Disables saving checkpoints at the end of the epoch. "
         "This differs from --no-save and --no-epoch-checkpoints in that it "
-        "still allows for intra-epoch checkpoints if --save-interval is set.",
+        "still allows for intra-epoch checkpoints if --save-interval-updates "
+        "is set.",
     )
     group.add_argument(
         "--max-checkpoints-kept",
@@ -564,7 +545,7 @@ def expand_generation_args(group, train=False):
             type=int,
             metavar="N",
             help="Does BLEU eval every N batch updates. Note that "
-            "--save-interval also affects this - we can only eval as "
+            "--save-interval-updates also affects this - we can only eval as "
             "frequently as a checkpoint is written. A value of <= 0 "
             "disables this.",
         )
@@ -614,14 +595,11 @@ def validate_generation_args(args):
 
 def add_verbosity_args(parser, train=False):
     verbosity_group = parser.add_argument_group("Verbosity")
-
-    if train:
-        verbosity_group.add_argument(
-            "--log-verbose",
-            action="store_true",
-            help="Whether to output more verbose logs for debugging/profiling.",
-        )
-
+    verbosity_group.add_argument(
+        "--log-verbose",
+        action="store_true",
+        help="Whether to output more verbose logs for debugging/profiling.",
+    )
     verbosity_group.add_argument(
         "--args-verbosity",
         default=1,

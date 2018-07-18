@@ -9,7 +9,6 @@ from pytorch_translate import rnn_cell  # noqa
 from pytorch_translate import data as pytorch_translate_data
 
 from fairseq import utils
-from fairseq.data import LanguagePairDataset
 from fairseq.models import (
     FairseqEncoder,
     FairseqModel,
@@ -47,10 +46,28 @@ def torch_find(index, query, vocab_size):
     return result
 
 
+def reorder_encoder_output(encoder_out, new_order):
+    """Reorder all outputs according to new_order."""
+    (
+        unpacked_output,
+        final_hiddens,
+        final_cells,
+        src_lengths,
+        src_tokens,
+    ) = encoder_out
+    unpacked_output = unpacked_output.index_select(1, new_order)
+    final_hiddens = final_hiddens.index_select(1, new_order)
+    final_cells = final_cells.index_select(1, new_order)
+    src_lengths = src_lengths.index_select(0, new_order)
+    src_tokens = src_tokens.index_select(0, new_order)
+    return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
+
+
 @register_model("rnn")
 class RNNModel(FairseqModel):
-    def __init__(self, encoder, decoder):
+    def __init__(self, task, encoder, decoder):
         super().__init__(encoder, decoder)
+        self.task = task
 
     @staticmethod
     def add_args(parser):
@@ -337,6 +354,7 @@ class RNNModel(FairseqModel):
             residual_level=args.residual_level,
             bidirectional=bool(args.encoder_bidirectional),
             word_dropout_params=args.word_dropout_params,
+            left_pad=args.left_pad_source,
         )
 
     @staticmethod
@@ -451,88 +469,58 @@ class RNNModel(FairseqModel):
         return decoder
 
     @classmethod
-    def build_model(cls, args, src_dict, dst_dict):
+    def build_model(cls, args, task):
         """Build a new model instance."""
         base_architecture(args)
+        # set default value for old checkpoints
+        args.left_pad_source = getattr(args, "left_pad_source", True)
         if pytorch_translate_data.is_multilingual(args):
-            return RNNModel.build_model_multilingual(args, src_dict, dst_dict)
+            return RNNModel.build_model_multilingual(args, task)
+        src_dict, dst_dict = task.source_dictionary, task.target_dictionary
         encoder = RNNModel.build_encoder(args, src_dict)
         decoder = RNNModel.build_decoder(args, src_dict, dst_dict)
-        return cls(encoder, decoder)
+        return cls(task, encoder, decoder)
 
     @classmethod
-    def build_model_multilingual(cls, args, src_dict, dst_dict):
+    def build_model_multilingual(cls, args, task):
         """Build a new multilingual model instance."""
         encoders = []
-        src_dict = pytorch_translate_dictionary.MaxVocabDictionary()
-        for dict_path in args.multiling_source_vocab_file:
-            d = pytorch_translate_dictionary.Dictionary.load(dict_path)
-            src_dict.push(d)
-            encoders.append(RNNModel.build_encoder(args, d))
+        for lang in args.multiling_encoder_lang:
+            d = task.source_dictionaries.get(lang, None)
+            if d is not None:
+                encoders.append(RNNModel.build_encoder(args, d))
+            else:
+                encoders.append(None)
         encoder = MultilingualEncoder(
-            src_dict,
+            task.source_dictionary,
             encoders,
             hidden_dim=args.encoder_hidden_dim,
             num_layers=args.encoder_layers,
             rescale_grads=args.multiling_rescale_grads,
         )
         decoders = []
-        dst_dict = pytorch_translate_dictionary.MaxVocabDictionary()
-        for dict_path in args.multiling_target_vocab_file:
-            d = pytorch_translate_dictionary.Dictionary.load(dict_path)
-            dst_dict.push(d)
-            decoders.append(RNNModel.build_decoder(args, None, d))
+        for lang in args.multiling_decoder_lang:
+            d = task.target_dictionaries.get(lang, None)
+            if d is not None:
+                decoders.append(RNNModel.build_decoder(args, None, d))
+            else:
+                decoders.append(None)
         decoder = MultilingualDecoder(
-            dst_dict,
+            task.target_dictionary,
             decoders,
             hidden_dim=args.encoder_hidden_dim,
             rescale_grads=args.multiling_rescale_grads,
         )
-        return cls(encoder, decoder)
+        return cls(task, encoder, decoder)
 
     def get_targets(self, sample, net_output):
         targets = sample["target"].view(-1)
         possible_translation_tokens = net_output[-1]
         if possible_translation_tokens is not None:
             targets = torch_find(
-                possible_translation_tokens, targets, len(self.dst_dict)
+                possible_translation_tokens, targets, len(self.task.target_dictionary)
             )
         return targets
-
-    @staticmethod
-    def expand_encoder_output(encoder_out, n):
-        """
-        Expand all outputs to replicate each instance from batch in place n
-        times (as for beam search)
-        """
-        (
-            unpacked_output,
-            final_hiddens,
-            final_cells,
-            src_lengths,
-            src_tokens,
-        ) = encoder_out
-        unpacked_output = (
-            unpacked_output.unsqueeze(2)
-            .repeat(1, 1, n, 1)
-            .view(unpacked_output.shape[0], -1, unpacked_output.shape[2])
-        )
-        final_hiddens = (
-            final_hiddens.unsqueeze(2)
-            .repeat(1, 1, n, 1)
-            .view(final_hiddens.shape[0], -1, final_hiddens.shape[2])
-        )
-        final_cells = (
-            final_cells.unsqueeze(2)
-            .repeat(1, 1, n, 1)
-            .view(final_cells.shape[0], -1, final_cells.shape[2])
-        )
-        src_lengths = src_lengths.unsqueeze(1).repeat(1, n).view(-1)
-        src_tokens = (
-            src_tokens.unsqueeze(1).repeat(1, n, 1).view(-1, src_tokens.shape[1])
-        )
-
-        return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
 
 
 class LSTMSequenceEncoder(FairseqEncoder):
@@ -560,6 +548,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
         bidirectional=False,
         word_dropout_params=None,
         padding_value=0,
+        left_pad=True,
     ):
         assert cell_type == "lstm", 'sequence-lstm requires cell_type="lstm"'
 
@@ -573,6 +562,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
         num_embeddings = len(dictionary)
         self.padding_idx = dictionary.pad()
         self.padding_value = padding_value
+        self.left_pad = left_pad
 
         self.embed_tokens = Embedding(
             num_embeddings=num_embeddings,
@@ -607,7 +597,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
             )
 
     def forward(self, src_tokens, src_lengths):
-        if LanguagePairDataset.LEFT_PAD_SOURCE:
+        if self.left_pad:
             # convert left-padding to right-padding
             src_tokens = utils.convert_padding_direction(
                 src_tokens, self.padding_idx, left_to_right=True
@@ -679,6 +669,10 @@ class LSTMSequenceEncoder(FairseqEncoder):
 
         return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
 
+    def reorder_encoder_out(self, encoder_out, new_order):
+        """Reorder all outputs according to new_order."""
+        return reorder_encoder_output(encoder_out, new_order)
+
     def max_positions(self):
         """Maximum input length supported by the encoder."""
         return int(1e5)  # an arbitrary large number
@@ -720,6 +714,7 @@ class RNNEncoder(FairseqEncoder):
         bidirectional=False,
         pretrained_embed=None,
         padding_value=0,
+        left_pad=True,
     ):
         super().__init__(dictionary)
         self.dictionary = dictionary
@@ -732,6 +727,7 @@ class RNNEncoder(FairseqEncoder):
         num_embeddings = len(dictionary)
         self.padding_idx = dictionary.pad()
         self.padding_value = padding_value
+        self.left_pad = left_pad
 
         if pretrained_embed is None:
             self.embed_tokens = Embedding(
@@ -768,7 +764,7 @@ class RNNEncoder(FairseqEncoder):
             )
 
     def forward(self, src_tokens, src_lengths):
-        if LanguagePairDataset.LEFT_PAD_SOURCE:
+        if self.left_pad:
             # convert left-padding to right-padding
             src_tokens = utils.convert_padding_direction(
                 src_tokens, self.padding_idx, left_to_right=True
@@ -832,6 +828,10 @@ class RNNEncoder(FairseqEncoder):
         )
 
         return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
+
+    def reorder_encoder_out(self, encoder_out, new_order):
+        """Reorder all outputs according to new_order."""
+        return reorder_encoder_output(encoder_out, new_order)
 
     def max_positions(self):
         """Maximum input length supported by the encoder."""

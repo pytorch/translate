@@ -66,6 +66,8 @@ class MultilingualEncoder(FairseqEncoder):
         self.last_bsz = bsz
         self.last_lang_bszs = []
         for lang_id, encoder in enumerate(self.encoders):
+            if encoder is None:
+                continue
             indices = torch.nonzero(lang_ids == lang_id)
             lang_bsz = indices.size(0)
             self.last_lang_bszs.append(lang_bsz)
@@ -95,6 +97,17 @@ class MultilingualEncoder(FairseqEncoder):
             all_src_tokens,
         )
 
+    def reorder_encoder_out(self, encoder_out, new_order):
+        """Reorder all outputs according to new_order."""
+        # assume we can use any of the encoders to do the reordering
+        populated_encoders = [
+            encoder
+            for encoder in self.encoders
+            if encoder is not None
+        ]
+        assert len(populated_encoders) > 0
+        return populated_encoders[0].reorder_encoder_out(encoder_out, new_order)
+
     def max_positions(self):
         """Maximum input length supported by the encoder."""
         return int(1e5)  # an arbitrary large number
@@ -107,7 +120,7 @@ class MultilingualDecoder(FairseqIncrementalDecoder):
         super().__init__(dictionary)
         self.decoders = nn.ModuleList(decoders)
         self.hidden_dim = hidden_dim
-        self.max_vocab_size = max(len(d.dictionary) for d in decoders)
+        self.max_vocab_size = len(dictionary)
         if rescale_grads and len(decoders) > 1:
             register_hooks(self, decoders)
 
@@ -155,6 +168,8 @@ class MultilingualDecoder(FairseqIncrementalDecoder):
         self.last_bsz = bsz
         self.last_lang_bszs = []
         for lang_id, decoder in enumerate(self.decoders):
+            if decoder is None:
+                continue
             if lang_id not in incremental_state:
                 incremental_state[lang_id] = {}
             indices = torch.nonzero(lang_ids == lang_id)
@@ -188,6 +203,8 @@ class MultilingualDecoder(FairseqIncrementalDecoder):
             return
         bsz = new_order.size(0)
         for lang_id, decoder in enumerate(self.decoders):
+            if decoder is None:
+                continue
             indices = torch.nonzero(incremental_state["lang_ids"] == lang_id)
             lang_bsz = indices.size(0)
             if lang_bsz > 0:

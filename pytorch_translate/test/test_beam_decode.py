@@ -4,10 +4,10 @@ import numpy as np
 import torch
 import unittest
 
-from fairseq import models
 from pytorch_translate import beam_decode
 from pytorch_translate import rnn  # noqa
 from pytorch_translate import char_source_model  # noqa (must be after rnn)
+from pytorch_translate import tasks
 from pytorch_translate.test import utils as test_utils
 
 
@@ -16,8 +16,9 @@ class TestBeamDecode(unittest.TestCase):
     def test_basic_generate(self):
         test_args = test_utils.ModelParamsDict()
         _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
-        model = models.build_model(test_args, src_dict, tgt_dict)
-        translator = beam_decode.SequenceGenerator([model])
+        task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
+        model = task.build_model(test_args)
+        translator = beam_decode.SequenceGenerator([model], task.target_dictionary)
         src_tokens = torch.LongTensor([[0, 0, 0], [0, 0, 0]])
         src_lengths = torch.LongTensor([3, 3])
         encoder_input = (src_tokens, src_lengths)
@@ -33,8 +34,9 @@ class TestBeamDecode(unittest.TestCase):
         test_args.char_rnn_layers = 2
 
         _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
-        model = models.build_model(test_args, src_dict, tgt_dict)
-        translator = beam_decode.SequenceGenerator([model])
+        task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
+        model = task.build_model(test_args)
+        translator = beam_decode.SequenceGenerator([model], task.target_dictionary)
         src_tokens = torch.LongTensor([[0, 0, 0], [0, 0, 0]])
         src_lengths = torch.LongTensor([3, 3])
         char_inds = torch.LongTensor(np.zeros((2, 3, 5)))

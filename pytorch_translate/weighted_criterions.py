@@ -8,8 +8,8 @@ from fairseq import utils
 
 @register_criterion("weighted_label_smoothed_cross_entropy")
 class WeightedLabelSmoothedCrossEntropyCriterion(FairseqCriterion):
-    def __init__(self, args, src_dict, dst_dict):
-        super().__init__(args, src_dict, dst_dict)
+    def __init__(self, args, task):
+        super().__init__(args, task)
         self.eps = args.label_smoothing
 
     @classmethod

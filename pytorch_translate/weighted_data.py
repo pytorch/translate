@@ -2,10 +2,10 @@
 
 import torch
 
-from fairseq import data, indexed_dataset
+from fairseq import data
 
 
-class IndexedWeightsDataset(indexed_dataset.IndexedDataset):
+class IndexedWeightsDataset(data.IndexedDataset):
     def __init__(self, path):
         self.values = []
         self.read_data(path)
@@ -33,8 +33,17 @@ class WeightedLanguagePairDataset(data.LanguagePairDataset):
     has a weight in [0.0, 1.0], which will be used to weigh the loss.
     """
 
-    def __init__(self, src, dst, pad_idx, eos_idx, weights=None):
-        super().__init__(src, dst, pad_idx, eos_idx)
+    def __init__(
+        self, src, src_sizes, src_dict,
+        tgt=None, tgt_sizes=None, tgt_dict=None,
+        weights=None,
+        **kwargs,
+    ):
+        super().__init__(
+            src, src_sizes, src_dict,
+            tgt, tgt_sizes, tgt_dict,
+            **kwargs
+        )
         self.weights = weights
 
     def __getitem__(self, i):
