@@ -634,13 +634,16 @@ class LSTMSequenceEncoder(FairseqEncoder):
         self.padding_idx = dictionary.pad()
         self.padding_value = padding_value
 
-        self.embed_tokens = Embedding(
-            num_embeddings=num_embeddings,
-            embedding_dim=embed_dim,
-            padding_idx=self.padding_idx,
-            freeze_embed=freeze_embed,
-            pretrained_embed=pretrained_embed,
-        )
+        if pretrained_embed is not None and type(pretrained_embed) is not str:
+            self.embed_tokens = pretrained_embed
+        else:
+            self.embed_tokens = Embedding(
+                num_embeddings=num_embeddings,
+                embedding_dim=embed_dim,
+                padding_idx=self.padding_idx,
+                freeze_embed=freeze_embed,
+                pretrained_embed=pretrained_embed,
+            )
         self.word_dim = embed_dim
 
         self.layers = nn.ModuleList([])
@@ -794,13 +797,16 @@ class RNNEncoder(FairseqEncoder):
         self.padding_idx = dictionary.pad()
         self.padding_value = padding_value
 
-        self.embed_tokens = Embedding(
-            num_embeddings=num_embeddings,
-            embedding_dim=embed_dim,
-            padding_idx=self.padding_idx,
-            freeze_embed=freeze_embed,
-            pretrained_embed=pretrained_embed,
-        )
+        if pretrained_embed is not None and type(pretrained_embed) is not str:
+            self.embed_tokens = pretrained_embed
+        else:
+            self.embed_tokens = Embedding(
+                num_embeddings=num_embeddings,
+                embedding_dim=embed_dim,
+                padding_idx=self.padding_idx,
+                freeze_embed=freeze_embed,
+                pretrained_embed=pretrained_embed,
+            )
         self.word_dim = embed_dim
 
         self.cell_type = cell_type
@@ -943,13 +949,16 @@ class RNNDecoder(DecoderWithOutputProjection):
 
         num_embeddings = len(dst_dict)
         padding_idx = dst_dict.pad()
-        self.embed_tokens = Embedding(
-            num_embeddings=num_embeddings,
-            embedding_dim=embed_dim,
-            padding_idx=padding_idx,
-            freeze_embed=freeze_embed,
-            pretrained_embed=pretrained_embed,
-        )
+        if pretrained_embed is not None and type(pretrained_embed) is not str:
+            self.embed_tokens = pretrained_embed
+        else:
+            self.embed_tokens = Embedding(
+                num_embeddings=num_embeddings,
+                embedding_dim=embed_dim,
+                padding_idx=padding_idx,
+                freeze_embed=freeze_embed,
+                pretrained_embed=pretrained_embed,
+            )
         if self.tie_embeddings:
             assert self.embed_dim == self.out_embed_dim, (
                 "Input embeddings and output projections must have the same "
