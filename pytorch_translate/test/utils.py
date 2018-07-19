@@ -10,26 +10,19 @@ from pytorch_translate import dictionary as pytorch_translate_dictionary
 
 
 class ModelParamsDict:
-    def __init__(
-        self,
-        cell_type="lstm",
-        encoder_bidirectional=False,
-        encoder_freeze_embed=False,
-        decoder_freeze_embed=False,
-        clip_norm=5.0,
-        sequence_lstm=False,
-    ):
+    def __init__(self, **kwargs):
+        print("Building model params dict")
         # Model params
         self.arch = "rnn"
         self.encoder_embed_dim = 10
-        self.encoder_freeze_embed = encoder_freeze_embed
+        self.encoder_freeze_embed = False
         self.encoder_hidden_dim = 10
         self.encoder_layers = 2
-        self.encoder_bidirectional = encoder_bidirectional
+        self.encoder_bidirectional = False
         self.encoder_dropout_in = 0
         self.encoder_dropout_out = 0
         self.decoder_embed_dim = 10
-        self.decoder_freeze_embed = decoder_freeze_embed
+        self.decoder_freeze_embed = False
         self.decoder_hidden_dim = 10
         self.decoder_out_embed_dim = 5
         self.decoder_layers = 2
@@ -39,8 +32,8 @@ class ModelParamsDict:
         self.attention_type = "dot"
         self.residual_level = None
         self.averaging_encoder = False
-        self.cell_type = cell_type
-        self.sequence_lstm = sequence_lstm
+        self.cell_type = "lstm"
+        self.sequence_lstm = False
         self.decoder_tie_embeddings = False
         # Training params
         self.criterion = "cross_entropy"
@@ -53,11 +46,17 @@ class ModelParamsDict:
         self.force_anneal = 0
         self.lr_shrink = 0
         self.sentence_avg = True
-        self.clip_norm = clip_norm
+        self.clip_norm = 5.0
         self.batch_size = 4
         self.vocab_reduction_params = None
         self.word_dropout_params = None
         self.distributed_world_size = 1
+        # Modified params
+        for param, value in kwargs.items():
+            assert hasattr(self, param), (
+                f"Tried to specify value for nonexistent property {param}."
+            )
+            self.__setattr__(param, value)
 
 
 class TestDataset(torch.utils.data.Dataset):
