@@ -43,6 +43,8 @@ class NGramDecoder(DecoderWithOutputProjection):
         residual_level=None,
         activation_fn=nn.ReLU,
         project_output=True,
+        pretrained_embed=None,
+        projection_pretrained_embed=None,
     ):
         super().__init__(
             src_dict,
@@ -50,6 +52,7 @@ class NGramDecoder(DecoderWithOutputProjection):
             vocab_reduction_params,
             out_embed_dim,
             project_output=project_output,
+            pretrained_embed=projection_pretrained_embed,
         )
         self.history_len = n - 1
         self.encoder_hidden_dim = encoder_hidden_dim
@@ -70,6 +73,7 @@ class NGramDecoder(DecoderWithOutputProjection):
             embedding_dim=embed_dim,
             padding_idx=padding_idx,
             freeze_embed=freeze_embed,
+            pretrained_embed=pretrained_embed,
         )
 
         self.history_conv = nn.Sequential(

@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, PackedSequence, pad_packed_sequence
 import torch.onnx.operators
+import numpy as np
 from pytorch_translate import rnn_cell  # noqa
 from pytorch_translate import data as pytorch_translate_data
 
@@ -63,9 +64,17 @@ class RNNModel(FairseqModel):
         )
         parser.add_argument(
             "--encoder-embed-dim",
+            default=0,
             type=int,
             metavar="N",
             help="encoder embedding dimension",
+        )
+        parser.add_argument(
+            "--encoder-pretrained-embed",
+            default=None,
+            metavar="FILE",
+            help="Path to a file of pretrained embeddings. Should have"
+            "dimensions vocab_size x encoder-embed-dim."
         )
         parser.add_argument(
             "--encoder-freeze-embed",
@@ -98,9 +107,17 @@ class RNNModel(FairseqModel):
         )
         parser.add_argument(
             "--decoder-embed-dim",
+            default=0,
             type=int,
             metavar="N",
             help="decoder embedding dimension",
+        )
+        parser.add_argument(
+            "--decoder-pretrained-embed",
+            default=None,
+            metavar="FILE",
+            help="Path to a file of pretrained embeddings. Should have"
+            "dimensions vocab_size x decoder-embed-dim."
         )
         parser.add_argument(
             "--decoder-freeze-embed",
@@ -122,6 +139,13 @@ class RNNModel(FairseqModel):
             type=int,
             metavar="N",
             help="decoder output embedding dimension",
+        )
+        parser.add_argument(
+            "--decoder-out-pretrained-embed",
+            default=None,
+            metavar="FILE",
+            help="Path to a file of pretrained embeddings. Should have"
+            "dimensions vocab_size x decoder-embed-dim."
         )
         parser.add_argument(
             "--decoder-tie-embeddings",
@@ -321,6 +345,16 @@ class RNNModel(FairseqModel):
     def build_single_encoder(args, src_dict):
         if not args.encoder_hidden_dim:
             return DummyEncoder(src_dict, num_layers=args.encoder_layers)
+        if args.encoder_pretrained_embed:
+            encoder_embed_weights = np.load(args.encoder_pretrained_embed)
+            if not args.encoder_embed_dim:
+                args.encoder_embed_dim = encoder_embed_weights.shape[1]
+            else:
+                embed_shape = (len(src_dict), args.encoder_embed_dim)
+                assert embed_shape == encoder_embed_weights.shape, (
+                    "--encoder-pretrained-embed must have embedding size "
+                    f"{embed_shape} but found size {encoder_embed_weights.shape}."
+                )
         if args.sequence_lstm:
             encoder_class = LSTMSequenceEncoder
         else:
@@ -337,6 +371,7 @@ class RNNModel(FairseqModel):
             residual_level=args.residual_level,
             bidirectional=bool(args.encoder_bidirectional),
             word_dropout_params=args.word_dropout_params,
+            pretrained_embed=args.encoder_pretrained_embed,
         )
 
     @staticmethod
@@ -348,6 +383,26 @@ class RNNModel(FairseqModel):
         if is_lm:
             attention_type = "no"
             encoder_hidden_dim = 0
+        if args.decoder_pretrained_embed:
+            decoder_embed_weights = np.load(args.decoder_pretrained_embed)
+            if not args.decoder_embed_dim:
+                args.decoder_embed_dim = decoder_embed_weights.shape[1]
+            else:
+                embed_shape = (len(dst_dict), args.decoder_embed_dim)
+                assert embed_shape == decoder_embed_weights.shape, (
+                    "--decoder-pretrained-embed must have embedding size "
+                    f"{embed_shape} but found size {decoder_embed_weights.shape}."
+                )
+        if args.decoder_out_pretrained_embed:
+            decoder_out_embed_weights = np.load(args.decoder_out_pretrained_embed)
+            if not args.decoder_out_embed_dim:
+                args.decoder_out_embed_dim = decoder_out_embed_weights.shape[1]
+            else:
+                embed_shape = (len(dst_dict), args.decoder_out_embed_dim)
+                assert embed_shape == decoder_out_embed_weights.shape, (
+                    "--decoder-out-pretrained-embed must have embedding size "
+                    f"{embed_shape} but found size {decoder_out_embed_weights.shape}."
+                )
         if ngram_decoder:
             if args.ngram_activation_type == "relu":
                 activation_fn = nn.ReLU
@@ -374,6 +429,8 @@ class RNNModel(FairseqModel):
                 residual_level=args.residual_level,
                 activation_fn=activation_fn,
                 project_output=project_output,
+                pretrained_embed=args.decoder_pretrained_embed,
+                projection_pretrained_embed=args.decoder_out_pretrained_embed,
             )
         else:
             decoder = RNNDecoder(
@@ -393,6 +450,8 @@ class RNNModel(FairseqModel):
                 residual_level=args.residual_level,
                 averaging_encoder=args.averaging_encoder,
                 project_output=project_output,
+                pretrained_embed=args.decoder_pretrained_embed,
+                projection_pretrained_embed=args.decoder_out_pretrained_embed,
                 tie_embeddings=args.decoder_tie_embeddings,
             )
         return decoder
@@ -558,6 +617,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
         dropout_out=0.1,
         residual_level=None,
         bidirectional=False,
+        pretrained_embed=None,
         word_dropout_params=None,
         padding_value=0,
     ):
@@ -579,6 +639,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
             embedding_dim=embed_dim,
             padding_idx=self.padding_idx,
             freeze_embed=freeze_embed,
+            pretrained_embed=pretrained_embed,
         )
         self.word_dim = embed_dim
 
@@ -733,15 +794,13 @@ class RNNEncoder(FairseqEncoder):
         self.padding_idx = dictionary.pad()
         self.padding_value = padding_value
 
-        if pretrained_embed is None:
-            self.embed_tokens = Embedding(
-                num_embeddings=num_embeddings,
-                embedding_dim=embed_dim,
-                padding_idx=self.padding_idx,
-                freeze_embed=freeze_embed,
-            )
-        else:
-            self.embed_tokens = pretrained_embed
+        self.embed_tokens = Embedding(
+            num_embeddings=num_embeddings,
+            embedding_dim=embed_dim,
+            padding_idx=self.padding_idx,
+            freeze_embed=freeze_embed,
+            pretrained_embed=pretrained_embed,
+        )
         self.word_dim = embed_dim
 
         self.cell_type = cell_type
@@ -860,6 +919,8 @@ class RNNDecoder(DecoderWithOutputProjection):
         averaging_encoder=False,
         project_output=True,
         tie_embeddings=False,
+        pretrained_embed=None,
+        projection_pretrained_embed=None,
     ):
         super().__init__(
             src_dict,
@@ -867,6 +928,7 @@ class RNNDecoder(DecoderWithOutputProjection):
             vocab_reduction_params,
             out_embed_dim,
             project_output=project_output,
+            pretrained_embed=projection_pretrained_embed,
         )
         encoder_hidden_dim = max(1, encoder_hidden_dim)
         self.encoder_hidden_dim = encoder_hidden_dim
@@ -886,6 +948,7 @@ class RNNDecoder(DecoderWithOutputProjection):
             embedding_dim=embed_dim,
             padding_idx=padding_idx,
             freeze_embed=freeze_embed,
+            pretrained_embed=pretrained_embed,
         )
         if self.tie_embeddings:
             assert self.embed_dim == self.out_embed_dim, (
@@ -1082,6 +1145,7 @@ def base_architecture(args):
     args.encoder_bidirectional = getattr(args, "encoder_bidirectional", False)
     args.encoder_dropout_in = getattr(args, "encoder_dropout_in", args.dropout)
     args.encoder_dropout_out = getattr(args, "encoder_dropout_out", args.dropout)
+    args.pretrained_embed = getattr(args, "pretrained_embed", None)
     args.decoder_embed_dim = getattr(args, "decoder_embed_dim", 512)
     args.decoder_layers = getattr(args, "decoder_layers", 1)
     args.decoder_hidden_dim = getattr(args, "decoder_hidden_dim", 512)
