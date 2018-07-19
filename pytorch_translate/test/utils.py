@@ -15,6 +15,7 @@ class ModelParamsDict:
         # Model params
         self.arch = "rnn"
         self.encoder_embed_dim = 10
+        self.encoder_pretrained_embed = None
         self.encoder_freeze_embed = False
         self.encoder_hidden_dim = 10
         self.encoder_layers = 2
@@ -22,9 +23,11 @@ class ModelParamsDict:
         self.encoder_dropout_in = 0
         self.encoder_dropout_out = 0
         self.decoder_embed_dim = 10
+        self.decoder_pretrained_embed = None
         self.decoder_freeze_embed = False
         self.decoder_hidden_dim = 10
         self.decoder_out_embed_dim = 5
+        self.decoder_out_pretrained_embed = None
         self.decoder_layers = 2
         self.dropout = 0
         self.decoder_dropout_in = 0
