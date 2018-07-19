@@ -382,12 +382,14 @@ class TestONNX(unittest.TestCase):
         forced_decoder_pb_path = os.path.join(tmp_dir, "forced_decoder.pb")
         forced_decoder_ensemble.onnx_export(forced_decoder_pb_path)
 
+    @unittest.skip("TODO: reenable (T31801148)")
     def test_forced_decoder_export_default(self):
         test_args = test_utils.ModelParamsDict(
             encoder_bidirectional=True, sequence_lstm=True
         )
         self._test_forced_decoder_export(test_args)
 
+    @unittest.skip("TODO: reenable (T31801148)")
     def test_forced_decoder_export_vocab_reduction(self):
         test_args = test_utils.ModelParamsDict(
             encoder_bidirectional=True, sequence_lstm=True
