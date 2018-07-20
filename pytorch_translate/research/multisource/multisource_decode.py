@@ -14,6 +14,7 @@ class MultiSourceSequenceGenerator(torch.nn.Module):
     def __init__(
         self,
         models,
+        tgt_dict,
         beam_size=1,
         minlen=1,
         maxlen=None,
@@ -51,13 +52,10 @@ class MultiSourceSequenceGenerator(torch.nn.Module):
                 src_lengths, char_inds, word_lengths)
         """
         self.models = models
-        self.pad = models[0].dst_dict.pad()
-        self.unk = models[0].dst_dict.unk()
-        self.eos = models[0].dst_dict.eos()
-        assert all(m.dst_dict.pad() == self.pad for m in self.models[1:])
-        assert all(m.dst_dict.unk() == self.unk for m in self.models[1:])
-        assert all(m.dst_dict.eos() == self.eos for m in self.models[1:])
-        self.vocab_size = len(models[0].dst_dict)
+        self.pad = tgt_dict.pad()
+        self.unk = tgt_dict.unk()
+        self.eos = tgt_dict.eos()
+        self.vocab_size = len(tgt_dict)
         self.beam_size = beam_size
         self.minlen = minlen
         max_decoder_len = min(m.max_decoder_positions() for m in self.models)
@@ -69,7 +67,7 @@ class MultiSourceSequenceGenerator(torch.nn.Module):
         self.len_penalty = len_penalty
         self.unk_reward = unk_reward
         self.lexicon_reward = lexicon_reward
-        self.lexicon_indices = models[0].dst_dict.lexicon_indices_list()
+        self.lexicon_indices = tgt_dict.lexicon_indices_list()
         self.retain_dropout = retain_dropout
         self.word_reward = word_reward
         if model_weights is not None:
@@ -106,7 +104,8 @@ class MultiSourceSequenceGenerator(torch.nn.Module):
             maxlen_b = self.maxlen
 
         for sample in data_itr:
-            s = utils.make_variable(sample, volatile=True, cuda=cuda)
+            if cuda:
+                s = utils.move_to_cuda(sample)
             input = s["net_input"]
             # Take the max source length to compute the max target length
             srclen = input["src_tokens"].size(1)
@@ -119,7 +118,7 @@ class MultiSourceSequenceGenerator(torch.nn.Module):
             encoder_inputs = (input["src_tokens"], input["src_lengths"])
             if timer is not None:
                 timer.start()
-            with utils.maybe_no_grad():
+            with torch.no_grad():
                 hypos = self.generate(
                     encoder_inputs,
                     srcs_ids=input["src_ids"],
@@ -150,7 +149,7 @@ class MultiSourceSequenceGenerator(torch.nn.Module):
         src_weights=None,
     ):
         """Generate a batch of translations."""
-        with utils.maybe_no_grad():
+        with torch.no_grad():
             return self._generate(
                 encoder_inputs, srcs_ids, beam_size, maxlen, prefix_tokens, src_weights
             )
@@ -574,9 +573,6 @@ class MultiSourceSequenceGenerator(torch.nn.Module):
         return encoder_outs
 
     def _decode(self, tokens, encoder_outs, incremental_states, n_srcs=1):
-        # wrap in Variable
-        tokens = utils.volatile_variable(tokens)
-
         # Source sentences are weighted equally (for now)
         srcs_weights = [1 / n_srcs] * n_srcs
 
@@ -586,7 +582,7 @@ class MultiSourceSequenceGenerator(torch.nn.Module):
             for model_id, (model_weight, model) in enumerate(
                 zip(self.model_weights, self.models)
             ):
-                with utils.maybe_no_grad():
+                with torch.no_grad():
                     encoder_out = encoder_outs[src_id][model_id]
                     incremental_state = incremental_states[(src_id, model_id)]
                     decoder_out = list(

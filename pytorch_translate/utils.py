@@ -144,7 +144,7 @@ class BucketStopwatchMeter(object):
         return result
 
 
-def load_diverse_ensemble_for_inference(filenames, src_dict, dst_dict):
+def load_diverse_ensemble_for_inference(filenames, task):
     """Load an ensemble of diverse models for inference.
 
     This method is similar to fairseq.utils.load_ensemble_for_inference
@@ -152,8 +152,7 @@ def load_diverse_ensemble_for_inference(filenames, src_dict, dst_dict):
 
     Args:
         filenames: List of file names to checkpoints
-        src_dict: Source dictionary
-        dst_dict: Target dictionary
+        task: FairseqTask
 
     Return:
         models, args: Tuple of lists. models contains the loaded models, args
@@ -176,7 +175,7 @@ def load_diverse_ensemble_for_inference(filenames, src_dict, dst_dict):
     # build ensemble
     ensemble = []
     for state in states:
-        model = models.build_model(state["args"], src_dict, dst_dict)
+        model = task.build_model(state["args"])
         model.load_state_dict(state["model"])
         ensemble.append(model)
     return ensemble, [s["args"] for s in states]

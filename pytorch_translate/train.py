@@ -18,13 +18,16 @@ from typing import Any, Dict, Optional, Tuple
 
 from fairseq import (
     criterions,
+    data,
     distributed_utils,
     models,
     optim,
     options,
     progress_bar,
+    tasks,
     utils,
 )
+from fairseq.fp16_trainer import FP16Trainer
 from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
 
@@ -41,6 +44,7 @@ from pytorch_translate import weighted_criterions  # noqa
 from pytorch_translate import sequence_criterions  # noqa
 from pytorch_translate.utils import ManagedCheckpoints  # noqa
 from pytorch_translate import multi_model
+from pytorch_translate import tasks as pytorch_translate_tasks  # noqa
 from pytorch_translate.research.word_prediction import word_prediction_criterion  # noqa
 from pytorch_translate.research.word_prediction import word_prediction_model  # noqa
 from pytorch_translate.research.knowledge_distillation import (  # noqa
@@ -49,7 +53,7 @@ from pytorch_translate.research.knowledge_distillation import (  # noqa
 
 
 def get_parser_with_args():
-    parser = options.get_parser("Trainer")
+    parser = options.get_parser("Trainer", default_task="pytorch_translate")
     pytorch_translate_options.add_verbosity_args(parser, train=True)
     pytorch_translate_options.add_dataset_args(parser, train=True, gen=True)
     options.add_distributed_training_args(parser)
@@ -175,60 +179,26 @@ def setup_training(args):
     torch.cuda.set_device(args.device_id)
     torch.manual_seed(args.seed)
 
-    # Load dataset
-    splits = [args.train_subset, args.valid_subset]
-
-    validate_and_set_default_args(args)
-
-    train_corpus = pytorch_translate_data.ParallelCorpusConfig(
-        source=pytorch_translate_data.CorpusConfig(
-            dialect=args.source_lang, data_file=args.train_source_binary_path
-        ),
-        target=pytorch_translate_data.CorpusConfig(
-            dialect=args.target_lang, data_file=args.train_target_binary_path
-        ),
-        weights_file=args.train_weights_path
-        if hasattr(args, "train_weights_path")
+    # Setup task and load dataset
+    task = tasks.setup_task(args)
+    task.load_dataset(
+        args.train_subset,
+        args.train_source_binary_path,
+        args.train_target_binary_path,
+        weights_file=args.train_weights_path if
+        hasattr(args, "train_weights_path")
         else None,
     )
-
-    eval_corpus = pytorch_translate_data.ParallelCorpusConfig(
-        source=pytorch_translate_data.CorpusConfig(
-            dialect=args.source_lang, data_file=args.eval_source_binary_path
-        ),
-        target=pytorch_translate_data.CorpusConfig(
-            dialect=args.target_lang, data_file=args.eval_target_binary_path
-        ),
-        weights_file=None,
+    task.load_dataset(
+        args.valid_subset,
+        args.eval_source_binary_path,
+        args.eval_target_binary_path,
     )
-
-    if args.log_verbose:
-        print("Starting to load binarized data files.", flush=True)
-    use_char_source = args.arch == "char_source"
-    dataset = pytorch_translate_data.load_binarized_dataset(
-        train_corpus=train_corpus,
-        eval_corpus=eval_corpus,
-        train_split=args.train_subset,
-        eval_split=args.valid_subset,
-        args=args,
-        use_char_source=use_char_source,
-    )
-    if args.log_verbose:
-        print("Finished loading dataset", flush=True)
-    if args.source_lang is None or args.target_lang is None:
-        # record inferred languages in args, so that it's saved in checkpoints
-        args.source_lang, args.target_lang = dataset.src, dataset.dst
-
-    print(f"| [{dataset.src}] dictionary: {len(dataset.src_dict)} types")
-    print(f"| [{dataset.dst}] dictionary: {len(dataset.dst_dict)} types")
-
-    for split in splits:
-        print(f"| {split} {len(dataset.splits[split])} examples")
 
     # Build model and criterion
-    model = models.build_model(args, dataset.src_dict, dataset.dst_dict)
+    model = task.build_model(args)
     print("building criterion")
-    criterion = criterions.build_criterion(args, dataset.src_dict, dataset.dst_dict)
+    criterion = task.build_criterion(args)
     print(f"| model {args.arch}, criterion {criterion.__class__.__name__}")
     print(
         f"| num. model params: \
@@ -236,7 +206,12 @@ def setup_training(args):
     )
 
     # Build trainer
-    trainer = Trainer(args, model, criterion)
+    if args.fp16:
+        trainer = FP16Trainer(args, task, model, criterion)
+    else:
+        if torch.cuda.get_device_capability(0)[0] >= 7:
+            print('| NOTICE: your device may support faster training with --fp16')
+        trainer = Trainer(args, task, model, criterion)
     print(f"| training on {args.distributed_world_size} GPUs")
     print(
         f"| max tokens per GPU = {args.max_tokens} and \
@@ -284,13 +259,28 @@ def setup_training(args):
             args.path = [checkpoint_path]
             calculate_bleu_on_subset(
                 args=args,
-                dataset=dataset,
+                task=task,
                 epoch_str="initial loaded checkpoint",
                 offset=None,
                 dataset_split=args.valid_subset,
             )
 
-    return extra_state, trainer, dataset
+    epoch_itr = data.EpochBatchIterator(
+        dataset=task.dataset(args.train_subset),
+        max_tokens=args.max_tokens,
+        max_sentences=args.max_sentences_valid,
+        max_positions=trainer.get_model().max_positions(),
+        ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
+        seed=args.seed,
+        num_shards=args.distributed_world_size,
+        shard_id=args.distributed_rank,
+    )
+    epoch_itr.load_state_dict({
+        "epoch": extra_state["epoch"],
+        "iterations_in_epoch": extra_state["batch_offset"],
+    })
+
+    return extra_state, trainer, task, epoch_itr
 
 
 def prune(args, trainer):
@@ -315,17 +305,21 @@ def prune(args, trainer):
 
 def single_process_main(args):
     """Train the model for multiple epochs."""
-    extra_state, trainer, dataset = setup_training(args)
+    extra_state, trainer, task, epoch_itr = setup_training(args)
 
     train_iterator = train(
-        args=args, extra_state=extra_state, trainer=trainer, dataset=dataset
+        args=args,
+        extra_state=extra_state,
+        trainer=trainer,
+        task=task,
+        epoch_itr=epoch_itr,
     )
 
     for _ in train_iterator:
         pass
 
 
-def train(args, extra_state, trainer, dataset):
+def train(args, extra_state, trainer, task, epoch_itr):
     # offset for current epoch (may be different from checkpoint offset)
     starting_offset = extra_state["batch_offset"]
 
@@ -346,10 +340,8 @@ def train(args, extra_state, trainer, dataset):
 
         itr, progress, extra_meters = setup_epoch(
             args=args,
-            epoch=extra_state["epoch"],
-            batch_offset=starting_offset,
+            epoch_itr=epoch_itr,
             trainer=trainer,
-            dataset=dataset,
         )
 
         for i, sample in enumerate(itr, start=starting_offset):
@@ -378,8 +370,8 @@ def train(args, extra_state, trainer, dataset):
             )
             do_save = (
                 not args.no_save
-                and args.save_interval > 0
-                and num_updates % args.save_interval == 0
+                and args.save_interval_updates > 0
+                and num_updates % args.save_interval_updates == 0
             )
             do_eval_bleu = (
                 # We can only do BLEU eval when we have a new checkpoint to load.
@@ -403,7 +395,7 @@ def train(args, extra_state, trainer, dataset):
             ) = validate_save_and_evaluate_bleu(
                 args=args,
                 trainer=trainer,
-                dataset=dataset,
+                task=task,
                 extra_state=extra_state,
                 do_validate=do_validate,
                 do_save=do_save,
@@ -447,7 +439,7 @@ def train(args, extra_state, trainer, dataset):
             ) = validate_save_and_evaluate_bleu(
                 args=args,
                 trainer=trainer,
-                dataset=dataset,
+                task=task,
                 extra_state=extra_state,
                 do_validate=True,
                 do_save=not args.no_save and not args.no_end_of_epoch_checkpoints,
@@ -500,37 +492,13 @@ def get_perplexity(loss):
         return float("inf")
 
 
-def setup_epoch(args, epoch, batch_offset, trainer, dataset):
+def setup_epoch(args, epoch_itr, trainer):
     """Sets up data and progress meters for one epoch."""
-    # Set seed based on args.seed and the epoch number so that we get
-    # reproducible results when resuming from checkpoints
-    seed = args.seed + epoch
-    torch.manual_seed(seed)
-
-    # The max number of positions can be different for train and valid
-    # e.g., RNNs may support more positions at test time than seen in training
-    max_positions_train = (
-        min(args.max_source_positions, trainer.get_model().max_encoder_positions()),
-        min(args.max_target_positions, trainer.get_model().max_decoder_positions()),
-    )
-
     # Initialize dataloader, starting at batch_offset
-    itr = dataset.train_dataloader(
-        args.train_subset,
-        max_tokens=args.max_tokens,
-        max_sentences=args.max_sentences,
-        max_positions=max_positions_train,
-        seed=seed,
-        epoch=epoch,
-        sample_without_replacement=args.sample_without_replacement,
-        sort_by_source_size=(epoch <= args.curriculum),
-        shard_id=args.distributed_rank,
-        num_shards=args.distributed_world_size,
-    )
+    itr = epoch_itr.next_epoch_itr()
     progress = progress_bar.build_progress_bar(
-        args, itr, epoch, no_progress_bar="simple"
+        args, itr, epoch_itr.epoch, no_progress_bar="simple"
     )
-    itr = itertools.islice(progress, batch_offset, None)
 
     # reset training meters
     for k in ["train_loss", "train_nll_loss", "wps", "ups", "wpb", "bsz", "clip"]:
@@ -651,24 +619,21 @@ def save_checkpoint(trainer, args, extra_state):
         )
 
 
-def validate(args, trainer, dataset, subset, extra_state):
+def validate(args, trainer, task, subset, extra_state):
     """Evaluate the model on the validation set and return the average loss."""
     epoch = extra_state["epoch"]
+
     # Initialize dataloader
-    max_positions_valid = (
-        trainer.get_model().max_encoder_positions(),
-        trainer.get_model().max_decoder_positions(),
-    )
-    itr = dataset.eval_dataloader(
-        subset,
+    itr = data.EpochBatchIterator(
+        dataset=task.dataset(subset),
         max_tokens=args.max_tokens,
         max_sentences=args.max_sentences_valid,
-        max_positions=max_positions_valid,
-        skip_invalid_size_inputs_valid_test=args.skip_invalid_size_inputs_valid_test,
-        descending=True,  # largest batch first to warm the caching allocator
-        shard_id=args.distributed_rank,
+        max_positions=trainer.get_model().max_positions(),
+        ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
+        seed=args.seed,
         num_shards=args.distributed_world_size,
-    )
+        shard_id=args.distributed_rank,
+    ).next_epoch_itr(shuffle=False)
     progress = progress_bar.build_progress_bar(
         args, itr, epoch, prefix=f"valid on '{subset}' subset", no_progress_bar="simple"
     )
@@ -775,9 +740,9 @@ def _save_averaged_checkpoint(args, extra_state):
     return filename
 
 
-def calculate_bleu_on_subset(args, dataset, epoch_str: str, offset, dataset_split):
+def calculate_bleu_on_subset(args, task, epoch_str: str, offset, dataset_split):
     scorer, num_sentences, gen_timer, translation_samples = generate.generate_score(
-        args=args, dataset=dataset, dataset_split=dataset_split
+        args=args, task=task, dataset_split=dataset_split
     )
 
     print(
@@ -791,13 +756,13 @@ def calculate_bleu_on_subset(args, dataset, epoch_str: str, offset, dataset_spli
     return scorer.score(), translation_samples
 
 
-def evaluate_bleu(args, dataset, extra_state):
+def evaluate_bleu(args, task, extra_state):
     epoch, offset = extra_state["epoch"], extra_state["batch_offset"]
     filename = _save_averaged_checkpoint(args, extra_state)
     args.path = [filename]
     val_bleu, translation_samples = calculate_bleu_on_subset(
         args=args,
-        dataset=dataset,
+        task=task,
         epoch_str=f"{epoch:03d}",
         offset=offset,
         dataset_split=args.valid_subset,
@@ -845,7 +810,7 @@ def evaluate_bleu(args, dataset, extra_state):
 def validate_save_and_evaluate_bleu(
     args,
     trainer,
-    dataset,
+    task,
     extra_state: Dict[str, Any],
     do_validate: bool,
     do_save: bool,
@@ -861,7 +826,7 @@ def validate_save_and_evaluate_bleu(
         val_loss, val_ppl, stop_due_to_val_loss = validate(
             args=args,
             trainer=trainer,
-            dataset=dataset,
+            task=task,
             subset=args.valid_subset,
             extra_state=extra_state,
         )
@@ -880,7 +845,7 @@ def validate_save_and_evaluate_bleu(
                 stop_due_to_val_bleu,
                 translation_samples,
                 decay_lr,
-            ) = evaluate_bleu(args=args, dataset=dataset, extra_state=extra_state)
+            ) = evaluate_bleu(args=args, task=task, extra_state=extra_state)
             if decay_lr:
                 current_lr = lr
                 trainer.optimizer.set_lr(lr * args.lr_shrink)
