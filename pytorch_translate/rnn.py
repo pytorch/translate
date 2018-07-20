@@ -47,6 +47,23 @@ def torch_find(index, query, vocab_size):
     return result
 
 
+def reorder_encoder_output(encoder_out, new_order):
+    """Reorder all outputs according to new_order."""
+    (
+        unpacked_output,
+        final_hiddens,
+        final_cells,
+        src_lengths,
+        src_tokens,
+    ) = encoder_out
+    unpacked_output = unpacked_output.index_select(1, new_order)
+    final_hiddens = final_hiddens.index_select(1, new_order)
+    final_cells = final_cells.index_select(1, new_order)
+    src_lengths = src_lengths.index_select(0, new_order)
+    src_tokens = src_tokens.index_select(0, new_order)
+    return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
+
+
 @register_model("rnn")
 class RNNModel(FairseqModel):
     def __init__(self, task, encoder, decoder):
@@ -564,41 +581,6 @@ class RNNModel(FairseqModel):
             )
         return targets
 
-    @staticmethod
-    def expand_encoder_output(encoder_out, n):
-        """
-        Expand all outputs to replicate each instance from batch in place n
-        times (as for beam search)
-        """
-        (
-            unpacked_output,
-            final_hiddens,
-            final_cells,
-            src_lengths,
-            src_tokens,
-        ) = encoder_out
-        unpacked_output = (
-            unpacked_output.unsqueeze(2)
-            .repeat(1, 1, n, 1)
-            .view(unpacked_output.shape[0], -1, unpacked_output.shape[2])
-        )
-        final_hiddens = (
-            final_hiddens.unsqueeze(2)
-            .repeat(1, 1, n, 1)
-            .view(final_hiddens.shape[0], -1, final_hiddens.shape[2])
-        )
-        final_cells = (
-            final_cells.unsqueeze(2)
-            .repeat(1, 1, n, 1)
-            .view(final_cells.shape[0], -1, final_cells.shape[2])
-        )
-        src_lengths = src_lengths.unsqueeze(1).repeat(1, n).view(-1)
-        src_tokens = (
-            src_tokens.unsqueeze(1).repeat(1, n, 1).view(-1, src_tokens.shape[1])
-        )
-
-        return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
-
 
 class LSTMSequenceEncoder(FairseqEncoder):
     """RNN encoder using nn.LSTM for cuDNN support / ONNX exportability."""
@@ -750,6 +732,10 @@ class LSTMSequenceEncoder(FairseqEncoder):
         )
 
         return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
+
+    def reorder_encoder_out(self, encoder_out, new_order):
+        """Reorder all outputs according to new_order."""
+        return reorder_encoder_output(encoder_out, new_order)
 
     def max_positions(self):
         """Maximum input length supported by the encoder."""
@@ -907,6 +893,10 @@ class RNNEncoder(FairseqEncoder):
         )
 
         return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
+
+    def reorder_encoder_out(self, encoder_out, new_order):
+        """Reorder all outputs according to new_order."""
+        return reorder_encoder_output(encoder_out, new_order)
 
     def max_positions(self):
         """Maximum input length supported by the encoder."""
