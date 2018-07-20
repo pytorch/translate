@@ -12,8 +12,8 @@ from pytorch_translate import utils as pytorch_translate_utils
 @register_criterion('word_knowledge_distillation')
 class KnowledgeDistillationCriterion(FairseqCriterion):
 
-    def __init__(self, args, src_dict, dst_dict):
-        super().__init__(args, src_dict, dst_dict)
+    def __init__(self, args, task):
+        super().__init__(args, task)
         assert args.teacher_path, (
             'Please specify at least one valid file for --teacher-path'
         )
@@ -22,7 +22,7 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
         # Load model ensemble from checkpoints
         self.teacher_models, self.teacher_model_args = (
             pytorch_translate_utils.load_diverse_ensemble_for_inference(
-                args.teacher_path, src_dict, dst_dict
+                [args.teacher_path], task,
             )
         )
 

@@ -6,7 +6,7 @@ import os
 import torch
 from typing import NamedTuple
 
-from fairseq import bleu, data, options, progress_bar, tokenizer, utils
+from fairseq import bleu, data, options, progress_bar, tasks, tokenizer, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
 from pytorch_translate import beam_decode
 from pytorch_translate import char_data
@@ -16,16 +16,15 @@ from pytorch_translate import options as pytorch_translate_options
 from pytorch_translate import dictionary as pytorch_translate_dictionary
 from pytorch_translate import utils as pytorch_translate_utils
 from pytorch_translate import rnn  # noqa
+from pytorch_translate import tasks as pytorch_translate_tasks  # noqa
 from pytorch_translate.research.multisource import multisource_decode
 from pytorch_translate.research.multisource import multisource_data
 from pytorch_translate.research.beam_search import competing_completed
 
 
-def generate_score(args, dataset, dataset_split):
-    models, _ = utils.load_ensemble_for_inference(
-        args.path, dataset.src_dict, dataset.dst_dict
-    )
-    return _generate_score(models, args, dataset, dataset_split)
+def generate_score(args, task, dataset_split):
+    models, _ = utils.load_ensemble_for_inference(args.path, task)
+    return _generate_score(models, args, task, dataset_split)
 
 
 class TranslationInfo(NamedTuple):
@@ -39,7 +38,7 @@ class TranslationInfo(NamedTuple):
     hypo_score: float
 
 
-def build_sequence_generator(args, models):
+def build_sequence_generator(args, task, models):
     use_cuda = torch.cuda.is_available() and not args.cpu
     # Initialize generator
     model_weights = None
@@ -55,6 +54,7 @@ def build_sequence_generator(args, models):
         translator_class = beam_decode.SequenceGenerator
     translator = translator_class(
         models,
+        tgt_dict=task.target_dictionary,
         beam_size=args.beam,
         stop_early=(not args.no_early_stop),
         normalize_scores=(not args.unnormalized),
@@ -69,23 +69,20 @@ def build_sequence_generator(args, models):
     return translator
 
 
-def get_eval_itr(args, models, dataset, dataset_split):
-    max_positions = min(model.max_encoder_positions() for model in models)
-    itr = dataset.eval_dataloader(
-        dataset_split,
+def get_eval_itr(args, models, task, dataset_split):
+    return data.EpochBatchIterator(
+        dataset=task.dataset(dataset_split),
         max_tokens=args.max_tokens,
         max_sentences=args.max_sentences,
-        max_positions=max_positions,
-        skip_invalid_size_inputs_valid_test=(args.skip_invalid_size_inputs_valid_test),
-    )
-    if args.num_shards > 1:
-        if args.shard_id < 0 or args.shard_id >= args.num_shards:
-            raise ValueError("--shard-id must be between 0 and num_shards")
-        itr = data.sharded_iterator(itr, args.num_shards, args.shard_id)
-    return itr
+        max_positions=models[0].max_positions(),
+        ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
+        required_batch_size_multiple=8,
+        num_shards=args.num_shards,
+        shard_id=args.shard_id,
+    ).next_epoch_itr(shuffle=False)
 
 
-def _generate_score(models, args, dataset, dataset_split, optimize=True):
+def _generate_score(models, args, task, dataset_split, optimize=True):
     use_cuda = torch.cuda.is_available() and not args.cpu
 
     # Load ensemble
@@ -99,7 +96,7 @@ def _generate_score(models, args, dataset, dataset_split, optimize=True):
                 beamable_mm_beam_size=None if args.no_beamable_mm else args.beam
             )
 
-    translator = build_sequence_generator(args, models)
+    translator = build_sequence_generator(args, task, models)
     # Load alignment dictionary for unknown word replacement
     # (None if no unknown word replacement, empty if no path to align dictionary)
     align_dict = utils.load_align_dict(args.replace_unk)
@@ -107,14 +104,15 @@ def _generate_score(models, args, dataset, dataset_split, optimize=True):
     # Keep track of translations
     # Initialize with empty translations
     # and zero probs scores
-    translated_sentences = [""] * len(dataset.splits[dataset_split])
-    translated_scores = [0.0] * len(dataset.splits[dataset_split])
+    translated_sentences = [""] * len(task.dataset(dataset_split))
+    translated_scores = [0.0] * len(task.dataset(dataset_split))
 
     # Generate and compute BLEU score
+    dst_dict = task.target_dictionary
     scorer = bleu.Scorer(
-        dataset.dst_dict.pad(), dataset.dst_dict.eos(), dataset.dst_dict.unk()
+        dst_dict.pad(), dst_dict.eos(), dst_dict.unk()
     )
-    itr = get_eval_itr(args, models, dataset, dataset_split)
+    itr = get_eval_itr(args, models, task, dataset_split)
 
     num_sentences = 0
     translation_samples = []
@@ -140,7 +138,7 @@ def _generate_score(models, args, dataset, dataset_split, optimize=True):
         else:
             first_best_translations = _iter_first_best_bilingual
         for trans_info in first_best_translations(
-            args, dataset, dataset_split, translations, align_dict
+            args, task, dataset_split, translations, align_dict
         ):
             scorer.add(trans_info.target_tokens, trans_info.hypo_tokens)
             translated_sentences[trans_info.sample_id] = trans_info.hypo_str
@@ -174,7 +172,7 @@ def _generate_score(models, args, dataset, dataset_split, optimize=True):
     return scorer, num_sentences, gen_timer, translation_samples
 
 
-def _iter_first_best_bilingual(args, dataset, dataset_split, translations, align_dict):
+def _iter_first_best_bilingual(args, task, dataset_split, translations, align_dict):
     """Iterate over first best translations.
 
     This is a generator function which yields information about the first best
@@ -183,7 +181,7 @@ def _iter_first_best_bilingual(args, dataset, dataset_split, translations, align
 
     Args:
         args: Command-line arguments.
-        dataset: Dataset object with source and target sentences.
+        task: FairseqTask object.
         dataset_split: Name of the test set split in `dataset`.
         translations: Batched translation iterator, as returned by
             SequenceGenerator.generate_batched_itr().
@@ -197,11 +195,11 @@ def _iter_first_best_bilingual(args, dataset, dataset_split, translations, align
         target_tokens = target_tokens.int().cpu()
         # Either retrieve the original sentences or regenerate them from tokens.
         if align_dict is not None:
-            src_str = dataset.splits[dataset_split].src.get_original_text(sample_id)
-            target_str = dataset.splits[dataset_split].dst.get_original_text(sample_id)
+            src_str = task.dataset(dataset_split).src.get_original_text(sample_id)
+            target_str = task.dataset(dataset_split).dst.get_original_text(sample_id)
         else:
-            src_str = dataset.src_dict.string(src_tokens, args.remove_bpe)
-            target_str = dataset.dst_dict.string(
+            src_str = task.source_dictionary.string(src_tokens, args.remove_bpe)
+            target_str = task.target_dictionary.string(
                 target_tokens, args.remove_bpe, escape_unk=True
             )
 
@@ -216,7 +214,7 @@ def _iter_first_best_bilingual(args, dataset, dataset_split, translations, align
                 src_str=src_str,
                 alignment=hypo["alignment"].int().cpu(),
                 align_dict=align_dict,
-                dst_dict=dataset.dst_dict,
+                tgt_dict=task.target_dictionary,
                 remove_bpe=args.remove_bpe,
             )
 
@@ -234,7 +232,7 @@ def _iter_first_best_bilingual(args, dataset, dataset_split, translations, align
                     # Convert back to tokens for evaluation with unk replacement
                     # and/or without BPE
                     target_tokens = tokenizer.Tokenizer.tokenize(
-                        target_str, dataset.dst_dict, add_if_not_exist=True
+                        target_str, task.target_dictionary, add_if_not_exist=True
                     )
                 # The probs score for the hypo_str; whether it's normalized by
                 # sequence length or not depends on normalize_scores, which is
@@ -260,23 +258,11 @@ def _iter_first_best_bilingual(args, dataset, dataset_split, translations, align
 
 
 def _iter_first_best_multilingual(
-    args, dataset, dataset_split, translations, align_dict
+    args, task, dataset_split, translations, align_dict
 ):
     """Like _iter_first_best_bilingual but for multilingual NMT."""
-    src_dict = dataset.src_dict
-    target_dict = dataset.dst_dict
-    src_dicts = None
-    target_dicts = None
-    if hasattr(args, "multiling_source_vocab_file"):
-        src_dicts = [
-            pytorch_translate_dictionary.Dictionary.load(p)
-            for p in args.multiling_source_vocab_file
-        ]
-    if hasattr(args, "multiling_target_vocab_file"):
-        target_dicts = [
-            pytorch_translate_dictionary.Dictionary.load(p)
-            for p in args.multiling_target_vocab_file
-        ]
+    src_dicts = task.source_dictionaries
+    target_dicts = task.target_dictionaries
     for sample_id, src_tokens, target_tokens, hypos in translations:
         # Process input and ground truth
         target_tokens = target_tokens.int().cpu()
@@ -289,14 +275,12 @@ def _iter_first_best_multilingual(
         src_tokens = src_tokens[:-1]
         target_tokens = target_tokens[1:]
         # Select dictionaries
-        if src_dicts:
-            src_dict = src_dicts[src_lang_id]
-        if target_dicts:
-            target_dict = target_dicts[target_lang_id]
+        src_dict = src_dicts[task.get_encoder_lang_code(src_lang_id)]
+        target_dict = target_dicts[task.get_decoder_lang_code(target_lang_id)]
         # Either retrieve the original sentences or regenerate them from tokens.
         if align_dict is not None:
-            src_str = dataset.splits[dataset_split].src.get_original_text(sample_id)
-            target_str = dataset.splits[dataset_split].dst.get_original_text(sample_id)
+            src_str = task.dataset(dataset_split).src.get_original_text(sample_id)
+            target_str = task.dataset(dataset_split).dst.get_original_text(sample_id)
         else:
             src_str = src_dict.string(src_tokens, args.remove_bpe)
             target_str = target_dict.string(
@@ -314,7 +298,7 @@ def _iter_first_best_multilingual(
                 src_str=src_str,
                 alignment=hypo["alignment"].int().cpu()[1:],
                 align_dict=align_dict,
-                dst_dict=target_dict,
+                tgt_dict=target_dict,
                 remove_bpe=args.remove_bpe,
             )
 
@@ -373,7 +357,7 @@ def add_args(parser):
 
 
 def get_parser_with_args():
-    parser = options.get_parser("Generation")
+    parser = options.get_parser("Generation", default_task="pytorch_translate")
     pytorch_translate_options.add_verbosity_args(parser)
     pytorch_translate_options.add_dataset_args(parser, gen=True)
     generation_group = options.add_generation_args(parser)
@@ -448,23 +432,21 @@ def get_parser_with_args():
         help="Path to text file to store the probs of translation output. ",
     )
     generation_group.add_argument(
-        "--multiling-source-lang-id",
-        type=int,
-        default=None,
+        "--multiling-source-lang",
+        action="append",
+        metavar="SRC",
         help=(
-            "Must be set for decoding with multilingual models. Set to i if "
-            "the source language is the i-th language in the training parameter "
-            "--multiling-encoder-lang (0-indexed)"
+            "Must be set for decoding with multilingual models. "
+            "Must match an entry from --multiling-encoder-lang from training."
         ),
     )
     generation_group.add_argument(
-        "--multiling-target-lang-id",
-        type=int,
-        default=None,
+        "--multiling-target-lang",
+        action="append",
+        metavar="TARGET",
         help=(
-            "Must be set for decoding with multilingual models. Set to i if "
-            "the target language is the i-th language in the training parameter "
-            "--multiling-decoder-lang (0-indexed)"
+            "Must be set for decoding with multilingual models. "
+            "Must match an entry from --multiling-decoder-lang from training."
         ),
     )
     generation_group.add_argument(
@@ -487,7 +469,7 @@ def get_parser_with_args():
 
 def main():
     parser = get_parser_with_args()
-    args = parser.parse_args()
+    args = options.parse_args_and_arch(parser)
     validate_args(args)
     generate(args)
 
@@ -519,24 +501,15 @@ def validate_args(args):
 def generate(args):
     pytorch_translate_options.print_args(args)
 
-    src_dict = pytorch_translate_dictionary.Dictionary.load(args.source_vocab_file)
-    dst_dict = pytorch_translate_dictionary.Dictionary.load(args.target_vocab_file)
-    use_char_source = args.char_source_vocab_file != ""
-    if use_char_source:
-        char_source_dict = pytorch_translate_dictionary.Dictionary.load(
-            args.char_source_vocab_file
-        )
-        # this attribute is used for CharSourceModel construction
-        args.char_source_dict_size = len(char_source_dict)
-    else:
-        char_source_dict = None
+    # Setup task
+    task = tasks.setup_task(args)
 
-    dataset = data.LanguageDatasets(
-        src=args.source_lang, dst=args.target_lang, src_dict=src_dict, dst_dict=dst_dict
-    )
     models, model_args = pytorch_translate_utils.load_diverse_ensemble_for_inference(
-        args.path, dataset.src_dict, dataset.dst_dict
+        args.path.split(':'), task,
     )
+    args.source_lang = model_args[0].source_lang
+    args.target_lang = model_args[0].target_lang
+
     append_eos_to_source = model_args[0].append_eos_to_source
     reverse_source = model_args[0].reverse_source
     assert all(
@@ -546,70 +519,42 @@ def generate(args):
     )
     if args.source_binary_file != "":
         assert args.target_binary_file != ""
-        dst_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
-            args.target_binary_file
+        task.load_dataset(
+            args.gen_subset,
+            args.source_binary_file,
+            args.target_binary_file,
         )
-        if use_char_source:
-            src_dataset = char_data.InMemoryNumpyWordCharDataset.create_from_file(
-                args.source_binary_file
-            )
-            gen_split = char_data.LanguagePairSourceCharDataset(
-                src=src_dataset,
-                dst=dst_dataset,
-                pad_idx=src_dict.pad(),
-                eos_idx=dst_dict.eos(),
-            )
-        else:
-            src_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
-                args.source_binary_file
-            )
-            gen_split = data.LanguagePairDataset(
-                src=src_dataset,
-                dst=dst_dataset,
-                pad_idx=src_dict.pad(),
-                eos_idx=dst_dict.eos(),
-            )
     elif pytorch_translate_data.is_multilingual(args):
-        gen_split = pytorch_translate_data.make_language_pair_dataset_from_text_multilingual(
+        task.set_encoder_langs(model_args[0].multiling_encoder_lang)
+        task.set_decoder_langs(model_args[0].multiling_decoder_lang)
+        task.load_dataset_from_text_multilingual(
+            args.gen_subset,
             source_text_file=args.source_text_file[0],
             target_text_file=args.target_text_file,
-            source_lang_id=args.multiling_source_lang_id,
-            target_lang_id=args.multiling_target_lang_id,
-            source_dict=src_dict,
-            target_dict=dst_dict,
+            source_lang_id=task.get_encoder_lang_id(args.multiling_source_lang[0]),
+            target_lang_id=task.get_decoder_lang_id(args.multiling_target_lang[0]),
             append_eos=append_eos_to_source,
             reverse_source=reverse_source,
         )
     elif args.source_ensembling:
-        gen_split = multisource_data.make_multisource_language_pair_dataset_from_text(
+        task.load_multisource_dataset_from_text(
+            args.gen_subset,
             source_text_files=args.source_text_file,
             target_text_file=args.target_text_file,
-            source_dict=src_dict,
-            target_dict=dst_dict,
             append_eos=append_eos_to_source,
             reverse_source=reverse_source,
         )
     else:
-        gen_split = pytorch_translate_data.make_language_pair_dataset_from_text(
+        task.load_dataset_from_text(
+            args.gen_subset,
             source_text_file=args.source_text_file[0],
             target_text_file=args.target_text_file,
-            source_dict=src_dict,
-            target_dict=dst_dict,
             append_eos=append_eos_to_source,
             reverse_source=reverse_source,
-            char_source_dict=char_source_dict,
         )
-    dataset.splits[args.gen_subset] = gen_split
 
-    if args.source_lang is None or args.target_lang is None:
-        # record inferred languages in args
-        args.source_lang, args.target_lang = dataset.src, dataset.dst
-
-    print(f"| [{dataset.src}] dictionary: {len(dataset.src_dict)} types")
-    print(f"| [{dataset.dst}] dictionary: {len(dataset.dst_dict)} types")
-    print(f"| {args.gen_subset} {len(dataset.splits[args.gen_subset])} examples")
     scorer, num_sentences, gen_timer, _ = _generate_score(
-        models=models, args=args, dataset=dataset, dataset_split=args.gen_subset
+        models=models, args=args, task=task, dataset_split=args.gen_subset,
     )
     print(
         f"| Translated {num_sentences} sentences ({gen_timer.n} tokens) "

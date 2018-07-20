@@ -127,7 +127,7 @@ def export(args):
 
         # need example encoder outputs to pass through network
         # (source length 5 is arbitrary)
-        src_dict = encoder_ensemble.models[0].src_dict
+        src_dict = encoder_ensemble.src_dict
         token_list = [src_dict.unk()] * 4 + [src_dict.eos()]
         src_tokens = torch.LongTensor(
             np.array(token_list, dtype="int64").reshape(-1, 1)

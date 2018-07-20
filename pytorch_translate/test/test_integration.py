@@ -42,6 +42,32 @@ class TestTranslation(unittest.TestCase):
                 generate_main(data_dir)
 
     @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
+    def test_rnn_fp16(self):
+        with contextlib.redirect_stdout(StringIO()):
+            with tempfile.TemporaryDirectory("test_rnn_fp16") as data_dir:
+                create_dummy_data(data_dir)
+                train_translation_model(
+                    data_dir,
+                    [
+                        "--fp16",
+                        "--arch", "rnn",
+                        "--cell-type", "lstm",
+                        "--sequence-lstm",
+                        "--reverse-source",
+                        "--encoder-bidirectional",
+                        "--encoder-layers", "2",
+                        "--encoder-embed-dim", "256",
+                        "--encoder-hidden-dim", "512",
+                        "--decoder-layers", "2",
+                        "--decoder-embed-dim", "256",
+                        "--decoder-hidden-dim", "512",
+                        "--decoder-out-embed-dim", "256",
+                        "--attention-type", "dot",
+                    ],
+                )
+                generate_main(data_dir)
+
+    @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
     def test_char_rnn(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_char_rnn") as data_dir:
@@ -85,6 +111,7 @@ class TestTranslation(unittest.TestCase):
                 train_translation_model(
                     data_dir,
                     [
+                        "--task", "pytorch_translate_multilingual",
                         "--arch", "rnn",
                         "--cell-type", "lstm",
                         "--sequence-lstm",
@@ -133,16 +160,17 @@ class TestTranslation(unittest.TestCase):
                         "--eval-target-text-file", "",
                     ],
                 )
-                for langpair, src, tgt, src_id, tgt_id in [
-                    ("xhen", "xh", "en", "0", "1"),
-                    ("zuen", "zu", "en", "1", "1"),
-                    ("xhen", "en", "xh", "2", "1"),
+                for langpair, src, tgt in [
+                    ("xhen", "xh", "en"),
+                    ("zuen", "zu", "en"),
+                    ("xhen", "en", "xh"),
                 ]:
                     generate_main(
                         data_dir,
                         [
-                            "--multiling-source-lang-id", src_id,
-                            "--multiling-target-lang-id", tgt_id,
+                            "--task", "pytorch_translate_multilingual",
+                            "--multiling-source-lang", src,
+                            "--multiling-target-lang", tgt,
                             "--source-vocab-file", os.path.join(data_dir, f"dictionary-src-{src}.txt"),
                             "--target-vocab-file", os.path.join(data_dir, f"dictionary-trg-{tgt}.txt"),
                             "--source-text-file", os.path.join(data_dir, f"tune.{langpair}.{src}"),
@@ -237,7 +265,8 @@ def train_translation_model(data_dir, extra_flags):
 
 def generate_main(data_dir, extra_flags=None):
     parser = generate.get_parser_with_args()
-    args = parser.parse_args(
+    args = options.parse_args_and_arch(
+        parser,
         [
             "--source-vocab-file", os.path.join(data_dir, "dictionary-in.txt"),
             "--target-vocab-file", os.path.join(data_dir, "dictionary-out.txt"),

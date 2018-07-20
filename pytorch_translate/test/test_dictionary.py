@@ -22,6 +22,7 @@ class TestDictionary(unittest.TestCase):
             corpus_files=[src_txt, src_txt, src_txt],
             vocab_file=f"{tmp_prefix}.src2",
             max_vocab_size=1000,
+            padding_factor=1,
         )
         trg_dict1 = dictionary.Dictionary.build_vocab_file(
             corpus_files=[trg_txt], vocab_file=f"{tmp_prefix}.trg1", max_vocab_size=1000
@@ -30,11 +31,13 @@ class TestDictionary(unittest.TestCase):
             corpus_files=[trg_txt, trg_txt, trg_txt],
             vocab_file=f"{tmp_prefix}.trg2",
             max_vocab_size=1000,
+            padding_factor=1,
         )
         srctrg_dict = dictionary.Dictionary.build_vocab_file(
             corpus_files=[src_txt, trg_txt],
             vocab_file=f"{tmp_prefix}.srctrg",
             max_vocab_size=1000,
+            padding_factor=1,
         )
         nspecial = src_dict1.nspecial
         self.assertEqual(len(src_dict1), nspecial + 4)
@@ -72,16 +75,28 @@ class TestDictionary(unittest.TestCase):
         src_txt, trg_txt = test_utils.create_test_text_files()
         tmp_prefix = test_utils.make_temp_file()
         src_dict1 = dictionary.Dictionary.build_vocab_file(
-            corpus_files=[src_txt], vocab_file=f"{tmp_prefix}.src1", max_vocab_size=1
+            corpus_files=[src_txt],
+            vocab_file=f"{tmp_prefix}.src1",
+            max_vocab_size=1,
+            padding_factor=1,
         )
         src_dict2 = dictionary.Dictionary.build_vocab_file(
-            corpus_files=[src_txt], vocab_file=f"{tmp_prefix}.src2", max_vocab_size=2
+            corpus_files=[src_txt],
+            vocab_file=f"{tmp_prefix}.src2",
+            max_vocab_size=2,
+            padding_factor=1,
         )
         src_dict3 = dictionary.Dictionary.build_vocab_file(
-            corpus_files=[src_txt], vocab_file=f"{tmp_prefix}.src3", max_vocab_size=104
+            corpus_files=[src_txt],
+            vocab_file=f"{tmp_prefix}.src3",
+            max_vocab_size=104,
+            padding_factor=1,
         )
         src_dict4 = dictionary.Dictionary.build_vocab_file(
-            corpus_files=[src_txt], vocab_file=f"{tmp_prefix}.src4", max_vocab_size=0
+            corpus_files=[src_txt],
+            vocab_file=f"{tmp_prefix}.src4",
+            max_vocab_size=0,
+            padding_factor=1,
         )
         self.assertEqual(src_dict1.nspecial + 1, len(src_dict1))
         self.assertEqual(src_dict2.nspecial + 2, len(src_dict2))
