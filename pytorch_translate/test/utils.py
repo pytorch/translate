@@ -43,7 +43,7 @@ class ModelParamsDict:
         self.lr = [0.1]
         self.optimizer = "sgd"
         self.momentum = 0
-        self.label_smoothing_epsilon = None
+        self.label_smoothing = None
         self.weight_decay = 0.0
         self.lr_scheduler = "fixed"
         self.force_anneal = 0
@@ -54,6 +54,8 @@ class ModelParamsDict:
         self.vocab_reduction_params = None
         self.word_dropout_params = None
         self.distributed_world_size = 1
+        self.seed = 1
+        self.left_pad_source = "True"
         # Modified params
         for param, value in kwargs.items():
             assert hasattr(self, param), (
@@ -141,7 +143,7 @@ def prepare_inputs(
         dataset,
         batch_size=test_args.batch_size,
         collate_fn=(
-            lambda samples: data.LanguagePairDataset.collate(
+            lambda samples: data.language_pair_dataset.collate(
                 samples, src_dict.pad(), src_dict.eos()
             )
         ),
@@ -198,13 +200,12 @@ def create_test_numberized_data_files(src_ref, trg_ref, reverse_source=True):
     if reverse_source:
         src_ref = [reversed(line) for line in src_ref]
 
-    # we subtract 1 because the reference has +1 added for Lua compatibility
     # during parsing
     src = write_lines_to_temp_file(
-        [" ".join([str(ind - 1) for ind in line]) for line in src_ref]
+        [" ".join([str(ind) for ind in line]) for line in src_ref]
     )
     trg = write_lines_to_temp_file(
-        [" ".join([str(ind - 1) for ind in line]) for line in trg_ref]
+        [" ".join([str(ind) for ind in line]) for line in trg_ref]
     )
     return src, trg
 

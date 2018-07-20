@@ -11,6 +11,7 @@ class SequenceGenerator(torch.nn.Module):
     def __init__(
         self,
         models,
+        tgt_dict,
         beam_size=1,
         minlen=1,
         maxlen=None,
@@ -44,13 +45,10 @@ class SequenceGenerator(torch.nn.Module):
                 src_lengths, char_inds, word_lengths)
         """
         self.models = models
-        self.pad = models[0].dst_dict.pad()
-        self.unk = models[0].dst_dict.unk()
-        self.eos = models[0].dst_dict.eos()
-        assert all(m.dst_dict.pad() == self.pad for m in self.models[1:])
-        assert all(m.dst_dict.unk() == self.unk for m in self.models[1:])
-        assert all(m.dst_dict.eos() == self.eos for m in self.models[1:])
-        self.vocab_size = len(models[0].dst_dict)
+        self.pad = tgt_dict.pad()
+        self.unk = tgt_dict.unk()
+        self.eos = tgt_dict.eos()
+        self.vocab_size = len(tgt_dict)
         self.beam_size = beam_size
         self.minlen = minlen
         max_decoder_len = min(m.max_decoder_positions() for m in self.models)
@@ -62,7 +60,7 @@ class SequenceGenerator(torch.nn.Module):
         self.len_penalty = len_penalty
         self.unk_reward = unk_reward
         self.lexicon_reward = lexicon_reward
-        self.lexicon_indices = models[0].dst_dict.lexicon_indices_list()
+        self.lexicon_indices = tgt_dict.lexicon_indices_list()
         self.retain_dropout = retain_dropout
         self.word_reward = word_reward
         if model_weights is not None:
@@ -99,7 +97,8 @@ class SequenceGenerator(torch.nn.Module):
             maxlen_b = self.maxlen
 
         for sample in data_itr:
-            s = utils.make_variable(sample, volatile=True, cuda=cuda)
+            if cuda:
+                s = utils.move_to_cuda(sample)
             input = s["net_input"]
             srclen = input["src_tokens"].size(1)
             if self.use_char_source:
@@ -113,7 +112,7 @@ class SequenceGenerator(torch.nn.Module):
                 encoder_input = (input["src_tokens"], input["src_lengths"])
             if timer is not None:
                 timer.start()
-            with utils.maybe_no_grad():
+            with torch.no_grad():
                 hypos = self.generate(
                     encoder_input,
                     beam_size=beam_size,
@@ -125,14 +124,14 @@ class SequenceGenerator(torch.nn.Module):
             if timer is not None:
                 timer.stop(s["ntokens"])
             for i, id in enumerate(s["id"]):
-                src = input["src_tokens"][i, :]
-                # remove padding from ref
+                # remove padding
+                src = utils.strip_pad(input["src_tokens"][i, :], self.pad)
                 ref = utils.strip_pad(s["target"][i, :], self.pad)
                 yield id, src, ref, hypos[i]
 
     def generate(self, encoder_input, beam_size=None, maxlen=None, prefix_tokens=None):
         """Generate a batch of translations."""
-        with utils.maybe_no_grad():
+        with torch.no_grad():
             return self._generate(encoder_input, beam_size, maxlen, prefix_tokens)
 
     def _generate(self, encoder_input, beam_size=None, maxlen=None, prefix_tokens=None):
@@ -510,15 +509,12 @@ class SequenceGenerator(torch.nn.Module):
         return encoder_outs, incremental_states
 
     def _decode(self, tokens, encoder_outs, incremental_states):
-        # wrap in Variable
-        tokens = utils.volatile_variable(tokens)
-
         avg_probs = None
         avg_attn = None
         for model_weight, model, encoder_out in zip(
             self.model_weights, self.models, encoder_outs
         ):
-            with utils.maybe_no_grad():
+            with torch.no_grad():
                 decoder_out = list(
                     model.decoder(tokens, encoder_out, incremental_states[model])
                 )

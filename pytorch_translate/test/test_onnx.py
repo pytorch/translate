@@ -10,6 +10,7 @@ import unittest
 
 from fairseq import models
 from pytorch_translate import rnn  # noqa
+from pytorch_translate import tasks
 from pytorch_translate import char_source_model  # noqa (must be after rnn)
 from pytorch_translate.ensemble_export import (
     CharSourceEncoderEnsemble,
@@ -30,11 +31,12 @@ logger = logging.getLogger(__name__)
 class TestONNX(unittest.TestCase):
     def _test_ensemble_encoder_export(self, test_args):
         samples, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
 
         num_models = 3
         model_list = []
         for _ in range(num_models):
-            model_list.append(models.build_model(test_args, src_dict, tgt_dict))
+            model_list.append(task.build_model(test_args))
         encoder_ensemble = EncoderEnsemble(model_list)
 
         tmp_dir = tempfile.mkdtemp()
@@ -120,11 +122,12 @@ class TestONNX(unittest.TestCase):
 
     def _test_full_ensemble_export(self, test_args):
         samples, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
 
         num_models = 3
         model_list = []
         for _ in range(num_models):
-            model_list.append(models.build_model(test_args, src_dict, tgt_dict))
+            model_list.append(task.build_model(test_args))
         encoder_ensemble = EncoderEnsemble(model_list)
 
         # test equivalence
@@ -137,14 +140,14 @@ class TestONNX(unittest.TestCase):
 
         pytorch_encoder_outputs = encoder_ensemble(src_tokens, src_lengths)
 
-        decoder_step_ensemble = DecoderStepEnsemble(model_list, beam_size=5)
+        decoder_step_ensemble = DecoderStepEnsemble(model_list, tgt_dict, beam_size=5)
 
         tmp_dir = tempfile.mkdtemp()
         decoder_step_pb_path = os.path.join(tmp_dir, "decoder_step.pb")
         decoder_step_ensemble.onnx_export(decoder_step_pb_path, pytorch_encoder_outputs)
 
         # single EOS
-        input_token = torch.LongTensor(np.array([[model_list[0].dst_dict.eos()]]))
+        input_token = torch.LongTensor(np.array([[tgt_dict.eos()]]))
         timestep = torch.LongTensor(np.array([[0]]))
 
         pytorch_decoder_outputs = decoder_step_ensemble(
@@ -193,11 +196,12 @@ class TestONNX(unittest.TestCase):
     def _test_batched_beam_decoder_step(self, test_args):
         beam_size = 5
         samples, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
 
         num_models = 3
         model_list = []
         for _ in range(num_models):
-            model_list.append(models.build_model(test_args, src_dict, tgt_dict))
+            model_list.append(task.build_model(test_args))
         encoder_ensemble = EncoderEnsemble(model_list)
 
         # test equivalence
@@ -211,7 +215,7 @@ class TestONNX(unittest.TestCase):
         pytorch_encoder_outputs = encoder_ensemble(src_tokens, src_lengths)
 
         decoder_step_ensemble = DecoderBatchedStepEnsemble(
-            model_list, beam_size=beam_size
+            model_list, tgt_dict, beam_size=beam_size
         )
 
         tmp_dir = tempfile.mkdtemp()
@@ -219,7 +223,7 @@ class TestONNX(unittest.TestCase):
         decoder_step_ensemble.onnx_export(decoder_step_pb_path, pytorch_encoder_outputs)
 
         # single EOS in flat array
-        input_tokens = torch.LongTensor(np.array([model_list[0].dst_dict.eos()]))
+        input_tokens = torch.LongTensor(np.array([tgt_dict.eos()]))
         prev_scores = torch.FloatTensor(np.array([0.0]))
         timestep = torch.LongTensor(np.array([0]))
 
@@ -281,6 +285,7 @@ class TestONNX(unittest.TestCase):
 
     def _test_full_beam_decoder(self, test_args):
         samples, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
         sample = next(samples)
         src_tokens = sample["net_input"]["src_tokens"][0:1].t()
         src_lengths = sample["net_input"]["src_lengths"][0:1].int()
@@ -288,9 +293,9 @@ class TestONNX(unittest.TestCase):
         num_models = 3
         model_list = []
         for _ in range(num_models):
-            model_list.append(models.build_model(test_args, src_dict, tgt_dict))
+            model_list.append(task.build_model(test_args))
 
-        bs = BeamSearch(model_list, src_tokens, src_lengths, beam_size=6)
+        bs = BeamSearch(model_list, tgt_dict, src_tokens, src_lengths, beam_size=6)
         prev_token = torch.LongTensor([0])
         prev_scores = torch.FloatTensor([0.0])
         attn_weights = torch.zeros(11)
@@ -368,14 +373,15 @@ class TestONNX(unittest.TestCase):
 
     def _test_forced_decoder_export(self, test_args):
         _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
 
         num_models = 3
         model_list = []
         for _ in range(num_models):
-            model_list.append(models.build_model(test_args, src_dict, tgt_dict))
+            model_list.append(task.build_model(test_args))
 
         forced_decoder_ensemble = ForcedDecoder(
-            model_list, word_reward=0.25, unk_reward=-0.5
+            model_list, tgt_dict, word_reward=0.25, unk_reward=-0.5
         )
 
         tmp_dir = tempfile.mkdtemp()
@@ -402,11 +408,12 @@ class TestONNX(unittest.TestCase):
 
     def _test_ensemble_encoder_export_char_source(self, test_args):
         _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
 
         num_models = 3
         model_list = []
         for _ in range(num_models):
-            model_list.append(models.build_model(test_args, src_dict, tgt_dict))
+            model_list.append(task.build_model(test_args))
         encoder_ensemble = CharSourceEncoderEnsemble(model_list)
 
         tmp_dir = tempfile.mkdtemp()
@@ -506,11 +513,12 @@ class TestONNX(unittest.TestCase):
         test_args.char_rnn_layers = 2
 
         _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
 
         num_models = 3
         model_list = []
         for _ in range(num_models):
-            model_list.append(models.build_model(test_args, src_dict, tgt_dict))
+            model_list.append(task.build_model(test_args))
         encoder_ensemble = CharSourceEncoderEnsemble(model_list)
 
         length = 5
