@@ -86,7 +86,7 @@ def dummy_dictionary(dummy_tokens=3, additional_token_list=None):
     if additional_token_list is not None:
         for token in additional_token_list:
             d.add_symbol(token)
-    d.finalize()
+    d.finalize(padding_factor=-1)
     return d
 
 
