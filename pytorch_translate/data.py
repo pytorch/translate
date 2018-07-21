@@ -32,8 +32,8 @@ class ParallelCorpusConfig(NamedTuple):
     weights_file: Optional[str]
 
 
-class InMemoryNumpyDataset(data.IndexedDataset):
-    """analogous to fairseq.data.IndexedInMemoryDataset"""
+class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
+    """analogous to fairseq.data.indexed_dataset.IndexedInMemoryDataset"""
 
     def __init__(self):
         """Initialize empty dataset"""

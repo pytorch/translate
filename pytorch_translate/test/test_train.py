@@ -43,7 +43,8 @@ class TestRNNModel(unittest.TestCase):
         np.save(encoder_embedding, embed_array)
         encoder_embedding.close()
         _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
-        model = models.build_model(test_args, src_dict, tgt_dict)
+        task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
+        model = task.build_model(test_args)
         assert np.allclose(
             model.encoder.embed_tokens.weight.data.numpy(),
             embed_array,

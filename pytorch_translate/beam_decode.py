@@ -513,7 +513,7 @@ class SequenceGenerator(torch.nn.Module):
             # expand outputs for each example beam_size times
             encoder_out = model.encoder.reorder_encoder_out(
                 encoder_out=encoder_out,
-                reorder_indices=reorder_indices,
+                new_order=reorder_indices,
             )
             encoder_outs.append(encoder_out)
         return encoder_outs, incremental_states

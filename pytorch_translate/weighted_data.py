@@ -5,7 +5,7 @@ import torch
 from fairseq import data
 
 
-class IndexedWeightsDataset(data.IndexedDataset):
+class IndexedWeightsDataset(data.indexed_dataset.IndexedDataset):
     def __init__(self, path):
         self.values = []
         self.read_data(path)
@@ -27,7 +27,7 @@ class IndexedWeightsDataset(data.IndexedDataset):
         return self.size
 
 
-class WeightedLanguagePairDataset(data.LanguagePairDataset):
+class WeightedLanguagePairDataset(data.language_pair_dataset.LanguagePairDataset):
     """
     Extension of fairseq.data.LanguagePairDataset where each example
     has a weight in [0.0, 1.0], which will be used to weigh the loss.
