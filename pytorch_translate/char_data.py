@@ -8,7 +8,7 @@ from fairseq import data, tokenizer
 from pytorch_translate.dictionary import TAGS
 
 
-class InMemoryNumpyWordCharDataset(data.IndexedDataset):
+class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
     """analogous to fairseq.data.IndexedInMemoryDataset"""
 
     def __init__(self):
