@@ -831,6 +831,7 @@ def validate_save_and_evaluate_bleu(
             extra_state=extra_state,
         )
     extra_state["val_loss"] = val_loss
+    extra_state["val_ppl"] = val_ppl
 
     lr = trainer.optimizer.get_lr()
     val_bleu = None
