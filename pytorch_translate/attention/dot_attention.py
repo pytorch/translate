@@ -27,36 +27,22 @@ class DotAttention(BaseAttention):
         self.src_length_masking = kwargs.get("src_length_masking", True)
 
     def forward(self, decoder_state, source_hids, src_lengths):
+        # Reshape to bsz x src_len x context_dim
+        source_hids = source_hids.transpose(0, 1)
         # decoder_state: bsz x context_dim
         if self.input_proj is not None:
             decoder_state = self.input_proj(decoder_state)
-        # compute attention
-        attn_scores = (source_hids * decoder_state.unsqueeze(0)).sum(dim=2).t()
+        # compute attention (bsz x src_len x context_dim) * (bsz x context_dim x 1)
+        attn_scores = torch.bmm(source_hids, decoder_state.unsqueeze(2)).squeeze(2)
 
-        if self.src_length_masking:
-            max_src_len = source_hids.size()[0]
-            assert max_src_len == src_lengths.data.max()
-            batch_size = source_hids.size()[1]
-            src_mask = attention_utils.create_src_lengths_mask(
-                batch_size,
-                src_lengths,
-            )
-            masked_attn_scores = attn_scores.masked_fill(src_mask == 0, -np.inf)
-            # Since input of varying lengths, need to make sure the attn_scores
-            # for each sentence sum up to one
-            attn_scores = F.softmax(masked_attn_scores, dim=-1)  # bsz x srclen
-            score_denom = torch.sum(attn_scores, dim=1).unsqueeze(dim=1).expand(
-                batch_size, max_src_len
-            )
-            normalized_masked_attn_scores = torch.div(attn_scores, score_denom).t()
-        else:
-            normalized_masked_attn_scores = F.softmax(attn_scores, dim=-1).t()
-
-        # sum weighted sources
-        attn_weighted_context = (
-            source_hids * normalized_masked_attn_scores.unsqueeze(2)
-        ).sum(
-            dim=0
+        # Mask + softmax (bsz x src_len)
+        normalized_masked_attn_scores = attention_utils.masked_softmax(
+            attn_scores, src_lengths, self.src_length_masking
         )
 
-        return attn_weighted_context, normalized_masked_attn_scores
+        # Sum weighted sources
+        attn_weighted_context = (
+            source_hids * normalized_masked_attn_scores.unsqueeze(2)
+        ).sum(1)
+
+        return attn_weighted_context, normalized_masked_attn_scores.t()
