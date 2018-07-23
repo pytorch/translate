@@ -1092,14 +1092,15 @@ class ForcedDecoder(torch.jit.ScriptModule):
         input_tokens = torch.cat([eos_token, target_tokens], dim=1)
         output_tokens = torch.cat([target_tokens, eos_token], dim=1)
 
-        num_steps = target_length + 1
+        num_steps = int(target_length + 1)
         score = zero
 
         for i in range(num_steps):
+            index_t = _to_tensor(i)
             (step_score, *states) = self.decoder_ens(
-                input_tokens.index_select(dim=1, index=i).view((1, 1)),
-                output_tokens.index_select(dim=1, index=i).view((1,)),
-                i,
+                input_tokens.index_select(dim=1, index=index_t).view((1, 1)),
+                output_tokens.index_select(dim=1, index=index_t).view((1,)),
+                index_t,
                 *states,
             )
             score += step_score
