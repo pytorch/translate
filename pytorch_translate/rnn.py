@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pack_padded_sequence, PackedSequence, pad_packed_sequence
 import torch.onnx.operators
-import numpy as np
-from pytorch_translate import rnn_cell  # noqa
-from pytorch_translate import data as pytorch_translate_data
-
 from fairseq import utils
 from fairseq.models import (
     FairseqEncoder,
@@ -16,21 +12,25 @@ from fairseq.models import (
     register_model,
     register_model_architecture,
 )
-
-from pytorch_translate import dictionary as pytorch_translate_dictionary
-from pytorch_translate import vocab_reduction
-from pytorch_translate import word_dropout
-from pytorch_translate.multilingual import MultilingualEncoder, MultilingualDecoder
-from pytorch_translate.ngram import NGramDecoder
-from pytorch_translate.multi_model import MultiEncoder, MultiDecoder
-from pytorch_translate.common_layers import (
-    Embedding,
-    RNNLayer,
-    Linear,
-    DecoderWithOutputProjection,
+from pytorch_translate import rnn_cell  # noqa
+from pytorch_translate import (
+    attention,
+    data as pytorch_translate_data,
+    dictionary as pytorch_translate_dictionary,
+    vocab_reduction,
+    word_dropout,
 )
-from pytorch_translate import attention
+from pytorch_translate.common_layers import (
+    DecoderWithOutputProjection,
+    Embedding,
+    Linear,
+    RNNLayer,
+)
+from pytorch_translate.multi_model import MultiDecoder, MultiEncoder
+from pytorch_translate.multilingual import MultilingualDecoder, MultilingualEncoder
+from pytorch_translate.ngram import NGramDecoder
 from pytorch_translate.utils import maybe_cat, maybe_cuda
+from torch.nn.utils.rnn import PackedSequence, pack_padded_sequence, pad_packed_sequence
 
 
 def torch_find(index, query, vocab_size):
@@ -49,13 +49,7 @@ def torch_find(index, query, vocab_size):
 
 def reorder_encoder_output(encoder_out, new_order):
     """Reorder all outputs according to new_order."""
-    (
-        unpacked_output,
-        final_hiddens,
-        final_cells,
-        src_lengths,
-        src_tokens,
-    ) = encoder_out
+    (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens) = encoder_out
     unpacked_output = unpacked_output.index_select(1, new_order)
     final_hiddens = final_hiddens.index_select(1, new_order)
     final_cells = final_cells.index_select(1, new_order)
@@ -91,7 +85,7 @@ class RNNModel(FairseqModel):
             default=None,
             metavar="FILE",
             help="Path to a file of pretrained embeddings. Should have"
-            "dimensions vocab_size x encoder-embed-dim."
+            "dimensions vocab_size x encoder-embed-dim.",
         )
         parser.add_argument(
             "--encoder-freeze-embed",
@@ -134,7 +128,7 @@ class RNNModel(FairseqModel):
             default=None,
             metavar="FILE",
             help="Path to a file of pretrained embeddings. Should have"
-            "dimensions vocab_size x decoder-embed-dim."
+            "dimensions vocab_size x decoder-embed-dim.",
         )
         parser.add_argument(
             "--decoder-freeze-embed",
@@ -162,7 +156,7 @@ class RNNModel(FairseqModel):
             default=None,
             metavar="FILE",
             help="Path to a file of pretrained embeddings. Should have"
-            "dimensions vocab_size x decoder-embed-dim."
+            "dimensions vocab_size x decoder-embed-dim.",
         )
         parser.add_argument(
             "--decoder-tie-embeddings",
@@ -1180,6 +1174,11 @@ def base_architecture(args):
     word_dropout.set_arg_defaults(args)
     args.sequence_lstm = getattr(args, "sequence_lstm", False)
     args.decoder_tie_embeddings = getattr(args, "decoder_tie_embeddings", False)
+    args.encoder_pretrained_embed = getattr(args, "encoder_pretrained_embed", None)
+    args.decoder_pretrained_embed = getattr(args, "decoder_pretrained_embed", None)
+    args.decoder_out_pretrained_embed = getattr(
+        args, "decoder_out_pretrained_embed", None
+    )
 
 
 @register_model_architecture("rnn", "rnn_big_test")
