@@ -5,8 +5,9 @@ import numpy as np
 import tempfile
 import torch
 
-from fairseq import data, utils
+from fairseq import data
 from pytorch_translate import dictionary as pytorch_translate_dictionary
+from pytorch_translate import vocab_constants
 
 
 class ModelParamsDict:
@@ -222,3 +223,33 @@ def make_temp_file():
     temp_file_path = temp_file.name
     temp_file.close()
     return temp_file_path
+
+
+def create_vocab_dictionaries():
+    additional_special_tokens = (
+        vocab_constants.MAX_SPECIAL_TOKENS
+        - pytorch_translate_dictionary.Dictionary().nspecial
+    )
+    src_dict = dummy_dictionary(
+        dummy_tokens=additional_special_tokens,
+        additional_token_list=["a", "b", "c", "d", "e"],
+    )
+    tgt_dict = dummy_dictionary(
+        dummy_tokens=additional_special_tokens,
+        additional_token_list=["A", "B", "C", "D", "E"],
+    )
+    return src_dict, tgt_dict
+
+
+def create_vocab_reduction_expected_array(src_dict, max_translation_candidates_per_word=1):
+    expected_translation_candidates = np.zeros(
+        [len(src_dict), max_translation_candidates_per_word], dtype=np.int32
+    )
+
+    expected_translation_candidates[100][0] = 100
+    expected_translation_candidates[101][0] = 103
+    expected_translation_candidates[102][0] = 101
+    expected_translation_candidates[103][0] = 103
+    expected_translation_candidates[104][0] = 102
+
+    return expected_translation_candidates
