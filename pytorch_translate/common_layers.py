@@ -248,7 +248,7 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
             return x, attn_scores, None
         output_projection_w = self.output_projection_w
         output_projection_b = self.output_projection_b
-        decoder_input_tokens = input_tokens if self.training else None
+        decoder_input_tokens = input_tokens.contiguous()
 
         if self.vocab_reduction_module and possible_translation_tokens is None:
             possible_translation_tokens = self.vocab_reduction_module(
