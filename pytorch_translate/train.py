@@ -40,6 +40,7 @@ from pytorch_translate import dictionary as pytorch_translate_dictionary
 from pytorch_translate import generate
 from pytorch_translate import preprocess
 from pytorch_translate import rnn  # noqa
+from pytorch_translate import transformer  # noqa
 from pytorch_translate import weighted_criterions  # noqa
 from pytorch_translate import sequence_criterions  # noqa
 from pytorch_translate.utils import ManagedCheckpoints  # noqa
