@@ -275,8 +275,11 @@ def setup_training(args):
         num_shards=args.distributed_world_size,
         shard_id=args.distributed_rank,
     )
+    epoch = extra_state["epoch"]
+    if extra_state["batch_offset"] == 0:
+        epoch -= 1  # this will be incremented when we call epoch_itr.next_epoch_itr()
     epoch_itr.load_state_dict({
-        "epoch": extra_state["epoch"],
+        "epoch": epoch,
         "iterations_in_epoch": extra_state["batch_offset"],
     })
 
