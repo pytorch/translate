@@ -590,6 +590,10 @@ def validate_generation_args(args):
         "Argument --lenpen is IGNORED by pytorch_translate. Use "
         "--length-penalty instead."
     )
+    if "generate_bleu_eval_avg_checkpoints" in args:
+        assert (
+            args.generate_bleu_eval_avg_checkpoints >= 1
+        ), "--generate-bleu-eval-avg-checkpoints must be >= 1."
     pass
 
 
