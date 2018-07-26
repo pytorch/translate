@@ -12,7 +12,6 @@ from pytorch_translate import vocab_constants
 
 class ModelParamsDict:
     def __init__(self, **kwargs):
-        print("Building model params dict")
         # Model params
         self.arch = "rnn"
         self.encoder_embed_dim = 10
@@ -151,6 +150,22 @@ def prepare_inputs(
     )
     data_iterator = iter(dataloader)
     return data_iterator, src_dict, tgt_dict
+
+
+def create_dummy_extra_state(**kwargs):
+    extra_state = {
+        "epoch": 1,
+        "batch_offset": 0,
+        "val_loss": None,
+        "start_time": 0,
+        "last_bleu_eval": 0,
+    }
+    for param, value in kwargs.items():
+        assert param in extra_state, (
+            f"Tried to specify value for nonexistent property {param}."
+        )
+        extra_state[param] = value
+    return extra_state
 
 
 def create_lexical_dictionaries():
