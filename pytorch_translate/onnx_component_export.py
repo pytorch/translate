@@ -8,6 +8,7 @@ from pytorch_translate import rnn  # noqa
 from pytorch_translate.ensemble_export import (
     CharSourceEncoderEnsemble,
     DecoderBatchedStepEnsemble,
+    DecoderStepEnsemble,
     EncoderEnsemble,
 )
 
@@ -62,6 +63,11 @@ def get_parser_with_args():
         help="Value to add for each word UNK token",
     )
     parser.add_argument(
+        "--batched-beam",
+        action="store_true",
+        help="Decoder step has entire beam as input/output",
+    )
+    parser.add_argument(
         "--char-source",
         action="store_true",
         help=(
@@ -106,7 +112,11 @@ def export(args):
         encoder_ensemble.save_to_db(args.encoder_output_file)
 
     if args.decoder_output_file != "":
-        decoder_step_ensemble = DecoderBatchedStepEnsemble.build_from_checkpoints(
+        if args.batched_beam:
+            decoder_step_class = DecoderBatchedStepEnsemble
+        else:
+            decoder_step_class = DecoderStepEnsemble
+        decoder_step_ensemble = decoder_step_class.build_from_checkpoints(
             checkpoint_filenames=checkpoint_filenames,
             src_dict_filename=args.source_vocab_file,
             dst_dict_filename=args.target_vocab_file,
