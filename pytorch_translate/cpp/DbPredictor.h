@@ -4,8 +4,8 @@
 
 #include <string>
 
-#include <caffe2/core/predictor.h>
 #include <caffe2/core/workspace.h>
+#include <caffe2/predictor/predictor.h>
 
 namespace pytorch {
 namespace translate {
