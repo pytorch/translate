@@ -2,20 +2,17 @@
 
 import argparse
 import collections
-import itertools
 import math
 import multiprocessing
-import numpy as np
 import os
 import random
 import shutil
 import signal
-import tempfile
 import time
-import torch
-
 from typing import Any, Dict, Optional, Tuple
 
+import numpy as np
+import torch
 from fairseq import (
     criterions,
     data,
@@ -30,27 +27,29 @@ from fairseq import (
 from fairseq.fp16_trainer import FP16Trainer
 from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
-
-from pytorch_translate import average_checkpoints
-from pytorch_translate import char_source_model  # noqa
-from pytorch_translate import constants
-from pytorch_translate import data as pytorch_translate_data
-from pytorch_translate import options as pytorch_translate_options
-from pytorch_translate import dictionary as pytorch_translate_dictionary
-from pytorch_translate import generate
-from pytorch_translate import preprocess
-from pytorch_translate import rnn  # noqa
+from pytorch_translate import rnn  # noqa; noqa
+from pytorch_translate import sequence_criterions  # noqa
 from pytorch_translate import transformer  # noqa
 from pytorch_translate import weighted_criterions  # noqa
-from pytorch_translate import sequence_criterions  # noqa
-from pytorch_translate.utils import ManagedCheckpoints  # noqa
-from pytorch_translate import multi_model
-from pytorch_translate import tasks as pytorch_translate_tasks  # noqa
-from pytorch_translate.research.word_prediction import word_prediction_criterion  # noqa
-from pytorch_translate.research.word_prediction import word_prediction_model  # noqa
+from pytorch_translate import (
+    average_checkpoints,
+    constants,
+    dictionary as pytorch_translate_dictionary,
+    generate,
+    multi_model,
+    options as pytorch_translate_options,
+    preprocess,
+    tasks as pytorch_translate_tasks,
+)
 from pytorch_translate.research.knowledge_distillation import (  # noqa
     knowledge_distillation_loss
 )
+from pytorch_translate.research.word_prediction import word_prediction_criterion  # noqa
+from pytorch_translate.research.word_prediction import word_prediction_model  # noqa
+from pytorch_translate.utils import ManagedCheckpoints
+
+
+from pytorch_translate import char_source_model  # noqa; noqa
 
 
 def get_parser_with_args():
@@ -75,19 +74,42 @@ def get_parser_with_args():
     return parser
 
 
-def load_existing_checkpoint(checkpoint_path, trainer, restore_state=True):
-    extra_state = None
+def default_extra_state(args) -> Dict[str, Any]:
+    return {
+        "epoch": 1,
+        "batch_offset": 0,
+        "start_time": time.time(),
+        "val_loss": None,
+        "checkpoint_lowest_loss": None,
+        "validate": {"lowest_loss": None, "num_since_best": None},
+        "last_bleu_eval": 0,
+        "evaluate_bleu": {"best": None, "best_epoch": None, "num_since_best": None},
+        "last_checkpoints": ManagedCheckpoints(
+            max(args.generate_bleu_eval_avg_checkpoints, args.max_checkpoints_kept),
+            # Don't auto_clear checkpoints for no_epoch_checkpoints, because
+            # we are only going to reuse the same file.
+            auto_clear=(
+                args.max_checkpoints_kept > 0 and not args.no_epoch_checkpoints
+            ),
+        ),
+    }
+
+
+def load_existing_checkpoint(
+    checkpoint_path, trainer, restore_state=True
+) -> Tuple[bool, Optional[Dict]]:
     loaded = False
+    extra_state = None
     if restore_state:
         extra_state = trainer.load_checkpoint(checkpoint_path)
         if extra_state is None:
             loaded = False
-            print(f"Failed to load checkpoint and state from {checkpoint_path}.")
+            print(f"| Failed to load checkpoint and state from {checkpoint_path}.")
         else:
             loaded = True
             print(
-                f"| loaded checkpoint {checkpoint_path} (epoch {extra_state['epoch']})\n"
-                f"| extra_state {extra_state}"
+                f"| Loaded checkpoint {checkpoint_path} "
+                f"(epoch {extra_state['epoch']}) with restored extra state."
             )
             # batch_offset being None denotes this was a checkpoint saved at
             # the end of an epoch (after the last batch).
@@ -96,42 +118,19 @@ def load_existing_checkpoint(checkpoint_path, trainer, restore_state=True):
                 extra_state["epoch"] += 1
                 extra_state["batch_offset"] = 0
 
-            # check availability for checkpoint backward compatiblity
-            if "start_time" not in extra_state:
-                extra_state["start_time"] = time.time()
-
-            if "last_bleu_eval" not in extra_state:
-                extra_state["last_bleu_eval"] = 0
-
     else:
         # TODO(weiho): use trainer.load_checkpoint(load_optim=False) after
         # that's been synced to open-source fairseq.
-        dummy_state, _, _ = utils.load_model_state(
-            checkpoint_path, trainer.model, cuda_device=torch.cuda.current_device()
-        )
-        trainer.optimizer = optim.build_optimizer(
-            trainer.args, trainer.model.parameters()
-        )
-        trainer.lr_scheduler = optim.lr_scheduler.build_lr_scheduler(
-            trainer.args, trainer.optimizer
-        )
+        dummy_state, _, _ = utils.load_model_state(checkpoint_path, trainer.model)
+        trainer._build_optimizer()
         trainer._optim_history = []
 
         if dummy_state is None:
             loaded = False
-            print(f"Failed to load checkpoint weights from {checkpoint_path}.")
+            print(f"| Failed to load checkpoint weights from {checkpoint_path}.")
         else:
             loaded = True
-            print(f"Loaded checkpoint weights from {checkpoint_path}.")
-
-    if extra_state is None:
-        extra_state = {
-            "epoch": 1,
-            "batch_offset": 0,
-            "val_loss": None,
-            "start_time": time.time(),
-            "last_bleu_eval": 0,
-        }
+            print(f"| Loaded checkpoint weights from {checkpoint_path}.")
 
     return loaded, extra_state
 
@@ -186,19 +185,15 @@ def setup_training(args):
         args.train_subset,
         args.train_source_binary_path,
         args.train_target_binary_path,
-        weights_file=args.train_weights_path if
-        hasattr(args, "train_weights_path")
-        else None,
+        weights_file=getattr(args, "train_weights_path", None),
     )
     task.load_dataset(
-        args.valid_subset,
-        args.eval_source_binary_path,
-        args.eval_target_binary_path,
+        args.valid_subset, args.eval_source_binary_path, args.eval_target_binary_path
     )
 
     # Build model and criterion
     model = task.build_model(args)
-    print("building criterion")
+    print("| building criterion")
     criterion = task.build_criterion(args)
     print(f"| model {args.arch}, criterion {criterion.__class__.__name__}")
     print(
@@ -211,7 +206,7 @@ def setup_training(args):
         trainer = FP16Trainer(args, task, model, criterion)
     else:
         if torch.cuda.get_device_capability(0)[0] >= 7:
-            print('| NOTICE: your device may support faster training with --fp16')
+            print("| NOTICE: your device may support faster training with --fp16")
         trainer = Trainer(args, task, model, criterion)
     print(f"| training on {args.distributed_world_size} GPUs")
     print(
@@ -237,25 +232,28 @@ def setup_training(args):
     # ignore previous directory args and just use the absolute path as is.
     checkpoint_path = os.path.join(args.save_dir, args.restore_file)
     if os.path.exists(checkpoint_path):
-        print(f"Using --save-dir={args.save_dir}, --restore-file={args.restore_file}.")
+        print(
+            f"| Using --save-dir={args.save_dir}, --restore-file={args.restore_file}."
+        )
     elif args.restore_checkpoint_dir:
         checkpoint_path = os.path.join(args.restore_checkpoint_dir, args.restore_file)
         print(
-            f"Using --restore-checkpoint-dir={args.restore_checkpoint_dir}, "
+            f"| Using --restore-checkpoint-dir={args.restore_checkpoint_dir}, "
             f"--restore-file={args.restore_file}."
         )
 
+    extra_state = default_extra_state(args)
     if not os.path.isfile(checkpoint_path) and args.multi_model_restore_files:
         print(f"| Restoring individual models from {args.multi_model_restore_files}")
-        extra_state = multi_model.import_individual_models(
-            args.multi_model_restore_files, trainer
-        )
+        multi_model.import_individual_models(args.multi_model_restore_files, trainer)
     else:
-        loaded, extra_state = load_existing_checkpoint(
+        loaded, loaded_extra_state = load_existing_checkpoint(
             checkpoint_path=checkpoint_path,
             trainer=trainer,
             restore_state=args.restore_checkpoint_state,
         )
+        if loaded_extra_state:
+            extra_state.update(loaded_extra_state)
         if loaded:
             args.path = [checkpoint_path]
             calculate_bleu_on_subset(
@@ -265,6 +263,7 @@ def setup_training(args):
                 offset=None,
                 dataset_split=args.valid_subset,
             )
+    print(f"| extra_state: {extra_state}")
 
     epoch_itr = data.EpochBatchIterator(
         dataset=task.dataset(args.train_subset),
@@ -279,10 +278,9 @@ def setup_training(args):
     epoch = extra_state["epoch"]
     if extra_state["batch_offset"] == 0:
         epoch -= 1  # this will be incremented when we call epoch_itr.next_epoch_itr()
-    epoch_itr.load_state_dict({
-        "epoch": epoch,
-        "iterations_in_epoch": extra_state["batch_offset"],
-    })
+    epoch_itr.load_state_dict(
+        {"epoch": epoch, "iterations_in_epoch": extra_state["batch_offset"]}
+    )
 
     return extra_state, trainer, task, epoch_itr
 
@@ -343,9 +341,7 @@ def train(args, extra_state, trainer, task, epoch_itr):
         """Train the model for one epoch."""
 
         itr, progress, extra_meters = setup_epoch(
-            args=args,
-            epoch_itr=epoch_itr,
-            trainer=trainer,
+            args=args, epoch_itr=epoch_itr, trainer=trainer
         )
 
         for i, sample in enumerate(itr, start=starting_offset):
@@ -469,12 +465,10 @@ def train(args, extra_state, trainer, task, epoch_itr):
 
     train_meter.stop()
     print(f"| done training in {train_meter.sum:.1f} seconds")
-
-    if "evaluate_bleu" in extra_state:
-        print(
-            f"| Best BLEU score of {extra_state['evaluate_bleu']['best']} was from "
-            f"epoch {extra_state['evaluate_bleu']['best_epoch']}"
-        )
+    print(
+        f"| Best BLEU score of {extra_state['evaluate_bleu']['best']} was from "
+        f"epoch {extra_state['evaluate_bleu']['best_epoch']}"
+    )
 
 
 def is_training_over_time_limit(start_time: float, stop_time: float):
@@ -564,23 +558,9 @@ def save_checkpoint(trainer, args, extra_state):
 
     if args.log_verbose:
         print(
-            f"Preparing to save checkpoints for epoch {epoch}, "
+            f"| Preparing to save checkpoints for epoch {epoch}, "
             f"offset {batch_offset}. ",
             flush=True,
-        )
-
-    if "last_checkpoints" not in extra_state:
-        if args.generate_bleu_eval_avg_checkpoints < 1:
-            raise argparse.ArgumentTypeError(
-                "--generate-bleu-eval-avg-checkpoints must be >= 1."
-            )
-        extra_state["last_checkpoints"] = ManagedCheckpoints(
-            max(args.generate_bleu_eval_avg_checkpoints, args.max_checkpoints_kept),
-            # Don't auto_clear checkpoints for no_epoch_checkpoints, because
-            # we are only going to reuse the same file.
-            auto_clear=(
-                args.max_checkpoints_kept > 0 and not args.no_epoch_checkpoints
-            ),
         )
 
     # batch_offset being None means that we're at the end of an epoch.
@@ -593,7 +573,7 @@ def save_checkpoint(trainer, args, extra_state):
         assert val_loss is not None
 
         if (
-            "checkpoint_lowest_loss" not in extra_state
+            extra_state["checkpoint_lowest_loss"] is None
             or val_loss < extra_state["checkpoint_lowest_loss"]
         ):
             extra_state["checkpoint_lowest_loss"] = val_loss
@@ -617,7 +597,7 @@ def save_checkpoint(trainer, args, extra_state):
         extra_state["last_checkpoints"].append(epoch_filename)
     if args.log_verbose:
         print(
-            f"Finished saving checkpoints for epoch {epoch}, "
+            f"| Finished saving checkpoints for epoch {epoch}, "
             f"offset {batch_offset}.",
             flush=True,
         )
@@ -674,7 +654,7 @@ def validate(args, trainer, task, subset, extra_state):
     val_ppl = stats["valid_ppl"]
 
     if (
-        "validate" not in extra_state
+        extra_state["validate"]["lowest_loss"] is None
         or val_loss < extra_state["validate"]["lowest_loss"]
     ):
         extra_state["validate"] = {"lowest_loss": val_loss, "num_since_best": 0}
@@ -721,7 +701,7 @@ def _save_averaged_checkpoint(args, extra_state):
     )
     if args.log_verbose:
         print(
-            f"Reading {len(last_checkpoints)} previous "
+            f"| Reading {len(last_checkpoints)} previous "
             f"checkpoints for averaging in epoch {epoch}, offset {offset}.",
             flush=True,
         )
@@ -730,14 +710,14 @@ def _save_averaged_checkpoint(args, extra_state):
     _save_averaged_checkpoint.last_avg_checkpoints.append(filename)
     if args.log_verbose:
         print(
-            f"Preparing to save averaged checkpoint for "
+            f"| Preparing to save averaged checkpoint for "
             f"epoch {epoch}, offset {offset}.",
             flush=True,
         )
     utils.torch_persistent_save(averaged_state, filename)
     if args.log_verbose:
         print(
-            f"Finished saving averaged checkpoint for "
+            f"| Finished saving averaged checkpoint for "
             f"epoch {epoch}, offset {offset}.",
             flush=True,
         )
@@ -773,7 +753,7 @@ def evaluate_bleu(args, task, extra_state):
     )
 
     if (
-        "evaluate_bleu" not in extra_state
+        extra_state["evaluate_bleu"]["best"] is None
         or val_bleu > extra_state["evaluate_bleu"]["best"]
     ):
         extra_state["evaluate_bleu"] = {
