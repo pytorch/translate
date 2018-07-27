@@ -280,24 +280,37 @@ def setup_training(args):
     return extra_state, trainer, task, epoch_itr
 
 
-def prune(args, trainer):
-    """Sets some model weights to zero based on pruning scheme"""
+def create_prune_masks(args, trainer):
+    """Generates binary masks for setting model weights to zero"""
     assert (
         args.pruning_percentile > 0 and args.pruning_percentile < 100
     ), "--pruning-percentile must be in (0, 100)"
     all_params = []
+    if args.parameters_to_prune == "all":
+        parameter_name = "weight"
+    elif args.parameters_to_prune == "embed":
+        parameter_name = "embed_tokens"
+    elif args.parameters_to_prune == "lstm":
+        parameter_name = "weight_"
     for name, params in trainer.model.named_parameters():
-        if "weight" in name:
+        if parameter_name in name:
             all_params.append(np.abs(np.reshape(params.data, (-1, 1))))
     threshold = np.percentile(np.vstack(all_params), args.pruning_percentile)
 
     prune_masks = {}
     for name, params in trainer.model.named_parameters():
-        if "weight" in name:
+        if parameter_name in name:
             prune_masks[name] = np.abs(params.data) < threshold
-            params.data[prune_masks[name]] = 0.0
 
     return prune_masks
+
+
+def apply_prune_masks(prune_masks, trainer):
+    """Selectively sets model weights to zero using a binary mask."""
+
+    for name, params in trainer.model.named_parameters():
+        if name in prune_masks:
+            params.data[prune_masks[name]] = 0.0
 
 
 def single_process_main(args):
@@ -330,7 +343,8 @@ def train(args, extra_state, trainer, task, epoch_itr):
 
     do_prune = args.pruning_percentile > 0
     if do_prune:
-        prune_masks = prune(args, trainer)
+        prune_masks = create_prune_masks(args, trainer)
+        apply_prune_masks(prune_masks, trainer)
 
     while lr > args.min_lr and extra_state["epoch"] <= max_epoch:
         """Train the model for one epoch."""
@@ -343,9 +357,7 @@ def train(args, extra_state, trainer, task, epoch_itr):
             log_output = trainer.train_step(sample)
 
             if do_prune:
-                for name, params in trainer.model.named_parameters():
-                    if "weight" in name:
-                        params.data[prune_masks[name]] = 0.0
+                apply_prune_masks(prune_masks, trainer)
 
             train_stats = log_mid_epoch_stats(
                 trainer=trainer,

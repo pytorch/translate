@@ -425,6 +425,12 @@ def expand_optimization_args(group):
         " By default, prunes weights uniformly and ignores bias terms.",
     )
     group.add_argument(
+        "--parameters-to-prune",
+        default="all",
+        help="Names of layers to prune. Layers are pruned if the argument is "
+        "a substring of the layer name. Options are 'all', 'embed', 'lstm'. ",
+    )
+    group.add_argument(
         "--loss-beam",
         type=int,
         default=0,
