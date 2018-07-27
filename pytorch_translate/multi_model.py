@@ -688,10 +688,3 @@ def import_individual_models(restore_files, trainer):
     trainer.model.load_state_dict(model_state, strict=False)
     print(f"|  Imported {len(model_state)} parameters.")
     trainer._optim_history = []
-    return {
-        "epoch": 1,
-        "batch_offset": 0,
-        "val_loss": None,
-        "start_time": time.time(),
-        "last_bleu_eval": 0,
-    }
