@@ -119,12 +119,7 @@ def load_existing_checkpoint(
                 extra_state["batch_offset"] = 0
 
     else:
-        # TODO(weiho): use trainer.load_checkpoint(load_optim=False) after
-        # that's been synced to open-source fairseq.
-        dummy_state, _, _ = utils.load_model_state(checkpoint_path, trainer.model)
-        trainer._build_optimizer()
-        trainer._optim_history = []
-
+        dummy_state = trainer.load_checkpoint(checkpoint_path, load_optim=False)
         if dummy_state is None:
             loaded = False
             print(f"| Failed to load checkpoint weights from {checkpoint_path}.")
