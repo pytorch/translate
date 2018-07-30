@@ -5,8 +5,8 @@ import collections
 import itertools
 import os
 import time
-import torch
 
+import torch
 from fairseq import models
 
 

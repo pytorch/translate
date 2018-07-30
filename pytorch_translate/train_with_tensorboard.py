@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
+import tensorboard_logger
 from fairseq import distributed_utils, options
 from pytorch_translate import train
 
-import tensorboard_logger
 
 # The map from stats_to_log to their log frequency, to extend stats for logging,
 # yield more stats from `train' function in `train.py`, then capture it here.

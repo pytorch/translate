@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
 import collections
-import numpy as np
 import os
 import tempfile
-import torch
 import unittest
 
+import numpy as np
+import torch
 from pytorch_translate.average_checkpoints import average_checkpoints
 
 

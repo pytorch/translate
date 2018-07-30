@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 import argparse
+
 import numpy as np
 import torch
-
 from pytorch_translate import rnn  # noqa
 from pytorch_translate.ensemble_export import (
     CharSourceEncoderEnsemble,
