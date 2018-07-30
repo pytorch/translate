@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 import math
-import torch
 
+import torch
 from fairseq import utils
 from fairseq.models import FairseqIncrementalDecoder
 
@@ -165,7 +165,7 @@ class SequenceGenerator(torch.nn.Module):
         if isinstance(encoder_outs[0], (list, tuple)):
             src_encoding_len = encoder_outs[0][0].size(0)
         elif isinstance(encoder_outs[0], dict):
-            src_encoding_len = encoder_outs[0]['encoder_out'].size(0)
+            src_encoding_len = encoder_outs[0]["encoder_out"].size(0)
 
         attn = scores.new(bsz * beam_size, src_encoding_len, maxlen + 2)
         attn_buf = attn.clone()
@@ -512,8 +512,7 @@ class SequenceGenerator(torch.nn.Module):
 
             # expand outputs for each example beam_size times
             encoder_out = model.encoder.reorder_encoder_out(
-                encoder_out=encoder_out,
-                new_order=reorder_indices,
+                encoder_out=encoder_out, new_order=reorder_indices
             )
             encoder_outs.append(encoder_out)
         return encoder_outs, incremental_states

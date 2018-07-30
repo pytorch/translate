@@ -63,8 +63,10 @@ class CharSourceModel(rnn.RNNModel):
             type=str,
             default="max",
             metavar="EXPR",
-            help=("Pooling function of input sequence outputs. "
-                  "Values: logsumexp, max, mean, meanmax."),
+            help=(
+                "Pooling function of input sequence outputs. "
+                "Values: logsumexp, max, mean, meanmax."
+            ),
         )
         parser.add_argument(
             "--char-cnn-num-highway-layers",
@@ -445,8 +447,9 @@ class CharCNNEncoder(FairseqEncoder):
                 padding_idx=self.padding_idx,
                 freeze_embed=freeze_embed,
             )
-        self.word_dim = (sum(out_dim for (out_dim, _) in convolutions_params) +
-                         token_embed_dim)
+        self.word_dim = (
+            sum(out_dim for (out_dim, _) in convolutions_params) + token_embed_dim
+        )
 
         self.layers = nn.ModuleList([])
         for layer in range(num_layers):

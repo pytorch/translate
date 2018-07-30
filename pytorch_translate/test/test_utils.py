@@ -45,9 +45,7 @@ class TestMaybeCat(unittest.TestCase):
         npt.assert_array_equal(
             pytorch_utils.maybe_cat([a, None, b, None, None], dim=1), ab
         )
-        npt.assert_array_equal(
-            pytorch_utils.maybe_cat([None, None, a, None], dim=1), a
-        )
+        npt.assert_array_equal(pytorch_utils.maybe_cat([None, None, a, None], dim=1), a)
 
     def test_nullable(self):
         a = torch.IntTensor([[1, 2, 3], [4, 5, 6]])

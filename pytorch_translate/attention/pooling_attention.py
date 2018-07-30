@@ -10,9 +10,8 @@ from pytorch_translate.attention import (
 )
 
 
-@register_attention('pooling')
+@register_attention("pooling")
 class PoolingAttention(BaseAttention):
-
     def __init__(self, decoder_hidden_state_dim, context_dim, **kwargs):
         super().__init__(decoder_hidden_state_dim, context_dim)
 
@@ -24,10 +23,12 @@ class PoolingAttention(BaseAttention):
         assert max_src_len == src_lengths.data.max()
         batch_size = source_hids.size()[1]
 
-        src_mask = attention_utils.create_src_lengths_mask(
-            batch_size,
-            src_lengths,
-        ).type_as(source_hids).t().unsqueeze(2)
+        src_mask = (
+            attention_utils.create_src_lengths_mask(batch_size, src_lengths)
+            .type_as(source_hids)
+            .t()
+            .unsqueeze(2)
+        )
 
         if self.pool_type == "mean":
             # need to make src_lengths a 3-D tensor to normalize masked_hiddens
@@ -38,34 +39,22 @@ class PoolingAttention(BaseAttention):
             masked_hiddens = source_hids - 10e6 * (1 - src_mask)
             context = masked_hiddens.max(dim=0)[0]
         else:
-            raise ValueError(
-                f"Pooling type {self.pool_type} is not supported."
-            )
+            raise ValueError(f"Pooling type {self.pool_type} is not supported.")
         attn_scores = Variable(
-            torch.ones(src_mask.shape[1], src_mask.shape[0]).type_as(
-                source_hids.data,
-            ),
+            torch.ones(src_mask.shape[1], src_mask.shape[0]).type_as(source_hids.data),
             requires_grad=False,
         ).t()
 
         return context, attn_scores
 
 
-@register_attention('max')
+@register_attention("max")
 class MaxPoolingAttention(PoolingAttention):
     def __init__(self, decoder_hidden_state_dim, context_dim, **kwargs):
-        super().__init__(
-            decoder_hidden_state_dim,
-            context_dim,
-            pool_type="max",
-        )
+        super().__init__(decoder_hidden_state_dim, context_dim, pool_type="max")
 
 
-@register_attention('mean')
+@register_attention("mean")
 class MeanPoolingAttention(PoolingAttention):
     def __init__(self, decoder_hidden_state_dim, context_dim, **kwargs):
-        super().__init__(
-            decoder_hidden_state_dim,
-            context_dim,
-            pool_type="mean",
-        )
+        super().__init__(decoder_hidden_state_dim, context_dim, pool_type="mean")

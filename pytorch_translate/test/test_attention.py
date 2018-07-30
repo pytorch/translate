@@ -10,7 +10,6 @@ from pytorch_translate.attention import mlp_attention
 
 
 class TestAttention(unittest.TestCase):
-
     def setUp(self):
         self.bsz = 10
         self.src_len = 5

@@ -144,11 +144,7 @@ class RNNLayer(nn.Module):
 
 
 def Embedding(
-    num_embeddings,
-    embedding_dim,
-    padding_idx,
-    freeze_embed,
-    pretrained_embed=None,
+    num_embeddings, embedding_dim, padding_idx, freeze_embed, pretrained_embed=None
 ):
     """
     A wrapper around the embedding layer, which can be randomly
@@ -294,9 +290,7 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
 class OutputProjection(nn.Module):
     """Output projection layer."""
 
-    def __init__(
-        self, out_embed_dim, vocab_size, vocab_reduction_module=None
-    ):
+    def __init__(self, out_embed_dim, vocab_size, vocab_reduction_module=None):
         super().__init__()
         self.out_embed_dim = out_embed_dim
         self.vocab_size = vocab_size

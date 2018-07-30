@@ -89,9 +89,7 @@ def select_top_candidate_per_word(
         # per source token] to = target index
         translation_candidates[
             source_index, counter_per_word[source_index]
-        ] = target_index_with_prob[
-            0
-        ]
+        ] = target_index_with_prob[0]
         translation_candidates_set.update((source_index, target_index_with_prob[0]))
         counter_per_word[source_index] += 1
         translation_candidates_saved += 1
@@ -155,8 +153,8 @@ def get_translation_candidates(
                 source_index = src_dict.index(source_word)
                 target_index = dst_dict.index(target_word)
                 if (
-                    source_index not in src_dict.lexicon_indices and
-                    target_index in dst_dict.lexicon_indices
+                    source_index not in src_dict.lexicon_indices
+                    and target_index in dst_dict.lexicon_indices
                 ):
                     continue
 
@@ -165,24 +163,21 @@ def get_translation_candidates(
                         # We've finished processing the possible translation
                         # candidates for this source token group, so save the
                         # extracted translation candidates
-                        translation_candidates_saved += (
-                            select_top_candidate_per_word(
-                                current_source_index,
-                                current_target_indices,
-                                counter_per_word,
-                                max_translation_candidates_per_word,
-                                translation_candidates,
-                                translation_candidates_set,
-                            )
+                        translation_candidates_saved += select_top_candidate_per_word(
+                            current_source_index,
+                            current_target_indices,
+                            counter_per_word,
+                            max_translation_candidates_per_word,
+                            translation_candidates,
+                            translation_candidates_set,
                         )
                         current_source_index = source_index
                         current_target_indices = []
 
                     if (
                         target_index >= num_top_words
-                        and (
-                            source_index, target_index
-                        ) not in translation_candidates_set
+                        and (source_index, target_index)
+                        not in translation_candidates_set
                     ):
                         current_target_indices.append((target_index, prob))
         # Save the extracted translation candidates for the last source token
@@ -203,7 +198,6 @@ def get_translation_candidates(
 
 
 class VocabReduction(nn.Module):
-
     def __init__(self, src_dict, dst_dict, vocab_reduction_params):
         super().__init__()
         self.src_dict = src_dict
@@ -231,9 +225,7 @@ class VocabReduction(nn.Module):
         # reduced_vocab = self.translation_candidates[src_tokens].view(-1)
         reduced_vocab = self.translation_candidates.index_select(
             dim=0, index=src_tokens.view(-1)
-        ).view(
-            -1
-        )
+        ).view(-1)
         vocab_list.append(reduced_vocab.cpu())
 
         top_words = torch.arange(self.vocab_reduction_params["num_top_words"]).long()
@@ -251,8 +243,6 @@ class VocabReduction(nn.Module):
             # prevents us from being able to directly use the inverse indices
             # that torch.unique can return.
             return_inverse=False,
-        ).type_as(
-            src_tokens
-        )
+        ).type_as(src_tokens)
 
         return possible_translation_tokens

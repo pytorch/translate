@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 from fairseq.criterions import FairseqCriterion, register_criterion
-from fairseq.criterions.label_smoothed_cross_entropy \
-    import LabelSmoothedCrossEntropyCriterion
+from fairseq.criterions.label_smoothed_cross_entropy import (
+    LabelSmoothedCrossEntropyCriterion
+)
 from fairseq import utils
 
 
@@ -15,8 +16,13 @@ class WeightedLabelSmoothedCrossEntropyCriterion(FairseqCriterion):
     @classmethod
     def add_args(cls, parser):
         """Add criterion-specific arguments to the parser."""
-        parser.add_argument("--label-smoothing", default=0., type=float, metavar="D",
-            help="epsilon for label smoothing, 0 means no label smoothing")
+        parser.add_argument(
+            "--label-smoothing",
+            default=0.,
+            type=float,
+            metavar="D",
+            help="epsilon for label smoothing, 0 means no label smoothing",
+        )
 
     def forward(self, model, sample, reduce=True):
         net_output = model(**sample["net_input"])
@@ -36,8 +42,9 @@ class WeightedLabelSmoothedCrossEntropyCriterion(FairseqCriterion):
         eps_i = self.eps / lprobs.size(-1)
         loss = (1. - self.eps) * nll_loss + eps_i * smooth_loss
 
-        sample_size = sample["target"].size(0) if self.args.sentence_avg \
-            else sample["ntokens"]
+        sample_size = (
+            sample["target"].size(0) if self.args.sentence_avg else sample["ntokens"]
+        )
         logging_output = {
             "loss": utils.item(loss.data) if reduce else loss.data,
             "nll_loss": utils.item(nll_loss.data) if reduce else loss.data,
@@ -50,4 +57,5 @@ class WeightedLabelSmoothedCrossEntropyCriterion(FairseqCriterion):
     def aggregate_logging_outputs(cls, logging_outputs):
         """Aggregate logging outputs from data parallel training."""
         return LabelSmoothedCrossEntropyCriterion.aggregate_logging_outputs(
-            logging_outputs)
+            logging_outputs
+        )

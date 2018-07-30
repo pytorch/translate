@@ -61,9 +61,7 @@ def load_models_from_checkpoints(
                 checkpoint_data["args"], task
             )
         else:
-            model = rnn.RNNModel.build_model(
-                checkpoint_data["args"], task
-            )
+            model = rnn.RNNModel.build_model(checkpoint_data["args"], task)
         model.load_state_dict(checkpoint_data["model"])
         models.append(model)
 
@@ -230,8 +228,13 @@ class EncoderEnsemble(nn.Module):
 
 class DecoderBatchedStepEnsemble(nn.Module):
     def __init__(
-        self, models, tgt_dict, beam_size, word_reward=0, unk_reward=0,
-        tile_internal=False
+        self,
+        models,
+        tgt_dict,
+        beam_size,
+        word_reward=0,
+        unk_reward=0,
+        tile_internal=False,
     ):
         super().__init__()
         self.models = models
@@ -507,11 +510,19 @@ class BeamSearch(torch.jit.ScriptModule):
         example_encoder_outs = encoder_ens(src_tokens, src_lengths)
         self.encoder_ens = torch.jit.trace(src_tokens, src_lengths)(encoder_ens)
         decoder_ens = DecoderBatchedStepEnsemble(
-            self.models, tgt_dict, beam_size, word_reward, unk_reward,
+            self.models,
+            tgt_dict,
+            beam_size,
+            word_reward,
+            unk_reward,
             tile_internal=False,
         )
         decoder_ens_tile = DecoderBatchedStepEnsemble(
-            self.models, tgt_dict, beam_size, word_reward, unk_reward,
+            self.models,
+            tgt_dict,
+            beam_size,
+            word_reward,
+            unk_reward,
             tile_internal=True,
         )
         prev_token = torch.LongTensor([0])
@@ -831,13 +842,7 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
 
 
 class ForcedDecoder(torch.jit.ScriptModule):
-    def __init__(
-        self,
-        model_list,
-        tgt_dict,
-        word_reward=0,
-        unk_reward=0,
-    ):
+    def __init__(self, model_list, tgt_dict, word_reward=0, unk_reward=0):
         super().__init__()
         self.models = model_list
         self.tgt_dict = tgt_dict
@@ -952,10 +957,7 @@ class ForcedDecoder(torch.jit.ScriptModule):
             lexical_dict_paths,
         )
         return ForcedDecoder(
-            models,
-            tgt_dict,
-            word_reward=word_reward,
-            unk_reward=unk_reward,
+            models, tgt_dict, word_reward=word_reward, unk_reward=unk_reward
         )
 
     def save_to_db(self, output_path):

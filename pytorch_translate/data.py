@@ -153,11 +153,7 @@ class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
 
                     if reverse_order:
                         inds.reverse()
-                    inds = (
-                        prepend_inds
-                        + inds
-                        + append_inds
-                    )
+                    inds = prepend_inds + inds + append_inds
                     for _ in range(corpus_config.oversampling):
                         array_list.append(np.array(inds, dtype=np.int32))
                         offsets.append(offsets[-1] + len(inds))
@@ -208,9 +204,7 @@ class IndexedRawTextDatasetWithLangId(data.IndexedRawTextDataset):
         super(IndexedRawTextDatasetWithLangId, self).read_data(path, dictionary)
         # Postprocess self.tokens_list and self.sizes
         self.sizes += 1
-        lang_id_tensor = torch.LongTensor(
-            [self.lang_id + MULTILING_DIALECT_ID_OFFSET]
-        )
+        lang_id_tensor = torch.LongTensor([self.lang_id + MULTILING_DIALECT_ID_OFFSET])
 
         def add_lang_id(tokens):
             if self.prepend_language_id:

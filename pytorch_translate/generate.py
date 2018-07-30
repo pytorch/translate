@@ -109,9 +109,7 @@ def _generate_score(models, args, task, dataset_split, optimize=True):
 
     # Generate and compute BLEU score
     dst_dict = task.target_dictionary
-    scorer = bleu.Scorer(
-        dst_dict.pad(), dst_dict.eos(), dst_dict.unk()
-    )
+    scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
     itr = get_eval_itr(args, models, task, dataset_split)
 
     num_sentences = 0
@@ -257,9 +255,7 @@ def _iter_first_best_bilingual(args, task, dataset_split, translations, align_di
                 )
 
 
-def _iter_first_best_multilingual(
-    args, task, dataset_split, translations, align_dict
-):
+def _iter_first_best_multilingual(args, task, dataset_split, translations, align_dict):
     """Like _iter_first_best_bilingual but for multilingual NMT."""
     src_dicts = task.source_dictionaries
     target_dicts = task.target_dictionaries
@@ -505,7 +501,7 @@ def generate(args):
     task = tasks.setup_task(args)
 
     models, model_args = pytorch_translate_utils.load_diverse_ensemble_for_inference(
-        args.path.split(':'), task,
+        args.path.split(":"), task
     )
     args.source_lang = model_args[0].source_lang
     args.target_lang = model_args[0].target_lang
@@ -520,9 +516,7 @@ def generate(args):
     if args.source_binary_file != "":
         assert args.target_binary_file != ""
         task.load_dataset(
-            args.gen_subset,
-            args.source_binary_file,
-            args.target_binary_file,
+            args.gen_subset, args.source_binary_file, args.target_binary_file
         )
     elif pytorch_translate_data.is_multilingual(args):
         task.set_encoder_langs(model_args[0].multiling_encoder_lang)
@@ -554,7 +548,7 @@ def generate(args):
         )
 
     scorer, num_sentences, gen_timer, _ = _generate_score(
-        models=models, args=args, task=task, dataset_split=args.gen_subset,
+        models=models, args=args, task=task, dataset_split=args.gen_subset
     )
     print(
         f"| Translated {num_sentences} sentences ({gen_timer.n} tokens) "

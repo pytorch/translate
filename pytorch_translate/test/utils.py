@@ -58,9 +58,9 @@ class ModelParamsDict:
         self.left_pad_source = "True"
         # Modified params
         for param, value in kwargs.items():
-            assert hasattr(self, param), (
-                f"Tried to specify value for nonexistent property {param}."
-            )
+            assert hasattr(
+                self, param
+            ), f"Tried to specify value for nonexistent property {param}."
             self.__setattr__(param, value)
 
 
@@ -161,9 +161,9 @@ def create_dummy_extra_state(**kwargs):
         "last_bleu_eval": 0,
     }
     for param, value in kwargs.items():
-        assert param in extra_state, (
-            f"Tried to specify value for nonexistent property {param}."
-        )
+        assert (
+            param in extra_state
+        ), f"Tried to specify value for nonexistent property {param}."
         extra_state[param] = value
     return extra_state
 
@@ -256,7 +256,9 @@ def create_vocab_dictionaries():
     return src_dict, tgt_dict
 
 
-def create_vocab_reduction_expected_array(src_dict, max_translation_candidates_per_word=1):
+def create_vocab_reduction_expected_array(
+    src_dict, max_translation_candidates_per_word=1
+):
     expected_translation_candidates = np.zeros(
         [len(src_dict), max_translation_candidates_per_word], dtype=np.int32
     )
