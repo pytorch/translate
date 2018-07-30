@@ -94,7 +94,8 @@ def _generate_score(models, args, task, dataset_split, optimize=True):
     if optimize:
         for model in models:
             model.make_generation_fast_(
-                beamable_mm_beam_size=None if args.no_beamable_mm else args.beam
+                beamable_mm_beam_size=None if args.no_beamable_mm else args.beam,
+                need_attn=True,
             )
 
     translator = build_sequence_generator(args, task, models)
