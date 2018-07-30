@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 import collections
-import torch
-
 from typing import Any, Dict, Iterable, List
+
+import torch
 
 
 def average_checkpoints(inputs: Iterable[str]) -> Dict[str, Any]:

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 
 import codecs
-import numpy as np
 import tempfile
-import torch
 
+import numpy as np
+import torch
 from fairseq import data
-from pytorch_translate import dictionary as pytorch_translate_dictionary
-from pytorch_translate import vocab_constants
+from pytorch_translate import (
+    dictionary as pytorch_translate_dictionary,
+    vocab_constants,
+)
 
 
 class ModelParamsDict:

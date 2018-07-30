@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
+from fairseq import utils
 from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq.criterions.label_smoothed_cross_entropy import (
     LabelSmoothedCrossEntropyCriterion
 )
-from fairseq import utils
 
 
 @register_criterion("weighted_label_smoothed_cross_entropy")

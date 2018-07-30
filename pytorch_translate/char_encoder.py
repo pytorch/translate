@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
-import torch
 import numpy as np
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from pytorch_translate import common_layers  # noqa
 from pytorch_translate import rnn
 

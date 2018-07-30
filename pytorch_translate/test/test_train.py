@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
-import torch
-import unittest
-import numpy as np
 import os
+import unittest
 
+import numpy as np
+import torch
 from fairseq.trainer import Trainer
 from pytorch_translate import rnn  # noqa
 from pytorch_translate import tasks, train
