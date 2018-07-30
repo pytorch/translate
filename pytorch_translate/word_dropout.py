@@ -51,7 +51,6 @@ def set_arg_defaults(args):
 
 
 class WordDropout(nn.Module):
-
     def __init__(self, src_dict, word_dropout_params):
         super().__init__()
         self.src_dict = src_dict
@@ -70,9 +69,8 @@ class WordDropout(nn.Module):
         alpha = self.word_dropout_params["word_dropout_smoothing_alpha"]
         if token_id >= self.src_dict.nspecial:
             freq = self.src_dict.count[token_id]
-            if (
-                freq <= word_dropout_freq_threshold
-                and random.random() < float(alpha) / (freq + alpha)
-            ):
+            if freq <= word_dropout_freq_threshold and random.random() < float(
+                alpha
+            ) / (freq + alpha):
                 return self.src_dict.unk_index
         return token_id

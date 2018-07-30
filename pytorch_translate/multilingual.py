@@ -101,9 +101,7 @@ class MultilingualEncoder(FairseqEncoder):
         """Reorder all outputs according to new_order."""
         # assume we can use any of the encoders to do the reordering
         populated_encoders = [
-            encoder
-            for encoder in self.encoders
-            if encoder is not None
+            encoder for encoder in self.encoders if encoder is not None
         ]
         assert len(populated_encoders) > 0
         return populated_encoders[0].reorder_encoder_out(encoder_out, new_order)

@@ -8,8 +8,8 @@ import torch.nn.functional as F
 from pytorch_translate import common_layers  # noqa
 from pytorch_translate import rnn
 
-class HighwayLayer(nn.Module):
 
+class HighwayLayer(nn.Module):
     def __init__(
         self,
         input_dim,
@@ -44,14 +44,15 @@ class CharCNNModel(nn.Module):
     Components include convolutional filters, pooling, and
     optional highway network.
     """
+
     def __init__(
         self,
         dictionary,
         num_chars=50,
         char_embed_dim=32,
-        convolutions_params='((128, 3), (128, 5))',
-        nonlinear_fn_type='tanh',
-        pool_type='max',
+        convolutions_params="((128, 3), (128, 5))",
+        nonlinear_fn_type="tanh",
+        pool_type="max",
         num_highway_layers=0,
     ):
         super().__init__()
@@ -65,9 +66,7 @@ class CharCNNModel(nn.Module):
         elif nonlinear_fn_type == "relu":
             nonlinear_fn = nn.ReLU
         else:
-            raise Exception(
-                "Invalid nonlinear type: {}".format(nonlinear_fn_type)
-            )
+            raise Exception("Invalid nonlinear type: {}".format(nonlinear_fn_type))
         self.pool_type = pool_type
 
         self.embed_chars = rnn.Embedding(
@@ -76,17 +75,17 @@ class CharCNNModel(nn.Module):
             padding_idx=self.padding_idx,
             freeze_embed=False,
         )
-        self.convolutions = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv1d(
-                    char_embed_dim,
-                    num_filters,
-                    kernel_size,
-                    padding=kernel_size,
-                ),
-                nonlinear_fn()
-            ) for (num_filters, kernel_size) in self.convolutions_params
-        ])
+        self.convolutions = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Conv1d(
+                        char_embed_dim, num_filters, kernel_size, padding=kernel_size
+                    ),
+                    nonlinear_fn(),
+                )
+                for (num_filters, kernel_size) in self.convolutions_params
+            ]
+        )
         conv_output_dim = sum(out_dim for (out_dim, _) in self.convolutions_params)
 
         highway_layers = []
@@ -132,6 +131,4 @@ class CharCNNModel(nn.Module):
             return logsumexp.squeeze(dim)
 
         else:
-            raise Exception(
-                "Invalid pool type: {}".format(self.pool_type)
-            )
+            raise Exception("Invalid pool type: {}".format(self.pool_type))

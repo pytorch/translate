@@ -42,20 +42,20 @@ def get_parser_with_args():
         default=5,
         type=int,
         help="Difference in lengths between synthesized sentences. "
-        "Must be integer >=1."
+        "Must be integer >=1.",
     )
     group.add_argument(
         "--max-length",
         default=100,
         type=int,
         help="Maximum allowed length for synthesized sentences. "
-        "Should be greater than --increment."
+        "Should be greater than --increment.",
     )
     group.add_argument(
         "--samples-per-length",
         default=1,
         type=int,
-        help="Number of sentences to be synthesized at each length. "
+        help="Number of sentences to be synthesized at each length. ",
     )
 
     return parser
@@ -75,18 +75,18 @@ def assert_test_corpus_and_vocab_files_specified(args):
         "fairseq data class is not supported. Please specify "
         "--source-vocab-file, --target-vocab-file"
     )
-    assert (
-        args.source_vocab_file and os.path.isfile(args.source_vocab_file)
+    assert args.source_vocab_file and os.path.isfile(
+        args.source_vocab_file
     ), "Please specify a valid file for --source-vocab-file"
-    assert (
-        args.target_vocab_file and os.path.isfile(args.target_vocab_file)
+    assert args.target_vocab_file and os.path.isfile(
+        args.target_vocab_file
     ), "Please specify a valid file for --target-vocab_file"
 
 
 def generate_synthetic_text(dialect, dialect_symbols, args):
     assert args.max_length >= 1, "Please specify a valid maximum length"
-    temp_file_name = f'benchmark_text_file_{dialect}'
-    with open(temp_file_name, 'w') as temp_file:
+    temp_file_name = f"benchmark_text_file_{dialect}"
+    with open(temp_file_name, "w") as temp_file:
         # Short sentence to prime GPU
         temp_file.write(dialect_symbols[0] + "\n")
 
@@ -94,9 +94,9 @@ def generate_synthetic_text(dialect, dialect_symbols, args):
             for sentence_length in range(
                 args.increment, args.max_length, args.increment
             ):
-                temp_file.write(' '.join(
-                    random.sample(dialect_symbols, sentence_length)
-                ) + '\n')
+                temp_file.write(
+                    " ".join(random.sample(dialect_symbols, sentence_length)) + "\n"
+                )
     return temp_file_name
 
 
@@ -112,7 +112,7 @@ def generate(args):
 
     task = tasks.setup_task(args)
     models, model_args = pytorch_translate_utils.load_diverse_ensemble_for_inference(
-        args.path.split(':'), task
+        args.path.split(":"), task
     )
 
     # Generate synthetic raw text files
