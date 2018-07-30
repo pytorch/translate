@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
-import math
-import torch
 import copy
+import math
+
+import torch
+from fairseq import bleu, utils
 from fairseq.criterions import FairseqCriterion, register_criterion
-from fairseq import utils
-from fairseq import bleu
 from pytorch_translate import generate
+
 
 """Sequence-level losses from Edunov et al., 2017
 (https://arxiv.org/pdf/1711.04956.pdf).

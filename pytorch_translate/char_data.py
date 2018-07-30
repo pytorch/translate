@@ -2,9 +2,7 @@
 
 import numpy as np
 import torch
-
 from fairseq import data, tokenizer
-
 from pytorch_translate.dictionary import TAGS
 
 

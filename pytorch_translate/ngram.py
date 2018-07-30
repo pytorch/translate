@@ -3,16 +3,14 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from fairseq import utils
-
-from pytorch_translate.common_layers import (
-    Embedding,
-    NonlinearLayer,
-    Linear,
-    DecoderWithOutputProjection,
-)
 from pytorch_translate import attention
+from pytorch_translate.common_layers import (
+    DecoderWithOutputProjection,
+    Embedding,
+    Linear,
+    NonlinearLayer,
+)
 from pytorch_translate.utils import maybe_cat
 
 

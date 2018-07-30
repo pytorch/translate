@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 
 import logging
+from ast import literal_eval
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from ast import literal_eval
+from fairseq.models import FairseqEncoder, register_model, register_model_architecture
+from pytorch_translate import char_encoder, rnn, word_dropout
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-from fairseq.models import FairseqEncoder, register_model, register_model_architecture
-
-from pytorch_translate import rnn
-from pytorch_translate import word_dropout
-from pytorch_translate import char_encoder
 
 logger = logging.getLogger(__name__)
 

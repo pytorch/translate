@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
 import codecs
-import numpy as np
 import logging
 
+import numpy as np
 import torch
 import torch.nn as nn
+
 
 logger = logging.getLogger(__name__)
 

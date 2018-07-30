@@ -3,11 +3,13 @@
 import argparse
 import os
 import tempfile
-from typing import Optional, List
+from typing import List, Optional
 
-from pytorch_translate import char_data
-from pytorch_translate import data as pytorch_translate_data
-from pytorch_translate import options as pytorch_translate_options
+from pytorch_translate import (
+    char_data,
+    data as pytorch_translate_data,
+    options as pytorch_translate_options,
+)
 from pytorch_translate.dictionary import Dictionary
 
 

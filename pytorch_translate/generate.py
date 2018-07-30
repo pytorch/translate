@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
 
 import collections
-import numpy as np
 import os
-import torch
 from typing import NamedTuple
 
+import numpy as np
+import torch
 from fairseq import bleu, data, options, progress_bar, tasks, tokenizer, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
-from pytorch_translate import beam_decode
-from pytorch_translate import char_data
-from pytorch_translate import char_source_model
-from pytorch_translate import data as pytorch_translate_data
-from pytorch_translate import options as pytorch_translate_options
-from pytorch_translate import dictionary as pytorch_translate_dictionary
-from pytorch_translate import utils as pytorch_translate_utils
-from pytorch_translate import rnn  # noqa
-from pytorch_translate import tasks as pytorch_translate_tasks  # noqa
-from pytorch_translate.research.multisource import multisource_decode
-from pytorch_translate.research.multisource import multisource_data
+from pytorch_translate import rnn  # noqa; noqa
+from pytorch_translate import (
+    beam_decode,
+    char_data,
+    char_source_model,
+    data as pytorch_translate_data,
+    dictionary as pytorch_translate_dictionary,
+    options as pytorch_translate_options,
+    tasks as pytorch_translate_tasks,
+    utils as pytorch_translate_utils,
+)
 from pytorch_translate.research.beam_search import competing_completed
+from pytorch_translate.research.multisource import multisource_data, multisource_decode
 
 
 def generate_score(args, task, dataset_split):
@@ -93,7 +94,8 @@ def _generate_score(models, args, task, dataset_split, optimize=True):
     if optimize:
         for model in models:
             model.make_generation_fast_(
-                beamable_mm_beam_size=None if args.no_beamable_mm else args.beam
+                beamable_mm_beam_size=None if args.no_beamable_mm else args.beam,
+                need_attn=True,
             )
 
     translator = build_sequence_generator(args, task, models)

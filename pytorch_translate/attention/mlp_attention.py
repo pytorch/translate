@@ -3,11 +3,10 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-
 from pytorch_translate.attention import (
     BaseAttention,
-    register_attention,
     attention_utils,
+    register_attention,
 )
 from pytorch_translate.common_layers import Linear
 
