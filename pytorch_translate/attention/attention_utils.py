@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
+import numpy as np
 import torch
 import torch.nn.functional as F
-import numpy as np
 
 
 def create_src_lengths_mask(batch_size, src_lengths):

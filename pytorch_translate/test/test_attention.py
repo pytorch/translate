@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 
 import unittest
+
 import torch
-
-from pytorch_translate.attention import attention_utils
-
-from pytorch_translate.attention import dot_attention
-from pytorch_translate.attention import mlp_attention
+from pytorch_translate.attention import attention_utils, dot_attention, mlp_attention
 
 
 class TestAttention(unittest.TestCase):

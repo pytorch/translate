@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-import numpy as np
 import unittest
 
+import numpy as np
 from pytorch_translate import vocab_reduction
 from pytorch_translate.test import utils as test_utils
 

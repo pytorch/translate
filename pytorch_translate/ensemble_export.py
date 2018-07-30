@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 
 import logging
-import numpy as np
-import onnx
 import os
 import tempfile
+
+import numpy as np
+import onnx
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.onnx.operators
-from torch.onnx import ExportTypes
-
-from fairseq import utils
-from pytorch_translate import char_source_model, dictionary, rnn, tasks  # noqa
-
-from caffe2.python.predictor import predictor_exporter
 from caffe2.python import core, dyndep, workspace
 from caffe2.python.onnx import backend as caffe2_backend
+from caffe2.python.predictor import predictor_exporter
+from fairseq import utils
+from pytorch_translate import char_source_model, dictionary, rnn, tasks  # noqa
+from torch.onnx import ExportTypes
+
 
 dyndep.InitOpsLibrary("@/caffe2/caffe2/contrib/aten:aten_op")
 
@@ -899,6 +899,7 @@ class ForcedDecoder(torch.jit.ScriptModule):
         score = zero
 
         for i in range(num_steps):
+            # Lint error expected (see @jamesreed's comment on D9021140)
             index_t = _to_tensor(i)
             (step_score, *states) = self.decoder_ens(
                 input_tokens.index_select(dim=1, index=index_t).view((1, 1)),

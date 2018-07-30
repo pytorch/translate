@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 
 import unittest
-import torch
 
-from pytorch_translate import utils as pytorch_utils
 import numpy.testing as npt
+import torch
 import torch.nn.functional as F
+from pytorch_translate import utils as pytorch_utils
 
 
 class TestAverageTensors(unittest.TestCase):

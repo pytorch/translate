@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 
 import contextlib
-from io import StringIO
 import os
 import random
 import tempfile
 import unittest
+from io import StringIO
 
 import torch
-
 from fairseq import options
-
 from pytorch_translate import generate, train
 
 

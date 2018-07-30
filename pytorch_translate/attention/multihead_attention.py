@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 
-import numpy as np
 import math
-import torch
-from torch import nn
-import torch.nn.functional as F
 
+import numpy as np
+import torch
+import torch.nn.functional as F
 from pytorch_translate.attention import (
     BaseAttention,
-    register_attention,
     attention_utils,
+    register_attention,
 )
+from torch import nn
 
 
 def apply_masks(scores, batch_size, unseen_mask, src_lengths):

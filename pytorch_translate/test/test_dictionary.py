@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-import unittest
 import os
+import unittest
 
 from pytorch_translate import dictionary
 from pytorch_translate.test import utils as test_utils

@@ -1,27 +1,26 @@
 #!/usr/bin/env python3
 
 import logging
-import numpy as np
-import onnx
 import os
 import tempfile
-import torch
 import unittest
 
+import numpy as np
+import onnx
+import torch
+from caffe2.python.onnx import backend as caffe2_backend
 from fairseq import models
+from pytorch_translate import char_source_model  # noqa (must be after rnn)
 from pytorch_translate import rnn  # noqa
 from pytorch_translate import tasks
-from pytorch_translate import char_source_model  # noqa (must be after rnn)
 from pytorch_translate.ensemble_export import (
+    BeamSearch,
     CharSourceEncoderEnsemble,
     DecoderBatchedStepEnsemble,
     EncoderEnsemble,
     ForcedDecoder,
-    BeamSearch,
 )
 from pytorch_translate.test import utils as test_utils
-
-from caffe2.python.onnx import backend as caffe2_backend
 
 
 logger = logging.getLogger(__name__)

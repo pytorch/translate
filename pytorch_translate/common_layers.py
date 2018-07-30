@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 
+import abc
+
+import numpy as np
 import torch
 import torch.nn as nn
-import abc
-import numpy as np
-from pytorch_translate import vocab_reduction
 from fairseq.models import FairseqIncrementalDecoder
-
 from pytorch_translate import rnn_cell  # noqa
+from pytorch_translate import vocab_reduction
 
 
 class VariableLengthRecurrent(nn.Module):

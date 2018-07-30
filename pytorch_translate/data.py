@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 
-import numpy as np
-import torch
-
-from fairseq import data, tokenizer
 from typing import NamedTuple, Optional
 
+import numpy as np
+import torch
+from fairseq import data, tokenizer
 from pytorch_translate import dictionary as pytorch_translate_dictionary
 
 

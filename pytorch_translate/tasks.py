@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 
-from collections import OrderedDict
 import os
+from collections import OrderedDict
 from typing import List, Optional
 
 from fairseq import data, options
 from fairseq.tasks import FairseqTask, register_task
-
-from pytorch_translate import char_data
-from pytorch_translate import data as pytorch_translate_data
-from pytorch_translate import dictionary as pytorch_translate_dictionary
-from pytorch_translate import weighted_data
+from pytorch_translate import (
+    char_data,
+    data as pytorch_translate_data,
+    dictionary as pytorch_translate_dictionary,
+    weighted_data,
+)
 from pytorch_translate.research.multisource import multisource_data
 
 

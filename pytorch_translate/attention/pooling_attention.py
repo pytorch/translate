@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 
 import torch
-from torch.autograd import Variable
-
 from pytorch_translate.attention import (
     BaseAttention,
-    register_attention,
     attention_utils,
+    register_attention,
 )
+from torch.autograd import Variable
 
 
 @register_attention("pooling")

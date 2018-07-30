@@ -2,17 +2,19 @@
 
 import os
 import random
-import torch
 
+import torch
 from fairseq import options, tasks
 from fairseq.meters import TimeMeter
-from pytorch_translate import beam_decode
-from pytorch_translate import generate as pytorch_translate_generate
-from pytorch_translate import data as pytorch_translate_data
-from pytorch_translate import dictionary as pytorch_translate_dictionary
-from pytorch_translate import utils as pytorch_translate_utils
-from pytorch_translate import rnn  # noqa
-from pytorch_translate import tasks as pytorch_translate_tasks  # noqa
+from pytorch_translate import rnn  # noqa; noqa
+from pytorch_translate import (
+    beam_decode,
+    data as pytorch_translate_data,
+    dictionary as pytorch_translate_dictionary,
+    generate as pytorch_translate_generate,
+    tasks as pytorch_translate_tasks,
+    utils as pytorch_translate_utils,
+)
 
 
 def get_parser_with_args():
