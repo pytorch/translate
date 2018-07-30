@@ -27,7 +27,6 @@ from fairseq import (
 from fairseq.fp16_trainer import FP16Trainer
 from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
-from pytorch_translate import rnn  # noqa; noqa
 from pytorch_translate import sequence_criterions  # noqa
 from pytorch_translate import transformer  # noqa
 from pytorch_translate import weighted_criterions  # noqa
@@ -47,6 +46,9 @@ from pytorch_translate.research.knowledge_distillation import (  # noqa
 from pytorch_translate.research.word_prediction import word_prediction_criterion  # noqa
 from pytorch_translate.research.word_prediction import word_prediction_model  # noqa
 from pytorch_translate.utils import ManagedCheckpoints
+
+
+from pytorch_translate import rnn  # noqa; noqa
 
 
 from pytorch_translate import char_source_model  # noqa; noqa

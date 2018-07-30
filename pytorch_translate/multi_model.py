@@ -2,14 +2,15 @@
 
 import abc
 import time
+
 import torch
 import torch.nn as nn
-from fairseq.models import FairseqEncoder, FairseqIncrementalDecoder
-from pytorch_translate.common_layers import Linear, OutputProjection
-from pytorch_translate import vocab_reduction
-from torch.serialization import default_restore_location
-from pytorch_translate.utils import average_tensors, maybe_cuda
 import torch.nn.functional as F
+from fairseq.models import FairseqEncoder, FairseqIncrementalDecoder
+from pytorch_translate import vocab_reduction
+from pytorch_translate.common_layers import Linear, OutputProjection
+from pytorch_translate.utils import average_tensors, maybe_cuda
+from torch.serialization import default_restore_location
 
 
 def unfreeze_nth_component(components, unfreeze_idx=-1):

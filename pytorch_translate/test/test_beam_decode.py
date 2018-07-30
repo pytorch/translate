@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 
-import numpy as np
-import torch
 import unittest
 
-from pytorch_translate import beam_decode
-from pytorch_translate import rnn  # noqa
+import numpy as np
+import torch
 from pytorch_translate import char_source_model  # noqa (must be after rnn)
-from pytorch_translate import tasks
+from pytorch_translate import rnn  # noqa
+from pytorch_translate import beam_decode, tasks
 from pytorch_translate.test import utils as test_utils
 
 
