@@ -114,8 +114,13 @@ class LanguagePairSourceCharDataset(data.LanguagePairDataset):
     """
 
     def __init__(
-        self, src, src_sizes, src_dict,
-        tgt=None, tgt_sizes=None, tgt_dict=None,
+        self,
+        src,
+        src_sizes,
+        src_dict,
+        tgt=None,
+        tgt_sizes=None,
+        tgt_dict=None,
         weights=None,
     ):
         """
@@ -124,9 +129,14 @@ class LanguagePairSourceCharDataset(data.LanguagePairDataset):
         weights: Optional[IndexedInMemoryDataset]
         """
         super().__init__(
-            src, src_sizes, src_dict,
-            tgt, tgt_sizes, tgt_dict,
-            left_pad_source=False, left_pad_target=False,
+            src,
+            src_sizes,
+            src_dict,
+            tgt,
+            tgt_sizes,
+            tgt_dict,
+            left_pad_source=False,
+            left_pad_target=False,
         )
         self.pad_idx = src_dict.pad()
         self.eos_idx = src_dict.eos()
@@ -176,7 +186,7 @@ class LanguagePairSourceCharDataset(data.LanguagePairDataset):
             samples[0]["source_tokens"].new(len(samples), max_words).fill_(self.pad_idx)
         )
         for i, s in enumerate(samples):
-            src_tokens[i, :len(s["source_tokens"])] = s["source_tokens"]
+            src_tokens[i, : len(s["source_tokens"])] = s["source_tokens"]
 
         char_inds = (
             samples[0]["source_chars_list"][0]

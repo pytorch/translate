@@ -13,12 +13,7 @@ from pytorch_translate.attention import (
 )
 
 
-def apply_masks(
-    scores,
-    batch_size,
-    unseen_mask,
-    src_lengths,
-):
+def apply_masks(scores, batch_size, unseen_mask, src_lengths):
     seq_len = scores.shape[-1]
 
     # [1, batch_size, seq_len]
@@ -27,8 +22,7 @@ def apply_masks(
     if src_lengths is not None:
         # [batch_size, 1, seq_len]
         sequence_mask = attention_utils.create_src_lengths_mask(
-            batch_size=batch_size,
-            src_lengths=src_lengths,
+            batch_size=batch_size, src_lengths=src_lengths
         ).unsqueeze(-2)
 
     # [batch_size, 1, seq_len, seq_len]
@@ -38,13 +32,7 @@ def apply_masks(
     return scores
 
 
-def scaled_dot_prod_attn(
-    query,
-    key,
-    value,
-    unseen_mask=False,
-    src_lengths=None,
-):
+def scaled_dot_prod_attn(query, key, value, unseen_mask=False, src_lengths=None):
     """
     Scaled Dot Product Attention
 
@@ -76,10 +64,7 @@ def scaled_dot_prod_attn(
     return torch.matmul(p_attn, value), p_attn
 
 
-def split_heads(
-    X,
-    nheads,
-):
+def split_heads(X, nheads):
     """
     Split heads:
     1) Split (reshape) last dimension (size d_model) into nheads, d_head
@@ -117,12 +102,10 @@ def combine_heads(X):
     """
     X = X.transpose(1, 2)
     nheads, d_head = X.shape[-2:]
-    return X.contiguous().view(
-        list(X.shape[:-2]) + [nheads * d_head],
-    )
+    return X.contiguous().view(list(X.shape[:-2]) + [nheads * d_head])
 
 
-@register_attention('multihead')
+@register_attention("multihead")
 class MultiheadAttention(BaseAttention):
     """
     Multiheaded Scaled Dot Product Attention
@@ -156,6 +139,7 @@ class MultiheadAttention(BaseAttention):
     Output
       result : [batch_size, sequence length, d_model]
     """
+
     def __init__(self, decoder_hidden_state_dim, context_dim, **kwargs):
         super().__init__(decoder_hidden_state_dim, context_dim)
         assert decoder_hidden_state_dim == context_dim

@@ -249,9 +249,7 @@ class TransformerEncoder(FairseqEncoder):
         if isinstance(self.embed_positions, SinusoidalPositionalEmbedding):
             if "encoder.embed_positions.weights" in state_dict:
                 del state_dict["encoder.embed_positions.weights"]
-            state_dict[
-                "encoder.embed_positions._float_tensor"
-            ] = torch.FloatTensor(1)
+            state_dict["encoder.embed_positions._float_tensor"] = torch.FloatTensor(1)
         return state_dict
 
 
@@ -331,9 +329,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         if isinstance(self.embed_positions, SinusoidalPositionalEmbedding):
             if "decoder.embed_positions.weights" in state_dict:
                 del state_dict["decoder.embed_positions.weights"]
-            state_dict[
-                "decoder.embed_positions._float_tensor"
-            ] = torch.FloatTensor(1)
+            state_dict["decoder.embed_positions._float_tensor"] = torch.FloatTensor(1)
         return state_dict
 
 

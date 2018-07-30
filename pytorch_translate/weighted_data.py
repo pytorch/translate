@@ -11,9 +11,9 @@ class IndexedWeightsDataset(data.indexed_dataset.IndexedDataset):
         self.read_data(path)
 
     def read_data(self, path):
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             for line in f:
-                self.values.append(float(line.strip('\n')))
+                self.values.append(float(line.strip("\n")))
             self.size = len(self.values)
 
     def __getitem__(self, i):
@@ -34,16 +34,17 @@ class WeightedLanguagePairDataset(data.language_pair_dataset.LanguagePairDataset
     """
 
     def __init__(
-        self, src, src_sizes, src_dict,
-        tgt=None, tgt_sizes=None, tgt_dict=None,
+        self,
+        src,
+        src_sizes,
+        src_dict,
+        tgt=None,
+        tgt_sizes=None,
+        tgt_dict=None,
         weights=None,
         **kwargs,
     ):
-        super().__init__(
-            src, src_sizes, src_dict,
-            tgt, tgt_sizes, tgt_dict,
-            **kwargs
-        )
+        super().__init__(src, src_sizes, src_dict, tgt, tgt_sizes, tgt_dict, **kwargs)
         self.weights = weights
 
     def __getitem__(self, i):
@@ -62,9 +63,9 @@ class WeightedLanguagePairDataset(data.language_pair_dataset.LanguagePairDataset
         if len(samples) == 0:
             return {}
         unweighted_data = super().collater(samples)
-        original_weights = torch.FloatTensor([s['weight'] for s in samples])
+        original_weights = torch.FloatTensor([s["weight"] for s in samples])
         # sort by descending source length
-        src_lengths = torch.LongTensor([s['source'].numel() for s in samples])
+        src_lengths = torch.LongTensor([s["source"].numel() for s in samples])
         src_lengths, sort_order = src_lengths.sort(descending=True)
         weights = original_weights.index_select(0, sort_order)
         unweighted_data["weights"] = weights

@@ -19,7 +19,9 @@ class TestVocabReduction(unittest.TestCase):
             max_translation_candidates_per_word=1,
         )
 
-        translation_candidates_ref = test_utils.create_vocab_reduction_expected_array(src_dict)
+        translation_candidates_ref = test_utils.create_vocab_reduction_expected_array(
+            src_dict
+        )
         assert translation_candidates.size != 0
         np.testing.assert_array_equal(
             translation_candidates, translation_candidates_ref

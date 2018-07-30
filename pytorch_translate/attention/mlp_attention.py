@@ -12,7 +12,7 @@ from pytorch_translate.attention import (
 from pytorch_translate.common_layers import Linear
 
 
-@register_attention('mlp')
+@register_attention("mlp")
 class MLPAttention(BaseAttention):
     """The original attention from Badhanau et al. (2014)
     https://arxiv.org/abs/1409.0473 based on a Multi-Layer Perceptron.
@@ -28,17 +28,13 @@ class MLPAttention(BaseAttention):
         self.context_dim = context_dim
         self.attention_dim = kwargs.get("attention_dim", context_dim)
         # W_ae and b_a
-        self.encoder_proj = Linear(
-            context_dim, self.attention_dim, bias=True
-        )
+        self.encoder_proj = Linear(context_dim, self.attention_dim, bias=True)
         # W_ad
         self.decoder_proj = Linear(
             decoder_hidden_state_dim, self.attention_dim, bias=False
         )
         # V_a
-        self.to_scores = Linear(
-            self.attention_dim, 1, bias=False
-        )
+        self.to_scores = Linear(self.attention_dim, 1, bias=False)
         self.src_length_masking = kwargs.get("src_length_masking", True)
 
     def forward(self, decoder_state, source_hids, src_lengths):

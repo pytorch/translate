@@ -16,16 +16,11 @@ from pytorch_translate.research.multisource import multisource_data
 
 @register_task("pytorch_translate")
 class PytorchTranslateTask(FairseqTask):
-
     @staticmethod
     def add_args(parser):
         """Add task-specific arguments to the parser."""
         parser.add_argument(
-            "-s",
-            "--source-lang",
-            default=None,
-            metavar="SRC",
-            help="source language",
+            "-s", "--source-lang", default=None, metavar="SRC", help="source language"
         )
         parser.add_argument(
             "-t",
@@ -71,15 +66,16 @@ class PytorchTranslateTask(FairseqTask):
     def setup_task(cls, args, **kwargs):
         args.left_pad_source = options.eval_bool(args.left_pad_source)
 
-        assert not pytorch_translate_data.is_multilingual(args), \
-            "Must set `--task pytorch_translate_multilingual` for multilingual training"
+        assert not pytorch_translate_data.is_multilingual(
+            args
+        ), "Must set `--task pytorch_translate_multilingual` for multilingual training"
 
         # Load dictionaries
         source_dict = pytorch_translate_dictionary.Dictionary.load(
-            args.source_vocab_file,
+            args.source_vocab_file
         )
         target_dict = pytorch_translate_dictionary.Dictionary.load(
-            args.target_vocab_file,
+            args.target_vocab_file
         )
 
         source_lang = args.source_lang or "src"
@@ -105,12 +101,10 @@ class PytorchTranslateTask(FairseqTask):
     def load_dataset(self, split, src_bin_path, tgt_bin_path, weights_file=None):
         corpus = pytorch_translate_data.ParallelCorpusConfig(
             source=pytorch_translate_data.CorpusConfig(
-                dialect=self.args.source_lang,
-                data_file=src_bin_path,
+                dialect=self.args.source_lang, data_file=src_bin_path
             ),
             target=pytorch_translate_data.CorpusConfig(
-                dialect=self.args.target_lang,
-                data_file=tgt_bin_path,
+                dialect=self.args.target_lang, data_file=tgt_bin_path
             ),
             weights_file=weights_file,
         )
@@ -124,12 +118,11 @@ class PytorchTranslateTask(FairseqTask):
             raise ValueError(f"{corpus.target.data_file} for {split} not found!")
 
         dst_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
-            corpus.target.data_file,
+            corpus.target.data_file
         )
         weights_dataset = None
         if corpus.weights_file and os.path.exists(corpus.weights_file):
-            weights_dataset = weighted_data.IndexedWeightsDataset(
-                corpus.weights_file)
+            weights_dataset = weighted_data.IndexedWeightsDataset(corpus.weights_file)
             assert len(dst_dataset) == len(weights_dataset)
 
         if self.char_source_dict is not None:
@@ -147,7 +140,7 @@ class PytorchTranslateTask(FairseqTask):
             )
         else:
             src_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
-                corpus.source.data_file,
+                corpus.source.data_file
             )
             self.datasets[split] = weighted_data.WeightedLanguagePairDataset(
                 src=src_dataset,
@@ -197,8 +190,12 @@ class PytorchTranslateTask(FairseqTask):
                 append_eos=append_eos,
             )
             self.datasets[split] = char_data.LanguagePairSourceCharDataset(
-                src_dataset, src_dataset.sizes, self.source_dictionary,
-                dst_dataset, dst_dataset.sizes, self.target_dictionary,
+                src_dataset,
+                src_dataset.sizes,
+                self.source_dictionary,
+                dst_dataset,
+                dst_dataset.sizes,
+                self.target_dictionary,
             )
         else:
             src_dataset = data.IndexedRawTextDataset(
@@ -208,8 +205,12 @@ class PytorchTranslateTask(FairseqTask):
                 reverse_order=reverse_source,
             )
             self.datasets[split] = data.LanguagePairDataset(
-                src_dataset, src_dataset.sizes, self.source_dictionary,
-                dst_dataset, dst_dataset.sizes, self.target_dictionary,
+                src_dataset,
+                src_dataset.sizes,
+                self.source_dictionary,
+                dst_dataset,
+                dst_dataset.sizes,
+                self.target_dictionary,
             )
 
         print(f"| {split} {len(self.datasets[split])} examples")
@@ -243,8 +244,12 @@ class PytorchTranslateTask(FairseqTask):
             reverse_order=False,
         )
         self.datasets[split] = multisource_data.MultisourceLanguagePairDataset(
-            src_dataset, src_dataset.sizes, self.source_dictionary,
-            dst_dataset, dst_dataset.sizes, self.target_dictionary,
+            src_dataset,
+            src_dataset.sizes,
+            self.source_dictionary,
+            dst_dataset,
+            dst_dataset.sizes,
+            self.target_dictionary,
         )
 
     @property
@@ -276,7 +281,6 @@ class DictionaryHolderTask(FairseqTask):
 
 @register_task("pytorch_translate_multilingual")
 class PytorchTranslateMultilingualTask(PytorchTranslateTask):
-
     def __init__(self, args, source_dictionaries, target_dictionaries):
         self.source_dictionaries = source_dictionaries
         self.target_dictionaries = target_dictionaries
@@ -299,8 +303,9 @@ class PytorchTranslateMultilingualTask(PytorchTranslateTask):
 
     @classmethod
     def setup_task(cls, args, **kwargs):
-        assert pytorch_translate_data.is_multilingual(args), \
-            "Must set `--task pytorch_translate_multilingual` for multilingual training"
+        assert pytorch_translate_data.is_multilingual(
+            args
+        ), "Must set `--task pytorch_translate_multilingual` for multilingual training"
         args.left_pad_source = options.eval_bool(args.left_pad_source)
 
         def load_dicts(langs, paths):
@@ -320,12 +325,10 @@ class PytorchTranslateMultilingualTask(PytorchTranslateTask):
 
         # Load dictionaries
         src_dicts = load_dicts(
-            args.multiling_encoder_lang,
-            args.multiling_source_vocab_file,
+            args.multiling_encoder_lang, args.multiling_source_vocab_file
         )
         tgt_dicts = load_dicts(
-            args.multiling_decoder_lang,
-            args.multiling_target_vocab_file,
+            args.multiling_decoder_lang, args.multiling_target_vocab_file
         )
 
         return cls(args, src_dicts, tgt_dicts)
@@ -357,8 +360,12 @@ class PytorchTranslateMultilingualTask(PytorchTranslateTask):
             prepend_language_id=True,
         )
         self.datasets[split] = data.LanguagePairDataset(
-            src_dataset, src_dataset.sizes, self.source_dictionary,
-            dst_dataset, dst_dataset.sizes, self.target_dictionary,
+            src_dataset,
+            src_dataset.sizes,
+            self.source_dictionary,
+            dst_dataset,
+            dst_dataset.sizes,
+            self.target_dictionary,
         )
         print(f"| {split} {len(self.datasets[split])} examples")
 

@@ -15,7 +15,6 @@ def LSTMCell(input_dim, hidden_dim, **kwargs):
 
 
 class MILSTMCellBackend(nn.RNNCell):
-
     def __init__(self, input_size, hidden_size, bias=True):
         super(nn.RNNCell, self).__init__()
         self.input_size = input_size
@@ -44,7 +43,7 @@ class MILSTMCellBackend(nn.RNNCell):
         Uz = F.linear(hx, self.weight_hh)
 
         # Section 2.1 in https://arxiv.org/pdf/1606.06630.pdf
-        gates = (self.alpha * Wx * Uz + self.beta_i * Wx + self.beta_h * Uz + self.bias)
+        gates = self.alpha * Wx * Uz + self.beta_i * Wx + self.beta_h * Uz + self.bias
 
         # Same as LSTMCell after this point
         ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
@@ -69,7 +68,6 @@ def MILSTMCell(input_dim, hidden_dim, **kwargs):
 
 
 class LayerNormLSTMCellBackend(nn.LSTMCell):
-
     def __init__(self, input_dim, hidden_dim, bias=True, epsilon=0.00001):
         super(LayerNormLSTMCellBackend, self).__init__(input_dim, hidden_dim, bias)
         self.epsilon = epsilon

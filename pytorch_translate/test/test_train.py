@@ -37,7 +37,7 @@ class TestRNNModel(unittest.TestCase):
     def test_load_pretrained_embedding(self):
         encoder_embedding = open(test_utils.make_temp_file(), "wb")
         test_args = test_utils.ModelParamsDict(
-            encoder_pretrained_embed=encoder_embedding.name,
+            encoder_pretrained_embed=encoder_embedding.name
         )
         # The vocabulary defaults to 103 in test_utils.prepare_inputs.
         embed_array = np.random.random((103, test_args.encoder_embed_dim))
@@ -46,10 +46,7 @@ class TestRNNModel(unittest.TestCase):
         _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
         task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
         model = task.build_model(test_args)
-        assert np.allclose(
-            model.encoder.embed_tokens.weight.data.numpy(),
-            embed_array,
-        )
+        assert np.allclose(model.encoder.embed_tokens.weight.data.numpy(), embed_array)
         os.remove(encoder_embedding.name)
 
     @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
@@ -100,9 +97,7 @@ class TestRNNModel(unittest.TestCase):
         trainer, _ = self._gpu_train_step(test_args)
         trainer.save_checkpoint(test_save_file, extra_state)
         loaded, extra_state = train.load_existing_checkpoint(
-            test_save_file,
-            trainer,
-            restore_state=True,
+            test_save_file, trainer, restore_state=True
         )
         # Loading checkpoint without restore state should reset extra state
         assert loaded and extra_state["epoch"] == 2
@@ -117,9 +112,7 @@ class TestRNNModel(unittest.TestCase):
         trainer, _ = self._gpu_train_step(test_args)
         trainer.save_checkpoint(test_save_file, extra_state)
         loaded, extra_state = train.load_existing_checkpoint(
-            test_save_file,
-            trainer,
-            restore_state=False,
+            test_save_file, trainer, restore_state=False
         )
         # Loading checkpoint without restore state should reset extra state
         assert loaded and extra_state is None
