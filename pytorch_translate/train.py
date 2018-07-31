@@ -355,7 +355,7 @@ def train(args, extra_state, trainer, task, epoch_itr):
             args=args, epoch_itr=epoch_itr, trainer=trainer
         )
 
-        for i, sample in enumerate(itr, start=starting_offset):
+        for i, sample in enumerate(progress, start=starting_offset):
             log_output = trainer.train_step(sample)
 
             if do_prune:
