@@ -13,7 +13,9 @@ from pytorch_translate import generate, train
 
 
 class TestTranslation(unittest.TestCase):
-    @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
+    @unittest.skipIf(
+        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+    )
     def test_rnn(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_rnn") as data_dir:
@@ -48,7 +50,9 @@ class TestTranslation(unittest.TestCase):
                 )
                 generate_main(data_dir)
 
-    @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
+    @unittest.skipIf(
+        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+    )
     def test_rnn_fp16(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_rnn_fp16") as data_dir:
@@ -84,7 +88,9 @@ class TestTranslation(unittest.TestCase):
                 )
                 generate_main(data_dir)
 
-    @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
+    @unittest.skipIf(
+        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+    )
     def test_char_rnn(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_char_rnn") as data_dir:
@@ -139,7 +145,9 @@ class TestTranslation(unittest.TestCase):
                     ],
                 )
 
-    @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
+    @unittest.skipIf(
+        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+    )
     def test_multilingual(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_multilingual") as data_dir:
