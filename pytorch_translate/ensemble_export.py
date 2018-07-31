@@ -981,9 +981,10 @@ class ForcedDecoder(torch.jit.ScriptModule):
 
 
 class CharSourceEncoderEnsemble(nn.Module):
-    def __init__(self, models):
+    def __init__(self, models, src_dict=None):
         super().__init__()
         self.models = models
+        self.src_dict = src_dict
         for i, model in enumerate(self.models):
             if isinstance(model.encoder, char_source_model.CharRNNEncoder):
                 model.encoder.onnx_export_model = True
@@ -1066,13 +1067,13 @@ class CharSourceEncoderEnsemble(nn.Module):
         dst_dict_filename,
         lexical_dict_paths=None,
     ):
-        models, _, _ = load_models_from_checkpoints(
+        models, src_dict, _ = load_models_from_checkpoints(
             checkpoint_filenames,
             src_dict_filename,
             dst_dict_filename,
             lexical_dict_paths,
         )
-        return CharSourceEncoderEnsemble(models)
+        return CharSourceEncoderEnsemble(models, src_dict=src_dict)
 
     def save_to_db(self, output_path):
         """
