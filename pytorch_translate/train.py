@@ -40,11 +40,11 @@ from pytorch_translate import (
     preprocess,
     tasks as pytorch_translate_tasks,
 )
+from pytorch_translate.word_prediction import word_prediction_criterion  # noqa
+from pytorch_translate.word_prediction import word_prediction_model  # noqa
 from pytorch_translate.research.knowledge_distillation import (  # noqa
     knowledge_distillation_loss
 )
-from pytorch_translate.research.word_prediction import word_prediction_criterion  # noqa
-from pytorch_translate.research.word_prediction import word_prediction_model  # noqa
 from pytorch_translate.utils import ManagedCheckpoints
 
 
