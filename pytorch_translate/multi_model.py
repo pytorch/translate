@@ -7,8 +7,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from fairseq.models import FairseqEncoder, FairseqIncrementalDecoder
-from pytorch_translate import vocab_reduction
-from pytorch_translate.common_layers import Linear, OutputProjection
+from pytorch_translate import rnn, vocab_reduction
+from pytorch_translate.common_layers import Linear, NonlinearLayer, OutputProjection
 from pytorch_translate.utils import average_tensors, maybe_cuda
 from torch.serialization import default_restore_location
 
@@ -64,6 +64,10 @@ class MultiEncoder(FairseqEncoder):
     def max_positions(self):
         """Maximum input length supported by the encoder."""
         return int(1e5)  # an arbitrary large number
+
+    def reorder_encoder_out(self, encoder_out, new_order):
+        """Reorder all outputs according to new_order."""
+        return rnn.reorder_encoder_output(encoder_out, new_order)
 
 
 class MultiDecoderCombinationStrategy(nn.Module):
@@ -239,6 +243,100 @@ class MultiplicativeUnprojectedStrategy(MultiDecoderCombinationStrategy):
         )
 
 
+class DeepFusionStrategy(MultiDecoderCombinationStrategy):
+    """Deep fusion following https://arxiv.org/pdf/1503.03535.pdf.
+
+    The first decoder is assumed to be the language model.
+    """
+
+    def __init__(self, out_embed_dims, vocab_size, vocab_reduction_module=None):
+        super().__init__(out_embed_dims, vocab_size, vocab_reduction_module)
+        self.gating_network = NonlinearLayer(
+            out_embed_dims[0], 1, bias=True, activation_fn=nn.Sigmoid
+        )
+        self.output_projection = OutputProjection(
+            sum(out_embed_dims), vocab_size, vocab_reduction_module
+        )
+
+    def forward(
+        self,
+        unprojected_outs,
+        src_tokens=None,
+        input_tokens=None,
+        possible_translation_tokens=None,
+        select_single=None,
+    ):
+        assert select_single is None
+        g = self.gating_network(unprojected_outs[0])
+        unprojected_outs[0] = g * unprojected_outs[0]
+        return self.output_projection(
+            torch.cat(unprojected_outs, 2),
+            src_tokens,
+            input_tokens,
+            possible_translation_tokens,
+        )
+
+
+class ColdFusionStrategy(MultiDecoderCombinationStrategy):
+    """Cold fusion following https://arxiv.org/pdf/1708.06426.pdf.
+
+    The first decoder is assumed to be the language model.
+    """
+
+    def __init__(
+        self,
+        out_embed_dims,
+        vocab_size,
+        vocab_reduction_module=None,
+        hidden_layer_size=256,
+    ):
+        super().__init__(out_embed_dims, vocab_size, vocab_reduction_module)
+        self.hidden_layer = NonlinearLayer(
+            vocab_size, hidden_layer_size, bias=False, activation_fn=nn.ReLU
+        )
+        trans_dim = sum(out_embed_dims[1:])
+        self.gating_network = NonlinearLayer(
+            hidden_layer_size + trans_dim,
+            hidden_layer_size,
+            bias=True,
+            activation_fn=nn.Sigmoid,
+        )
+
+        # output_projections is [LM projection, Joint projection]. This is a
+        # trick to load pretrained LM projection.
+        self.output_projections = nn.ModuleList(
+            [
+                OutputProjection(out_embed_dims[0], vocab_size),
+                OutputProjection(
+                    hidden_layer_size + trans_dim, vocab_size, vocab_reduction_module
+                ),
+            ]
+        )
+        self.pre_softmax_activation = nn.ReLU()
+
+    def forward(
+        self,
+        unprojected_outs,
+        src_tokens=None,
+        input_tokens=None,
+        possible_translation_tokens=None,
+        select_single=None,
+    ):
+        assert select_single is None
+        l_lm, _ = self.output_projections[0](
+            unprojected_outs[0], src_tokens, input_tokens, possible_translation_tokens
+        )
+        l_lm_max, _ = torch.max(l_lm, dim=2, keepdim=True)
+        l_lm = l_lm - l_lm_max
+        h_lm = self.hidden_layer(l_lm)
+        s = torch.cat(unprojected_outs[1:], 2)
+        g = self.gating_network(torch.cat([s, h_lm], 2))
+        s_cf = torch.cat([s, g * h_lm], 2)
+        logits, possible_translation_tokens = self.output_projections[1](s_cf)
+        logits = self.pre_softmax_activation(logits)
+        return logits, possible_translation_tokens
+
+
 class ConcatStrategy(MultiDecoderCombinationStrategy):
     """Concatenates decoder outputs."""
 
@@ -293,6 +391,44 @@ class BottleneckStrategy(MultiDecoderCombinationStrategy):
         )
 
 
+class DeepBottleneckStrategy(MultiDecoderCombinationStrategy):
+    """Bottleneck strategy with an additional non-linear layer."""
+
+    def __init__(
+        self,
+        out_embed_dims,
+        vocab_size,
+        vocab_reduction_module=None,
+        activation_fn=torch.nn.ReLU,
+    ):
+        super().__init__(out_embed_dims, vocab_size, vocab_reduction_module)
+        dim = out_embed_dims[0]
+        self.bottleneck = nn.Sequential(
+            Linear(sum(out_embed_dims), dim, bias=True),
+            activation_fn(),
+            Linear(dim, dim, bias=True),
+        )
+        self.output_projection = OutputProjection(
+            dim, vocab_size, vocab_reduction_module
+        )
+
+    def forward(
+        self,
+        unprojected_outs,
+        src_tokens=None,
+        input_tokens=None,
+        possible_translation_tokens=None,
+        select_single=None,
+    ):
+        assert select_single is None
+        return self.output_projection(
+            self.bottleneck(torch.cat(unprojected_outs, 2)),
+            src_tokens,
+            input_tokens,
+            possible_translation_tokens,
+        )
+
+
 class BaseWeightedStrategy(MultiDecoderCombinationStrategy):
     """Base class for strategies with explicitly learned weights."""
 
@@ -304,7 +440,7 @@ class BaseWeightedStrategy(MultiDecoderCombinationStrategy):
         fixed_weights=None,
         hidden_layer_size=32,
         activation_fn=torch.nn.ReLU,
-        norm_fn=torch.exp,
+        logit_fn=torch.exp,
     ):
         """Initializes a combination strategy with explicit weights.
 
@@ -328,7 +464,7 @@ class BaseWeightedStrategy(MultiDecoderCombinationStrategy):
                 activation_fn(),
                 Linear(hidden_layer_size, len(out_embed_dims), bias=True),
             )
-            self.norm_fn = norm_fn
+            self.logit_fn = logit_fn
         else:
             assert len(fixed_weights) == len(out_embed_dims)
             self.fixed_weights = maybe_cuda(torch.Tensor(fixed_weights).view(1, 1, -1))
@@ -352,8 +488,8 @@ class BaseWeightedStrategy(MultiDecoderCombinationStrategy):
             return ret
         if self.fixed_weights is not None:
             return self.fixed_weights
-        logits = self.norm_fn(self.gating_network(torch.cat(unprojected_outs, 2)))
-        return logits / torch.sum(logits, dim=2, keepdim=True)
+        logits = self.logit_fn(self.gating_network(torch.cat(unprojected_outs, 2)))
+        return torch.clamp(logits / torch.sum(logits, dim=2, keepdim=True), 0.0, 1.0)
 
 
 class WeightedStrategy(BaseWeightedStrategy):
@@ -422,11 +558,13 @@ class WeightedUnprojectedStrategy(BaseWeightedStrategy):
         )
 
 
-def create_strategy(
-    strategy_name, out_embed_dims, vocab_size, vocab_reduction_module, fixed_weights
-):
+def parse_strategy_name(strategy_name, n_models):
+    modifier_idx = None
     if "-" in strategy_name:
         strategy_name, strategy_modifier = strategy_name.split("-")
+        if "_" in strategy_modifier:
+            strategy_modifier, modifier_idx = strategy_modifier.split("_")
+            modifier_idx = int(modifier_idx)
     else:
         strategy_modifier = None
     norm_fn = None
@@ -436,6 +574,19 @@ def create_strategy(
         to_log = True
     elif strategy_modifier == "logprobspace":
         norm_fn = F.log_softmax
+    if modifier_idx is not None:
+        norm_fn_list = [None] * n_models
+        norm_fn_list[modifier_idx] = norm_fn
+        norm_fn = norm_fn_list
+    return strategy_name, strategy_modifier, norm_fn, to_log
+
+
+def create_strategy(
+    strategy_name, out_embed_dims, vocab_size, vocab_reduction_module, fixed_weights
+):
+    strategy_name, strategy_modifier, norm_fn, to_log = parse_strategy_name(
+        strategy_name, len(out_embed_dims)
+    )
     if strategy_name == "uniform":
         return UniformStrategy(
             out_embed_dims,
@@ -461,8 +612,16 @@ def create_strategy(
         )
     elif strategy_name == "concat":
         return ConcatStrategy(out_embed_dims, vocab_size, vocab_reduction_module)
+    elif strategy_name == "deepfusion":
+        return DeepFusionStrategy(out_embed_dims, vocab_size, vocab_reduction_module)
+    elif strategy_name == "coldfusion":
+        return ColdFusionStrategy(out_embed_dims, vocab_size, vocab_reduction_module)
     elif strategy_name == "bottleneck":
         return BottleneckStrategy(out_embed_dims, vocab_size, vocab_reduction_module)
+    elif strategy_name == "deep_bottleneck":
+        return DeepBottleneckStrategy(
+            out_embed_dims, vocab_size, vocab_reduction_module
+        )
     elif strategy_name == "multiplicative" and strategy_modifier == "unprojected":
         return MultiplicativeUnprojectedStrategy(
             out_embed_dims, vocab_size, vocab_reduction_module

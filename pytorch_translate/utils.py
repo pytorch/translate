@@ -245,23 +245,27 @@ def average_tensors(tensor_list, norm_fn=None, weights=None):
     Arguments:
         tensor_list (list): Python list of tensors of the same size and same type
         norm_fn (function): If set, apply norm_fn() to elements in `tensor_list`
-            before averaging.
+            before averaging. If list of functions, apply n-th function to
+            n-th tensor.
         weights (list): List of tensors or floats to use to weight models. Must
             be of the same length as `tensor_list`. If none, use uniform weights.
 
     Returns:
         Average of the tensors in `tensor_list`
     """
+    n_tensors = len(tensor_list)
     if weights is None:
-        weights = [1.0 / float(len(tensor_list))] * len(tensor_list)
-    assert len(tensor_list) == len(weights)
-    if norm_fn is None:
+        weights = [1.0 / float(n_tensors)] * n_tensors
+    if not isinstance(norm_fn, list):
+        norm_fn = [norm_fn] * n_tensors
+    assert n_tensors == len(weights)
+    assert n_tensors == len(norm_fn)
 
-        def id_fn(x, dim):
-            return x
+    def id_fn(x, dim):
+        return x
 
-        norm_fn = id_fn
+    norm_fn = [id_fn if f is None else f for f in norm_fn]
     acc = torch.zeros_like(tensor_list[0])
-    for w, t in zip(weights, tensor_list):
-        acc += w * norm_fn(t, dim=-1)
+    for f, w, t in zip(norm_fn, weights, tensor_list):
+        acc += w * f(t, dim=-1)
     return acc
