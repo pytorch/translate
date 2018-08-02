@@ -4,7 +4,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from fairseq import utils
-from pytorch_translate import attention
+from pytorch_translate import (
+    attention,
+    utils as pytorch_translate_utils,
+)
 from pytorch_translate.common_layers import (
     DecoderWithOutputProjection,
     Embedding,
@@ -71,6 +74,10 @@ class NGramDecoder(DecoderWithOutputProjection):
             embedding_dim=embed_dim,
             padding_idx=padding_idx,
             freeze_embed=freeze_embed,
+        )
+        pytorch_translate_utils.load_embedding(
+            embedding=self.embed_tokens,
+            dictionary=dst_dict,
             pretrained_embed=pretrained_embed,
         )
 

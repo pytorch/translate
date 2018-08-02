@@ -15,6 +15,7 @@ from fairseq.models import (
     transformer as fairseq_transformer,
 )
 from fairseq.modules import SinusoidalPositionalEmbedding
+from pytorch_translate.common_layers import Embedding
 
 
 @register_model("ptt_transformer")
@@ -59,6 +60,15 @@ class TransformerModel(FairseqModel):
             help="encoder embedding dimension for FFN",
         )
         parser.add_argument(
+            "--encoder-freeze-embed",
+            default=False,
+            action="store_true",
+            help=(
+                "whether to freeze the encoder embedding or allow it to be "
+                "updated during training"
+            ),
+        )
+        parser.add_argument(
             "--encoder-layers", type=int, metavar="N", help="num encoder layers"
         )
         parser.add_argument(
@@ -96,6 +106,15 @@ class TransformerModel(FairseqModel):
             type=int,
             metavar="N",
             help="decoder embedding dimension for FFN",
+        )
+        parser.add_argument(
+            "--decoder-freeze-embed",
+            default=False,
+            action="store_true",
+            help=(
+                "whether to freeze the encoder embedding or allow it to be "
+                "updated during training"
+            ),
         )
         parser.add_argument(
             "--decoder-layers", type=int, metavar="N", help="num decoder layers"
@@ -141,10 +160,10 @@ class TransformerModel(FairseqModel):
 
         src_dict, tgt_dict = task.source_dictionary, task.target_dictionary
 
-        def build_embedding(dictionary, embed_dim, path=None):
+        def build_embedding(dictionary, embed_dim, freeze, path=None):
             num_embeddings = len(dictionary)
             padding_idx = dictionary.pad()
-            emb = fairseq_transformer.Embedding(num_embeddings, embed_dim, padding_idx)
+            emb = Embedding(num_embeddings, embed_dim, padding_idx, freeze)
             # if provided, load from preloaded dictionaries
             if path:
                 embed_dict = utils.parse_embedding(path)
@@ -168,16 +187,25 @@ class TransformerModel(FairseqModel):
                     "--share-all-embeddings not compatible with --decoder-embed-path"
                 )
             encoder_embed_tokens = build_embedding(
-                src_dict, args.encoder_embed_dim, args.encoder_embed_path
+                src_dict,
+                args.encoder_embed_dim,
+                args.encoder_embed_path,
+                args.encoder_freeze_embed,
             )
             decoder_embed_tokens = encoder_embed_tokens
             args.share_decoder_input_output_embed = True
         else:
             encoder_embed_tokens = build_embedding(
-                src_dict, args.encoder_embed_dim, args.encoder_embed_path
+                src_dict,
+                args.encoder_embed_dim,
+                args.encoder_embed_path,
+                args.encoder_freeze_embed,
             )
             decoder_embed_tokens = build_embedding(
-                tgt_dict, args.decoder_embed_dim, args.decoder_embed_path
+                tgt_dict,
+                args.decoder_embed_dim,
+                args.decoder_embed_path,
+                args.decoder_freeze_embed,
             )
 
         encoder = TransformerEncoder(args, src_dict, encoder_embed_tokens)

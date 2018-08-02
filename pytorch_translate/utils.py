@@ -7,7 +7,7 @@ import os
 import time
 
 import torch
-from fairseq import models
+from fairseq import utils
 
 
 # Helper type for argparse to enable flippable boolean flags. For example,
@@ -269,3 +269,26 @@ def average_tensors(tensor_list, norm_fn=None, weights=None):
     for f, w, t in zip(norm_fn, weights, tensor_list):
         acc += w * f(t, dim=-1)
     return acc
+
+
+def load_embedding(embedding, dictionary, pretrained_embed):
+    """Loads pretrained embeddings.
+
+    Loads pretrained embeddings into a nn.Embedding layer. pretrained_embed
+    can either be a nn.Embedding layer, in which case the embedding is set
+    to the pretrained_embed argument, or a path to an embedding file.
+
+    Arguments:
+        embedding (nn.Embedding): Embedding layer whose weights are to be set.
+        dictionary (fairseq.data.dictionary.Dictionary): dictionary with the
+            same vocabulary size as the embedding argument.
+        pretrained_embed (Union(string, nn.Embedding)): source of the
+            weights to be loaded.
+    """
+    if pretrained_embed is None:
+        pass
+    elif isinstance(pretrained_embed, torch.nn.Embedding):
+        embedding.weight = pretrained_embed.weight
+    else:
+        embed_dict = utils.parse_embedding(pretrained_embed)
+        utils.load_embedding(embed_dict, dictionary, embedding)
