@@ -9,6 +9,7 @@ import torch
 from fairseq import bleu, data, options, progress_bar, tasks, tokenizer, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
 from pytorch_translate import rnn  # noqa
+from pytorch_translate import transformer  # noqa
 from pytorch_translate import (
     beam_decode,
     char_data,
