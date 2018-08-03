@@ -19,6 +19,7 @@ from pytorch_translate import (
     dictionary as pytorch_translate_dictionary,
     vocab_reduction,
     word_dropout,
+    utils as pytorch_translate_utils,
 )
 from pytorch_translate.common_layers import (
     DecoderWithOutputProjection,
@@ -84,8 +85,7 @@ class RNNModel(FairseqModel):
             "--encoder-pretrained-embed",
             default=None,
             metavar="FILE",
-            help="Path to a file of pretrained embeddings. Should have"
-            "dimensions vocab_size x encoder-embed-dim.",
+            help="path to pre-trained encoder embedding",
         )
         parser.add_argument(
             "--encoder-freeze-embed",
@@ -127,15 +127,14 @@ class RNNModel(FairseqModel):
             "--decoder-pretrained-embed",
             default=None,
             metavar="FILE",
-            help="Path to a file of pretrained embeddings. Should have"
-            "dimensions vocab_size x decoder-embed-dim.",
+            help="path to pre-trained decoder embedding",
         )
         parser.add_argument(
             "--decoder-freeze-embed",
             default=False,
             action="store_true",
             help=(
-                "whether to freeze the encoder embedding or allow it to be "
+                "whether to freeze the decoder embedding or allow it to be "
                 "updated during training"
             ),
         )
@@ -155,8 +154,7 @@ class RNNModel(FairseqModel):
             "--decoder-out-pretrained-embed",
             default=None,
             metavar="FILE",
-            help="Path to a file of pretrained embeddings. Should have"
-            "dimensions vocab_size x decoder-embed-dim.",
+            help="path to pre-trained decoder output embedding",
         )
         parser.add_argument(
             "--decoder-tie-embeddings",
@@ -360,16 +358,6 @@ class RNNModel(FairseqModel):
     def build_single_encoder(args, src_dict):
         if not args.encoder_hidden_dim:
             return DummyEncoder(src_dict, num_layers=args.encoder_layers)
-        if args.encoder_pretrained_embed:
-            encoder_embed_weights = np.load(args.encoder_pretrained_embed)
-            if not args.encoder_embed_dim:
-                args.encoder_embed_dim = encoder_embed_weights.shape[1]
-            else:
-                embed_shape = (len(src_dict), args.encoder_embed_dim)
-                assert embed_shape == encoder_embed_weights.shape, (
-                    "--encoder-pretrained-embed must have embedding size "
-                    f"{embed_shape} but found size {encoder_embed_weights.shape}."
-                )
         if args.sequence_lstm:
             encoder_class = LSTMSequenceEncoder
         else:
@@ -399,26 +387,6 @@ class RNNModel(FairseqModel):
         if is_lm:
             attention_type = "no"
             encoder_hidden_dim = 0
-        if args.decoder_pretrained_embed:
-            decoder_embed_weights = np.load(args.decoder_pretrained_embed)
-            if not args.decoder_embed_dim:
-                args.decoder_embed_dim = decoder_embed_weights.shape[1]
-            else:
-                embed_shape = (len(dst_dict), args.decoder_embed_dim)
-                assert embed_shape == decoder_embed_weights.shape, (
-                    "--decoder-pretrained-embed must have embedding size "
-                    f"{embed_shape} but found size {decoder_embed_weights.shape}."
-                )
-        if args.decoder_out_pretrained_embed:
-            decoder_out_embed_weights = np.load(args.decoder_out_pretrained_embed)
-            if not args.decoder_out_embed_dim:
-                args.decoder_out_embed_dim = decoder_out_embed_weights.shape[1]
-            else:
-                embed_shape = (len(dst_dict), args.decoder_out_embed_dim)
-                assert embed_shape == decoder_out_embed_weights.shape, (
-                    "--decoder-out-pretrained-embed must have embedding size "
-                    f"{embed_shape} but found size {decoder_out_embed_weights.shape}."
-                )
         if ngram_decoder:
             if args.ngram_activation_type == "relu":
                 activation_fn = nn.ReLU
@@ -622,16 +590,17 @@ class LSTMSequenceEncoder(FairseqEncoder):
         self.padding_value = padding_value
         self.left_pad = left_pad
 
-        if pretrained_embed is not None and type(pretrained_embed) is not str:
-            self.embed_tokens = pretrained_embed
-        else:
-            self.embed_tokens = Embedding(
-                num_embeddings=num_embeddings,
-                embedding_dim=embed_dim,
-                padding_idx=self.padding_idx,
-                freeze_embed=freeze_embed,
-                pretrained_embed=pretrained_embed,
-            )
+        self.embed_tokens = Embedding(
+            num_embeddings=num_embeddings,
+            embedding_dim=embed_dim,
+            padding_idx=self.padding_idx,
+            freeze_embed=freeze_embed,
+        )
+        pytorch_translate_utils.load_embedding(
+            embedding=self.embed_tokens,
+            dictionary=dictionary,
+            pretrained_embed=pretrained_embed,
+        )
         self.word_dim = embed_dim
 
         self.layers = nn.ModuleList([])
@@ -791,16 +760,17 @@ class RNNEncoder(FairseqEncoder):
         self.padding_value = padding_value
         self.left_pad = left_pad
 
-        if pretrained_embed is not None and type(pretrained_embed) is not str:
-            self.embed_tokens = pretrained_embed
-        else:
-            self.embed_tokens = Embedding(
-                num_embeddings=num_embeddings,
-                embedding_dim=embed_dim,
-                padding_idx=self.padding_idx,
-                freeze_embed=freeze_embed,
-                pretrained_embed=pretrained_embed,
-            )
+        self.embed_tokens = Embedding(
+            num_embeddings=num_embeddings,
+            embedding_dim=embed_dim,
+            padding_idx=self.padding_idx,
+            freeze_embed=freeze_embed,
+        )
+        pytorch_translate_utils.load_embedding(
+            embedding=self.embed_tokens,
+            dictionary=dictionary,
+            pretrained_embed=pretrained_embed,
+        )
         self.word_dim = embed_dim
 
         self.cell_type = cell_type
@@ -947,22 +917,24 @@ class RNNDecoder(DecoderWithOutputProjection):
 
         num_embeddings = len(dst_dict)
         padding_idx = dst_dict.pad()
-        if pretrained_embed is not None and type(pretrained_embed) is not str:
-            self.embed_tokens = pretrained_embed
-        else:
-            self.embed_tokens = Embedding(
-                num_embeddings=num_embeddings,
-                embedding_dim=embed_dim,
-                padding_idx=padding_idx,
-                freeze_embed=freeze_embed,
-                pretrained_embed=pretrained_embed,
-            )
+        self.embed_tokens = Embedding(
+            num_embeddings=num_embeddings,
+            embedding_dim=embed_dim,
+            padding_idx=padding_idx,
+            freeze_embed=freeze_embed,
+        )
         if self.tie_embeddings:
             assert self.embed_dim == self.out_embed_dim, (
                 "Input embeddings and output projections must have the same "
                 "dimension for the weights to be tied"
             )
             self.embed_tokens.weight = self.output_projection_w
+        else:
+            pytorch_translate_utils.load_embedding(
+                embedding=self.embed_tokens,
+                dictionary=dst_dict,
+                pretrained_embed=pretrained_embed,
+            )
 
         self.hidden_dim = hidden_dim
         self.averaging_encoder = averaging_encoder
@@ -1152,11 +1124,13 @@ def base_architecture(args):
     args.encoder_bidirectional = getattr(args, "encoder_bidirectional", False)
     args.encoder_dropout_in = getattr(args, "encoder_dropout_in", args.dropout)
     args.encoder_dropout_out = getattr(args, "encoder_dropout_out", args.dropout)
-    args.pretrained_embed = getattr(args, "pretrained_embed", None)
+    args.encoder_pretrained_embed = getattr(args, "encoder_pretrained_embed", None)
     args.decoder_embed_dim = getattr(args, "decoder_embed_dim", 512)
     args.decoder_layers = getattr(args, "decoder_layers", 1)
     args.decoder_hidden_dim = getattr(args, "decoder_hidden_dim", 512)
+    args.decoder_pretrained_embed = getattr(args, "decoder_pretrained_embed", None)
     args.decoder_out_embed_dim = getattr(args, "decoder_out_embed_dim", 512)
+    args.decoder_out_pretrained_embed = getattr(args, "decoder_out_pretrained_embed", None)
     args.attention_type = getattr(args, "attention_type", "dot")
     args.decoder_dropout_in = getattr(args, "decoder_dropout_in", args.dropout)
     args.decoder_dropout_out = getattr(args, "decoder_dropout_out", args.dropout)
@@ -1178,11 +1152,6 @@ def base_architecture(args):
     word_dropout.set_arg_defaults(args)
     args.sequence_lstm = getattr(args, "sequence_lstm", False)
     args.decoder_tie_embeddings = getattr(args, "decoder_tie_embeddings", False)
-    args.encoder_pretrained_embed = getattr(args, "encoder_pretrained_embed", None)
-    args.decoder_pretrained_embed = getattr(args, "decoder_pretrained_embed", None)
-    args.decoder_out_pretrained_embed = getattr(
-        args, "decoder_out_pretrained_embed", None
-    )
 
 
 @register_model_architecture("rnn", "rnn_big_test")

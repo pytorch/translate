@@ -17,7 +17,7 @@ class ModelParamsDict:
         # Model params
         self.arch = "rnn"
         self.encoder_embed_dim = 10
-        self.encoder_pretrained_embed = None
+        self.encoder_embed_path = None
         self.encoder_freeze_embed = False
         self.encoder_hidden_dim = 10
         self.encoder_layers = 2
@@ -25,11 +25,11 @@ class ModelParamsDict:
         self.encoder_dropout_in = 0
         self.encoder_dropout_out = 0
         self.decoder_embed_dim = 10
-        self.decoder_pretrained_embed = None
+        self.decoder_embed_path = None
         self.decoder_freeze_embed = False
         self.decoder_hidden_dim = 10
         self.decoder_out_embed_dim = 5
-        self.decoder_out_pretrained_embed = None
+        self.decoder_out_embed_path = None
         self.decoder_layers = 2
         self.dropout = 0
         self.decoder_dropout_in = 0
@@ -190,6 +190,36 @@ def create_lexical_dictionaries():
     )
     return [lexical_dictionary_path]
 
+
+def create_pretrained_embed(dictionary, embed_dim):
+    """Creates a dummy embedding file in the format accepted by fairseq. An
+    embedding file has the following format: the first line has vocabulary size
+    and dimension. The following lines contain word and space-separated
+    embedding values.
+
+    Example:
+        2 5
+        the -0.0230 -0.0264  0.0287  0.0171  0.1403
+        at -0.0395 -0.1286  0.0275  0.0254 -0.0932
+
+    Arguments:
+        dictionary (fairseq.data.dictionary.Dictionary): dictionary with
+            sample tokens as entries
+        embed_dim (int): embedding dimension to be generated
+
+    Returns:
+        Path to a text file with dummy embeddings in the format described above.
+    """
+
+    embed_weights = np.random.random((len(dictionary), embed_dim))
+    pretrained_embed_path = write_lines_to_temp_file(
+        ["{} {}".format(len(dictionary), embed_dim)] +
+        [
+            "{} {}".format(token, " ".join([str(val) for val in embedding]))
+            for token, embedding in zip(dictionary.symbols, embed_weights)
+        ]
+    )
+    return pretrained_embed_path, embed_weights
 
 def create_test_text_files():
     src = write_lines_to_temp_file(

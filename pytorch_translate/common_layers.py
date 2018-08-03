@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from fairseq.models import FairseqIncrementalDecoder
+from fairseq import utils
 from pytorch_translate import rnn_cell  # noqa
 from pytorch_translate import vocab_reduction
 
@@ -144,7 +145,7 @@ class RNNLayer(nn.Module):
 
 
 def Embedding(
-    num_embeddings, embedding_dim, padding_idx, freeze_embed, pretrained_embed=None
+    num_embeddings, embedding_dim, padding_idx, freeze_embed
 ):
     """
     A wrapper around the embedding layer, which can be randomly
@@ -152,11 +153,8 @@ def Embedding(
     """
 
     m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
-    if pretrained_embed is not None:
-        weights = np.load(pretrained_embed)
-        m.weight.data = torch.FloatTensor(weights)
-    else:
-        m.weight.data.uniform_(-0.1, 0.1)
+    nn.init.uniform_(m.weight, -0.1, 0.1)
+    nn.init.constant_(m.weight[padding_idx], 0.)
     if freeze_embed:
         m.weight.requires_grad = False
     return m
@@ -207,24 +205,19 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
                     src_dict, dst_dict, vocab_reduction_params
                 )
 
-            if pretrained_embed is not None:
-                projection_weights = np.load(pretrained_embed)
-                embed_shape = (self.num_embeddings, self.out_embed_dim)
-                assert projection_weights.shape == embed_shape, (
-                    "--decoder-out-pretrained-embed must have dimensions"
-                    f"{embed_shape}, got "
-                    f"{projection_weights.shape}. To use pretrained embeddings, "
-                    "set the --decoder-out-embed-dim parameter to zero."
-                )
-                self.output_projection_w = nn.Parameter(
-                    torch.FloatTensor(projection_weights)
-                )
-            else:
-                self.output_projection_w = nn.Parameter(
-                    torch.FloatTensor(self.num_embeddings, self.out_embed_dim).uniform_(
-                        -0.1, 0.1
-                    )
-                )
+            projection_weights = torch.FloatTensor(
+                self.num_embeddings, self.out_embed_dim
+            ).uniform_(-0.1, 0.1)
+            if isinstance(pretrained_embed, nn.Embedding):
+                projection_weights.data = pretrained_embed.weights.data
+            elif pretrained_embed is not None:
+                embed_dict = utils.parse_embedding(pretrained_embed)
+                # equivalent to utils.load_embedding but for nn.Parameter
+                for idx in range(len(dst_dict)):
+                    token = dst_dict[idx]
+                    if token in embed_dict:
+                        projection_weights[idx] = embed_dict[token]
+            self.output_projection_w = nn.Parameter(projection_weights)
             self.output_projection_b = nn.Parameter(
                 torch.FloatTensor(self.num_embeddings).zero_()
             )
