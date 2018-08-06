@@ -30,6 +30,10 @@ class BruteForceAdversary(BaseAdversary):
         )
 
     def forward(self, sample, input_gradients):
+        """This computes the best replacement such that
+
+        [adv_token[i] - src_token[i]].dot(input_gradient) is *minimal*
+        """
         src_tokens = sample["net_input"]["src_tokens"]
         batch_size, src_length = src_tokens.size()
         # Careful that the number of swaps is not greater than the size of the sentences
@@ -60,35 +64,35 @@ class BruteForceAdversary(BaseAdversary):
         #    of shape B x T x |V|. The value at index b,t,i is the dot product
         #    between the gradient wrt. step t of batch element b and the
         #    difference between the embedding of word i and the word embedding
-        #    at step t
-        direction_dot_grad = prev_embed_dot_grad.unsqueeze(-1) - new_embed_dot_grad
+        #    at step t. We take the negation so that minimization -> maximization
+        neg_dir_dot_grad = prev_embed_dot_grad.unsqueeze(-1) - new_embed_dot_grad
         # 3.5 Renormalize if necessary
         if self.args.normalize_directions:
             # Compute the direction norm (= distance word/substitution)
             direction_norm = pairwise_distance(src_embeds, embedding_matrix)
             # Renormalize
-            direction_dot_grad /= direction_norm
+            neg_dir_dot_grad /= direction_norm
         # 4. Apply constraints
         self.constraints.apply(
-            direction_dot_grad,
+            neg_dir_dot_grad,
             src_tokens,
             src_embeds,
             embedding_matrix
         )
         # 4. Next we find the best substitution at each step by taking the max
-        score_at_each_step, best_at_each_step = direction_dot_grad.max(2)
+        score_at_each_step, best_at_each_step = neg_dir_dot_grad.max(2)
         # 5. Pick the best positions (the topk highest scores)
         _, best_positions = score_at_each_step.topk(
             max_swaps
         )
         # 6. Create adversarial examples.
-        adv_tokens = src_tokens.detach()
+        adv_tokens = src_tokens.clone()
         # Assign new values
+        # We clone all tensors to be safe
+        # (otherwise there might be CUDA illegal memory access errors)
+        index = best_positions.clone()
+        src = best_at_each_step.gather(dim=1, index=best_positions.clone())
         # adv_tokens[b, best_positions[t]]=best_at_each_step[b, best_positions[t]]
-        adv_tokens.scatter_(
-            dim=1,
-            index=best_positions,
-            src=best_at_each_step.gather(dim=1, index=best_positions)
-        )
+        adv_tokens.scatter_(dim=1, index=index, src=src)
         # Return
         return adv_tokens

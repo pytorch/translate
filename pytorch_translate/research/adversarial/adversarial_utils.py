@@ -111,3 +111,54 @@ def load_one_to_many_dict(filename):
                 continue
 
     return dic
+
+
+def tile(tensor, dim, repeat):
+    """Repeat each element `repeat` times along dimension `dim`"""
+    # We will insert a new dim in the tensor and torch.repeat it
+    # First we get the repeating counts
+    repeat_dims = [1] * len(tensor.size())
+    repeat_dims.insert(dim + 1, repeat)
+    # And the final dims
+    new_dims = list(tensor.size())
+    new_dims[dim] = 2 * tensor.size(dim)
+    # Now unsqueeze, repeat and reshape
+    return tensor.unsqueeze(dim + 1).repeat(*repeat_dims).view(*new_dims)
+
+
+def detach_sample(sample):
+    """Detach sample to save memory"""
+
+    if len(sample) == 0:
+        return {}
+
+    def _detach(maybe_tensor):
+        if torch.is_tensor(maybe_tensor):
+            return maybe_tensor.detach()
+        elif isinstance(maybe_tensor, dict):
+            return {key: _detach(val) for key, val in maybe_tensor.items()}
+        elif isinstance(maybe_tensor, list):
+            return [_detach(val) for val in maybe_tensor]
+        else:
+            return maybe_tensor
+
+    return _detach(sample)
+
+
+def clone_sample(sample):
+    """Clone sample to save memory"""
+
+    if len(sample) == 0:
+        return {}
+
+    def _clone(maybe_tensor):
+        if torch.is_tensor(maybe_tensor):
+            return maybe_tensor.clone()
+        elif isinstance(maybe_tensor, dict):
+            return {key: _clone(val) for key, val in maybe_tensor.items()}
+        elif isinstance(maybe_tensor, list):
+            return [_clone(val) for val in maybe_tensor]
+        else:
+            return maybe_tensor
+
+    return _clone(sample)

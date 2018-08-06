@@ -33,7 +33,9 @@ class DummyArgs(NamedTuple):
     alternatives_file: str
     by_gradient_norm: bool
     temperature: float
-    forbidden_words: list
+    forbidden_tokens: list
+    allowed_tokens: list
+    allow_identity: bool
 
     def __str__(self):
         return (
@@ -43,7 +45,10 @@ class DummyArgs(NamedTuple):
             f"{self.cosine_nn}_"
             f"{self.alternatives_file}_"
             f"{self.by_gradient_norm}_"
-            f"{self.temperature}"
+            f"{self.temperature}_"
+            f"{'&'.join(self.forbidden_tokens)}_"
+            f"{'&'.join(self.allowed_tokens)}_"
+            f"{self.allow_identity}"
         )
 
 
@@ -72,7 +77,9 @@ class AdversariesTest(unittest.TestCase):
         self.alternatives_file_range = ["", self.alts_file]
         self.by_gradient_norm_range = [False, True]
         self.temperature_range = [0, 1, 10]
-        self.forbidden_words_range = [[], [self.symbols[0]], self.symbols[:1]]
+        self.forbidden_tokens_range = [[], self.symbols[:1]]
+        self.allowed_tokens_range = [[], self.symbols[2:]]
+        self.allow_identity_range = [True, False]
 
     def _toy_model(self):
         embed_tokens = torch.nn.Embedding(self.voc_size, self.dim)
@@ -129,6 +136,8 @@ class AdversariesTest(unittest.TestCase):
                 print(" ".join([symbol] + alternatives), file=af)
 
     def _test_direction(self, adversary, name="direction"):
+        """Check that the replacement results in a movement
+        in word embedding space that is opposite to the gradient"""
         sample = self._dummy_sample()
         grad = self._dummy_gradient()
         adv_tokens = adversary(sample, grad)
@@ -137,7 +146,7 @@ class AdversariesTest(unittest.TestCase):
         delta = new_embeds - prev_embeds
         delta_dot_grad = (delta * grad).sum(-1).sum(-1).data.numpy()
         for b, ddd in enumerate(delta_dot_grad):
-            self.assertGreaterEqual(ddd, 0, f"[{name}]: Direction error in batch {b}")
+            self.assertLessEqual(ddd, 0, f"[{name}]: Direction error in batch {b}")
 
     def _test_decrease_loss(self, adversary, name="decrease_loss"):
         sample = self._dummy_sample()
@@ -190,10 +199,13 @@ class AdversariesTest(unittest.TestCase):
             self.alternatives_file_range,
             [False],    # by_gradient_norm
             [0],        # temperature
-            self.forbidden_words_range,
+            self.forbidden_tokens_range,
+            self.allowed_tokens_range,
+            self.allow_identity_range,
         )
         for args in grid_args:
-            _, _, nearest_neighbors, cosine_nn, _, _, _, _ = args
+            nearest_neighbors = args[2]
+            cosine_nn = args[3]
             # Ignore this combination
             if nearest_neighbors == 0 and cosine_nn:
                 continue
@@ -211,19 +223,15 @@ class AdversariesTest(unittest.TestCase):
             self.alternatives_file_range,
             self.by_gradient_norm_range,
             self.temperature_range,
-            self.forbidden_words_range,
+            self.forbidden_tokens_range,
+            self.allowed_tokens_range,
+            self.allow_identity_range,
         )
         for args in grid_args:
-            (
-                _,
-                _,
-                nearest_neighbors,
-                cosine_nn,
-                _,
-                by_gradient_norm,
-                temperature,
-                _
-            ) = args
+            nearest_neighbors = args[2]
+            cosine_nn = args[3]
+            by_gradient_norm = args[5]
+            temperature = args[6]
             # Ignore those combinations
             if nearest_neighbors == 0 and cosine_nn:
                 continue
@@ -242,13 +250,14 @@ class AdversariesTest(unittest.TestCase):
                 )
 
     def test_brute_force_decrease_loss(self):
-        for args in self._brute_force_grid_args():
-            print(f"Testing {args}", flush=True)
-            for n_try in range(self.num_random_retries):
-                self._test_decrease_loss(
-                    self._get_brute_force_adversary(args),
-                    name=f"brute_force_direction_{args}_#{n_try}",
-                )
+        # Only test for loss decrease with the default constraints
+        args = next(self._brute_force_grid_args())
+        print(f"Testing {args}", flush=True)
+        for n_try in range(self.num_random_retries):
+            self._test_decrease_loss(
+                self._get_brute_force_adversary(args),
+                name=f"brute_force_direction_{args}_#{n_try}",
+            )
 
     def test_brute_force_works(self):
         for args in self._brute_force_grid_args():

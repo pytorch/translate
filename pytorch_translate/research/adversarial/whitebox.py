@@ -82,7 +82,7 @@ def get_parser_with_args():
     )
 
     # Adversarial attack specific group
-    adversarial_options.add_adversarial_args(parser)
+    adversarial_options.add_adversarial_args(parser, attack_only=True)
 
     return parser
 
@@ -140,7 +140,7 @@ def setup_attack(args):
         reverse_source=model_args.reverse_source,
     )
 
-    # Create criterion
+    # Create adversarial criterion
     adv_criterion = task.build_adversarial_criterion(args)
 
     # Adversary
@@ -267,7 +267,8 @@ def adversarial_attack_iterator(
         bsz, srclen = net_input["src_tokens"].size()
         # Generate the adversarial tokens
         timer.start()
-        adv_tokens = adv_trainer.gen_adversarial_examples(sample).int().cpu()
+        adv_tokens, _ = adv_trainer.gen_adversarial_examples(sample)
+        adv_tokens = adv_tokens.int().cpu()
         timer.stop(srclen)
         # Iterate over the samples in the batch
         for b, id in enumerate(sample["id"]):

@@ -14,20 +14,38 @@ from pytorch_translate.research.adversarial.adversaries import (
 from .adversarial_constraints import AdversarialConstraints
 
 
-def add_adversarial_args(parser):
+def add_adversarial_args(parser, attack_only=False, train=False):
     """Adds arguments specific to adversarial example generation"""
     group = parser.add_argument_group("Adversarial examples arguments")
 
-    group.add_argument("--quiet", action="store_true",
-        help="Don't print the adversarial sentences to stdout")
+    if attack_only:
+        group.add_argument("--quiet", action="store_true",
+            help="Don't print the adversarial sentences to stdout")
+        group.add_argument(
+            "--path",
+            metavar="DIR/FILE",
+            default=None,
+            help="path(s) to model file(s), colon separated "
+            "(only one model is supported right now)"
+        )
+    if train:
+        group.add_argument(
+            "--adv-weight",
+            default=0.5,
+            metavar="EPS",
+            type=float,
+            help="Weight (between 0 and 1) of the adversarial samples during "
+            "training",
+        )
+        group.add_argument(
+            "--warmup-epochs",
+            default=1,
+            metavar="N",
+            type=int,
+            help="Minimum number of epochs of training before adversarial "
+            "augmentation kicks in"
+        )
 
-    group.add_argument(
-        "--path",
-        metavar="DIR/FILE",
-        default=None,
-        help="path(s) to model file(s), colon separated "
-        "(only one model is supported right now)"
-    )
     # Trainer Arguments
     group.add_argument(
         "--modify-gradient",
@@ -115,7 +133,7 @@ def parse_args_and_adversary(parser, input_args=None):
 
     # Add adversarial criterion-specific args to parser.
     adv_criterion_specific_group = parser.add_argument_group(
-        f"Arguments for adversarial criterion \"{args.adv_criterion}\"",
+        f"Arguments for criterion \"{args.adv_criterion}\"",
         # Only include attributes which are explicitly given as command-line
         # arguments or which have default values.
         argument_default=argparse.SUPPRESS,
@@ -161,5 +179,44 @@ def parse_args_and_adversary(parser, input_args=None):
     # Apply architecture configuration.
     if hasattr(args, 'arch'):
         ARCH_CONFIG_REGISTRY[args.arch](args)
+
+    return args
+
+
+def parse_args_and_arch_and_adversary(parser, input_args=None):
+    """This does the same thing as fairseq.options.parse_args_and_arch
+    but with the adversarial criterion and adversary as well."""
+    # The parser doesn't know about model/criterion/optimizer-specific args, so
+    # we parse twice. First we parse the model/criterion/optimizer, then we
+    # parse a second time after adding the *-specific arguments.
+    # If input_args is given, we will parse those args instead of sys.argv.
+    args, _ = parser.parse_known_args(input_args)
+
+    # Add model-specific args to parser.
+    model_specific_group = parser.add_argument_group(
+        'Model-specific configuration',
+        # Only include attributes which are explicitly given as command-line
+        # arguments or which have default values.
+        argument_default=argparse.SUPPRESS,
+    )
+    ARCH_MODEL_REGISTRY[args.arch].add_args(model_specific_group)
+
+    # Add *-specific args to parser.
+    CRITERION_REGISTRY[args.criterion].add_args(parser)
+    OPTIMIZER_REGISTRY[args.optimizer].add_args(parser)
+    LR_SCHEDULER_REGISTRY[args.lr_scheduler].add_args(parser)
+    CRITERION_REGISTRY[args.adv_criterion].add_args(parser)
+    ADVERSARY_REGISTRY[args.adversary].add_args(parser)
+
+    # Parse a second time.
+    args = parser.parse_args(input_args)
+
+    # Post-process args.
+    args.lr = list(map(float, args.lr.split(',')))
+    if args.max_sentences_valid is None:
+        args.max_sentences_valid = args.max_sentences
+
+    # Apply architecture configuration.
+    ARCH_CONFIG_REGISTRY[args.arch](args)
 
     return args

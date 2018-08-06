@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 
 from collections import defaultdict, OrderedDict
+from itertools import chain
+
 import torch
 import torch.nn.functional as F
 
+from fairseq import distributed_utils
 from fairseq.trainer import Trainer
 from fairseq.meters import AverageMeter, TimeMeter
+
+from .adversarial_utils import tile, detach_sample, clone_sample
 
 
 class AdversarialTrainer(Trainer):
@@ -40,6 +45,9 @@ class AdversarialTrainer(Trainer):
         self.criterion = criterion.cuda() if criterion is not None else None
         self.adversarial_criterion = adversarial_criterion.cuda()
         self.adversary = adversary.cuda()
+
+        # Weighting
+        self.adv_weight = getattr(args, "adv_weight", 0)
 
         # initialize meters
         self.init_meters()
@@ -79,17 +87,20 @@ class AdversarialTrainer(Trainer):
         # Set the model to adversarial mode
         self.model.encoder.set_gradient_tracking_mode(True)
 
+        # Keep track of ooms
+        ooms_adv = 0
+
         # The initial adversarial input is just the original input
         adversarial_input = sample["net_input"]["src_tokens"]
 
         for _ in range(self.args.n_attack_iterations):
             # Set sample input tokens to the adversarial input
-            sample["net_input"]["src_tokens"] = adversarial_input
+            sample["net_input"]["src_tokens"] = adversarial_input.detach()
 
             # forward pass
-            (
-                loss, sample_sizes, logging_outputs, ooms_fwd
-            ) = self._forward_adversarial(sample)
+            (loss, sample_sizes, logging_outputs, ooms_fwd) = self._forward_adversarial(
+                sample
+            )
 
             # aggregate stats and logging outputs
             ntokens = sum(log.get("ntokens", 0) for log in logging_outputs)
@@ -98,26 +109,59 @@ class AdversarialTrainer(Trainer):
             # backward pass, get input_gradients
             input_gradients, ooms_bwd = self._get_gradients_wrt_input(loss)
 
-            # Modify gradients if needs be
-            if self.args.modify_gradient == "sign":
-                input_gradients = torch.sign(input_gradients)
-            elif self.args.modify_gradient == "normalize":
-                input_gradients = F.normalize(input_gradients, dim=2)
+            # Get adversarial inputs from the adversary
+            adversarial_input, ooms_attack = self._get_adv_input(
+                sample, input_gradients
+            )
 
-            # perturbate input
-            adversarial_input = self.adversary(sample, input_gradients)
+            # Zero gradients so that gradients from adversarial example
+            # generation don't pollute training
+            self.model.zero_grad()
 
             # Update ooms at each iteration
-            self.meters["oom"].update(ooms_fwd + ooms_bwd)
+            ooms_adv += ooms_fwd + ooms_bwd + ooms_attack
+            self.meters["oom"].update(ooms_adv)
+            # Abort if there is an OOM
+            if ooms_adv > 0:
+                break
 
         # update other meters after all iterations
         self.meters["wps"].update(ntokens)
         self.meters["wpb"].update(ntokens)
         self.meters["bsz"].update(nsentences)
+
         # Deactivate adversarial mode
         self.model.encoder.set_gradient_tracking_mode(False)
 
-        return adversarial_input
+        return adversarial_input.detach(), ooms_adv
+
+    def _get_adv_input(self, sample, input_gradients):
+        """A wrapper around the call to the adversary robust to OOMs"""
+        oom = 0
+        adversarial_input = sample["net_input"]["src_tokens"].detach()
+        if input_gradients is not None:
+            try:
+                # Modify gradients if needs be
+                if self.args.modify_gradient == "sign":
+                    input_gradients = torch.sign(input_gradients)
+                elif self.args.modify_gradient == "normalize":
+                    input_gradients = F.normalize(input_gradients, dim=2)
+
+                # perturbate input
+                adversarial_input = self.adversary(sample, input_gradients)
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    print(
+                        "| WARNING: ran out of memory in the attack phase of "
+                        "an adversarial attack, skipping batch"
+                    )
+                    oom = 1
+                    if hasattr(torch.cuda, "empty_cache"):
+                        torch.cuda.empty_cache()
+                else:
+                    raise e
+
+        return adversarial_input, oom
 
     def _forward_adversarial(self, sample):
         # Set model to training mode
@@ -137,13 +181,16 @@ class AdversarialTrainer(Trainer):
         if sample is not None:
             try:
                 # calculate loss and sample size
-                (
-                    loss, sample_size, logging_output_
-                ) = self.adversarial_criterion(self.model, sample)
+                (loss, sample_size, logging_output_) = self.adversarial_criterion(
+                    self.model, sample
+                )
                 logging_output.update(logging_output_)
             except RuntimeError as e:
-                if not eval and "out of memory" in str(e):
-                    print("| WARNING: ran out of memory, skipping batch")
+                if "out of memory" in str(e):
+                    print(
+                        "| WARNING: ran out of memory in the forward pass of "
+                        "an adversarial attack, skipping batch"
+                    )
                     oom = 1
                     loss = None
                     if hasattr(torch.cuda, "empty_cache"):
@@ -153,8 +200,9 @@ class AdversarialTrainer(Trainer):
 
         # synchronize logging outputs for multi-GPU training
         if getattr(self.args, "distributed_world_size", 1) > 1:
-            raise ValueError("Distributed adversarial example generations is "
-            "not supported yet")
+            raise ValueError(
+                "Distributed adversarial example generations is " "not supported yet"
+            )
         else:
             sample_sizes = [sample_size]
             logging_outputs = [logging_output]
@@ -170,24 +218,30 @@ class AdversarialTrainer(Trainer):
         """Gets the gradient of a loss wrt the token embeddings"""
         # Safe backward
         oom = 0
+        input_gradient = None
         if loss is not None:
             try:
                 # backward pass
                 loss.backward()
             except RuntimeError as e:
                 if "out of memory" in str(e):
-                    print("| WARNING: ran out of memory, skipping batch")
+                    print(
+                        "| WARNING: ran out of memory in the backward pass of "
+                        "an adversarial attack, skipping batch"
+                    )
                     oom = 1
                     if hasattr(torch.cuda, "empty_cache"):
                         torch.cuda.empty_cache()
-                    self.optimizer.zero_grad()
+                    if self.optimizer is not None:
+                        self.optimizer.zero_grad()
                 else:
                     raise e
 
         # all-reduce grads and rescale by grad_denom
         if getattr(self.args, "distributed_world_size", 1) > 1:
-            raise ValueError("Distributed adversarial example generations is "
-            "not supported yet")
+            raise ValueError(
+                "Distributed adversarial example generations is not supported yet"
+            )
         else:
             try:
                 token_embeds = self.model.encoder.tracker["token_embeddings"]
@@ -201,3 +255,140 @@ class AdversarialTrainer(Trainer):
             input_gradient = token_embeds.grad
 
         return input_gradient, oom
+
+    def train_step(self, sample, update_params=True, augment_adv=False):
+        """Do adv sample generation, forward, backward and parameter update."""
+        # Set seed based on args.seed and the update number so that we get
+        # reproducible results when resuming from checkpoints
+        seed = self.args.seed + self.get_num_updates()
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+
+        # Memory leak without this line
+        torch.cuda.empty_cache()
+
+        # Create variables
+        sample = self._prepare_sample(sample)
+
+        if augment_adv and self.adv_weight > 0:
+            # Get adv input
+            adv_input, ooms_adv = self.gen_adversarial_examples(detach_sample(sample))
+
+            # Create the augmented sample
+            sample, ooms_inc = self._incorporate_adv_input_to_sample(sample, adv_input)
+
+            self.meters["oom"].update(ooms_adv + ooms_inc)
+
+        # Deactivate adversarial mode
+        self.model.encoder.set_gradient_tracking_mode(False)
+
+        # forward pass
+        loss, sample_size, logging_output, oom_fwd = self._forward(sample)
+
+        # backward pass
+        oom_bwd = self._backward(loss)
+
+        # buffer stats and logging outputs
+        self._buffered_stats['sample_sizes'].append(sample_size)
+        self._buffered_stats['logging_outputs'].append(logging_output)
+        self._buffered_stats['ooms_fwd'].append(oom_fwd)
+        self._buffered_stats['ooms_bwd'].append(oom_bwd)
+
+        # Update (for some reason this is not in another method in fairseq now)
+        if update_params:
+            # gather logging outputs from all replicas
+            sample_sizes = self._buffered_stats['sample_sizes']
+            logging_outputs = self._buffered_stats['logging_outputs']
+            ooms_fwd = self._buffered_stats['ooms_fwd']
+            ooms_bwd = self._buffered_stats['ooms_bwd']
+            if self.args.distributed_world_size > 1:
+                sample_sizes, logging_outputs, ooms_fwd, ooms_bwd = map(
+                    lambda l: list(chain.from_iterable(l)),
+                    zip(*distributed_utils.all_gather_list(
+                        (sample_sizes, logging_outputs, ooms_fwd, ooms_bwd)
+                    ))
+                )
+            ooms_fwd = sum(ooms_fwd)
+            ooms_bwd = sum(ooms_bwd)
+
+            # aggregate stats and logging outputs
+            ntokens = sum(log.get('ntokens', 0) for log in logging_outputs)
+            nsentences = sum(log.get('nsentences', 0) for log in logging_outputs)
+            agg_logging_output = self.criterion.__class__.aggregate_logging_outputs(
+                logging_outputs
+            )
+            grad_denom = self.criterion.__class__.grad_denom(sample_sizes)
+
+            try:
+                # all-reduce and rescale gradients, then take an optimization step
+                grad_norm = self._all_reduce_and_rescale(grad_denom)
+                self._opt()
+
+                # update meters
+                self.meters['wps'].update(ntokens)
+                self.meters['ups'].update(1.)
+                self.meters['wpb'].update(ntokens)
+                self.meters['bsz'].update(nsentences)
+                if grad_norm is not None:
+                    self.meters['gnorm'].update(grad_norm)
+                    self.meters['clip'].update(
+                        1. if grad_norm > self.args.clip_norm else 0.
+                    )
+                self.meters['oom'].update(ooms_fwd + ooms_bwd)
+
+                # update loss meters for training
+                if 'loss' in agg_logging_output:
+                    self.meters['train_loss'].update(
+                        agg_logging_output['loss'], grad_denom
+                    )
+                # criterions can optionally log the NLL loss too
+                if 'nll_loss' in agg_logging_output:
+                    self.meters['train_nll_loss'].update(
+                        agg_logging_output['nll_loss'], ntokens
+                    )
+            except OverflowError as e:
+                self.zero_grad()
+                print('| WARNING: overflow detected, ' + str(e))
+
+            self.clear_buffered_stats()
+
+            return agg_logging_output
+        else:
+            return None  # buffering updates
+
+    def _incorporate_adv_input_to_sample(self, sample, adv_input):
+        """Interleaves normal input and adv input
+        (assuming they have the same length)"""
+        oom = 0
+        try:
+            net_input = sample["net_input"]
+            # source tokens
+            augmented_src_tokens = tile(net_input["src_tokens"], 0, 2)
+            augmented_src_tokens[1::2] = adv_input
+            net_input["src_tokens"] = augmented_src_tokens
+
+            # Duplicate the other variables
+            net_input["src_lengths"] = tile(net_input["src_lengths"], 0, 2)
+            net_input["prev_output_tokens"] = tile(
+                net_input["prev_output_tokens"], 0, 2
+            )
+            # Necessary?
+            sample["net_input"] = net_input
+            sample["target"] = tile(sample["target"], 0, 2)
+            # Weights
+            sample["weights"] = torch.ones_like(net_input["src_lengths"]).float()
+            sample["weights"][::2] = 1 - self.adv_weight
+            sample["weights"][1::2] = self.adv_weight
+        except RuntimeError as e:
+            if "out of memory" in str(e):
+                print(
+                    "| WARNING: ran out of memory while creating adversarially "
+                    "augmented batch, reverting to single batch."
+                )
+                oom = 1
+                if hasattr(torch.cuda, "empty_cache"):
+                    torch.cuda.empty_cache()
+            else:
+                raise e
+
+        return clone_sample(sample), oom

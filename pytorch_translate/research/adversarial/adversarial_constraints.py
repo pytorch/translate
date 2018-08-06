@@ -21,16 +21,23 @@ class AdversarialConstraints(object):
         self.tgt_dict = task.tgt_dict
         self.nearest_neighbors = self.args.nearest_neighbors
         self.cosine_nn = self.args.cosine_nn
+        self.allow_identity = self.args.allow_identity
         self.alternatives_file = self.args.alternatives_file
         # Load the explicit alternatives
         if self.alternatives_file:
             self.load_alternatives()
-        # Forbidden words
-        self.forbidden_tokens = torch.LongTensor([
-            self.src_dict.index(word) for word in self.args.forbidden_words
+        # Forbidden tokens
+        self.forbidden_token_ids = torch.LongTensor([
+            self.src_dict.index(word) for word in self.args.forbidden_tokens
         ])
         if torch.cuda.is_available():
-            self.forbidden_tokens = self.forbidden_tokens.cuda()
+            self.forbidden_token_ids = self.forbidden_token_ids.cuda()
+        # Allowed tokens
+        self.allowed_token_ids = torch.LongTensor([
+            self.src_dict.index(word) for word in self.args.allowed_tokens
+        ])
+        if torch.cuda.is_available():
+            self.allowed_token_ids = self.allowed_token_ids.cuda()
 
     @staticmethod
     def add_args(parser):
@@ -59,11 +66,29 @@ class AdversarialConstraints(object):
             "tab separated.",
         )
         parser.add_argument(
-            "--forbidden-words",
+            "--forbidden-tokens",
             nargs="*",
             type=str,
             default=[],
-            help="List of words that the model absolutely cannot produce.",
+            help="List of tokens that the adversary absolutely cannot produce.",
+        )
+        parser.add_argument(
+            "--allowed-tokens",
+            nargs="*",
+            type=str,
+            default=[],
+            help="List of tokens that the adversary can produce. If this is "
+            "empty then there is no constraint.",
+        )
+        parser.add_argument(
+            "--allow-identity",
+            action="store_true",
+            default=True,
+            help="If this is set to false then the adversary cannot replace a "
+            "word with itself (ie. the replacement has to be different). "
+            "Setting this to true makes is so that there will never be a case "
+            "where no replacement is possible (which may have weird "
+            "implications)",
         )
 
     def apply(self, scores, src_tokens, src_embeds, vocab_embeds, **kwargs):
@@ -79,13 +104,11 @@ class AdversarialConstraints(object):
         operations again (typically if the pairwise distance has been computed
         already no need to do it again for the knn)"""
 
-        # Replacing a word with itself is NEVER a good idea
-        scores.scatter_(dim=2, index=src_tokens.unsqueeze(-1), value=-np.inf)
+        bsz, srclen = src_tokens.size()
+
         # We don't want to touch special tokens either
         token_is_special = torch.lt(src_tokens, self.src_dict.nspecial)
-        # Except unk
-        token_is_unk = torch.eq(src_tokens, self.src_dict.unk())
-        scores.masked_fill_((token_is_special ^ token_is_unk).unsqueeze(-1), -np.inf)
+        scores.masked_fill_(token_is_special.unsqueeze(-1), -np.inf)
         # Nor replace an existing word with a special token (except <unk>)
         special_tokens = torch.tensor([
             token_id for token_id in range(self.src_dict.nspecial)
@@ -93,9 +116,9 @@ class AdversarialConstraints(object):
         ], device=scores.device).long()
         scores.index_fill_(dim=2, index=special_tokens, value=-np.inf)
 
-        # Forbid some words specifically
-        if len(self.forbidden_tokens) > 0:
-            scores.index_fill_(dim=2, index=self.forbidden_tokens, value=-np.inf)
+        # Forbid some tokens specifically
+        if len(self.forbidden_token_ids) > 0:
+            scores.index_fill_(dim=2, index=self.forbidden_token_ids, value=-np.inf)
         # Now we address the explicit constraints of which words are authorized
         # This will contain a list of tensors of shape B x T x _
         # each corresponding to allowed indices
@@ -104,17 +127,30 @@ class AdversarialConstraints(object):
         if self.nearest_neighbors > 1:
             allowed.append(self.compute_knn(src_embeds, vocab_embeds))
 
-        # Explicit alternatives
+        # Explicit alternatives (this is specific to each token)
         if self.alternatives_file:
             # We pick alt_tokens[b, t, i] = alts_tensor[src_tokens[b, t], i]
             # We do it on the flattened tensor:
             # alt_tokens[b * t, i] = alts_tensor[src_tokens[b * t], i]
             alt_tokens = self.alts_tensor.index_select(dim=0, index=src_tokens.view(-1))
             # Reshape into a B x T x max_swaps tensor
-            bsz, srclen = src_tokens.size()
             alt_tokens = alt_tokens.view(bsz, srclen, -1)
             # add to the allowed tokens
             allowed.append(alt_tokens)
+
+        # Allowed tokens (this is general for all tokens)
+        if len(self.allowed_token_ids) > 0:
+            allowed.append(
+                self.allowed_token_ids.unsqueeze(0).unsqueeze(0).expand(
+                    bsz, srclen, -1
+                )
+            )
+
+        # Allow the identity replacement (we don't need to do this if there are)
+        # no other constraints
+        if len(allowed) > 0 and self.allow_identity:
+            allowed.append(src_tokens.unsqueeze(2))
+
         # If nothing is allowed then everything is allowed so we do NOTHING.
         # Otherwise:
         if len(allowed) > 0:
@@ -180,7 +216,7 @@ class AdversarialConstraints(object):
         self.alts_tensor = (
             torch.arange(len(self.src_dict)).unsqueeze(-1).repeat(1, max_alts)
         )
-        # Now we add the actual alteratives
+        # Now we add the actual alternatives
         for word_id, alts_ids in alts_ids_dict.items():
             # Assign value
             self.alts_tensor[word_id] = torch.LongTensor(alts_ids)
