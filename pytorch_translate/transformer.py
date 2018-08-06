@@ -389,6 +389,7 @@ def base_architecture(args):
     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 512)
     args.encoder_layers = getattr(args, "encoder_layers", 3)
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 4)
+    args.encoder_freeze_embed = getattr(args, "encoder_freeze_embed", False)
     args.decoder_embed_path = getattr(args, "decoder_embed_path", None)
     args.decoder_embed_dim = getattr(args, "decoder_embed_dim", args.encoder_embed_dim)
     args.decoder_ffn_embed_dim = getattr(
@@ -396,6 +397,7 @@ def base_architecture(args):
     )
     args.decoder_layers = getattr(args, "decoder_layers", 3)
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 4)
+    args.decoder_freeze_embed = getattr(args, "decoder_freeze_embed", False)
     args.attention_dropout = getattr(args, "attention_dropout", 0.)
     args.relu_dropout = getattr(args, "relu_dropout", 0.)
     args.dropout = getattr(args, "dropout", 0.1)
