@@ -26,6 +26,7 @@ from pytorch_translate.common_layers import (
     Embedding,
     Linear,
     RNNLayer,
+    VariableTracker,
 )
 from pytorch_translate.multi_model import MultiDecoder, MultiEncoder
 from pytorch_translate.multilingual import MultilingualDecoder, MultilingualEncoder
@@ -627,12 +628,23 @@ class LSTMSequenceEncoder(FairseqEncoder):
                 dictionary, word_dropout_params
             )
 
+        # Variable tracker
+        self.tracker = VariableTracker()
+
+        # Initialize adversarial mode
+        self.set_gradient_tracking_mode(False)
+
     def forward(self, src_tokens, src_lengths):
         if self.left_pad:
             # convert left-padding to right-padding
             src_tokens = utils.convert_padding_direction(
                 src_tokens, self.padding_idx, left_to_right=True
             )
+
+        # If we're generating adversarial examples we need to keep track of
+        # some internal variables
+        self.tracker.reset()
+
         if self.word_dropout_module is not None:
             src_tokens = self.word_dropout_module(src_tokens)
 
@@ -640,6 +652,11 @@ class LSTMSequenceEncoder(FairseqEncoder):
 
         # embed tokens
         x = self.embed_tokens(src_tokens)
+        # Track token embeddings
+        self.tracker.track(
+            x, "token_embeddings", retain_grad=self.track_gradients
+        )
+
         x = F.dropout(x, p=self.dropout_in, training=self.training)
 
         # B x T x C -> T x B x C
@@ -707,6 +724,10 @@ class LSTMSequenceEncoder(FairseqEncoder):
     def max_positions(self):
         """Maximum input length supported by the encoder."""
         return int(1e5)  # an arbitrary large number
+
+    def set_gradient_tracking_mode(self, mode=True):
+        self.tracker.reset()
+        self.track_gradients = mode
 
 
 class DummyEncoder(FairseqEncoder):

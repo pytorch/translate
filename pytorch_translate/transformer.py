@@ -15,7 +15,10 @@ from fairseq.models import (
     transformer as fairseq_transformer,
 )
 from fairseq.modules import SinusoidalPositionalEmbedding
-from pytorch_translate.common_layers import Embedding
+from pytorch_translate.common_layers import (
+    Embedding,
+    VariableTracker,
+)
 
 
 @register_model("ptt_transformer")
@@ -241,9 +244,23 @@ class TransformerEncoder(FairseqEncoder):
             ]
         )
 
+        # Variable tracker
+        self.tracker = VariableTracker()
+
+        # Initialize adversarial mode
+        self.set_gradient_tracking_mode(False)
+
     def forward(self, src_tokens, src_lengths):
-        # embed tokens and positions
-        x = self.embed_scale * self.embed_tokens(src_tokens)
+        # Initialize the tracker to keep track of internal variables
+        self.tracker.reset()
+        # Embed tokens
+        x = self.embed_tokens(src_tokens)
+        # Track token embeddings
+        self.tracker.track(
+            x, "token_embeddings", retain_grad=self.track_gradients
+        )
+        # Add position embeddings and dropout
+        x = self.embed_scale * x
         x += self.embed_positions(src_tokens)
         x = F.dropout(x, p=self.dropout, training=self.training)
 
@@ -279,6 +296,10 @@ class TransformerEncoder(FairseqEncoder):
                 del state_dict["encoder.embed_positions.weights"]
             state_dict["encoder.embed_positions._float_tensor"] = torch.FloatTensor(1)
         return state_dict
+
+    def set_gradient_tracking_mode(self, mode=True):
+        self.tracker.reset()
+        self.track_gradients = mode
 
 
 class TransformerDecoder(FairseqIncrementalDecoder):
