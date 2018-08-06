@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
 import torch
-import numpy as np
 
 from . import BaseAdversary, register_adversary
+from ..adversarial_utils import sample_gumbel_trick
 
 
 @register_adversary("random_swap")
@@ -40,42 +40,49 @@ class RandomSwapAdversary(BaseAdversary):
         batch_size, src_length = src_tokens.size()
         # Careful that the number of swaps is not greater than the size of the sentences
         max_swaps = min(self.max_swaps, src_length)
-        # Uniform sampling
+        # Embed input tokens (we could reuse the embeddings here if it doesn't
+        # make the interface too complicated)
+        src_embeds = self.encoder.embed_tokens(src_tokens)
+        # Get the embeddings for the whole vocabulary |V| x d
+        embedding_matrix = self.encoder.embed_tokens.weight
+        # 1. Get the logits for sampling
         if self.args.by_gradient_norm:
             # Compute the gradient l2 norm
-            grad_norm = input_gradients.norm(p=2, dim=-1)
+            grad_norm = input_gradients.norm(p=2, dim=-1) + 1e-12
             # Take the log (and apply temperature)
-            log_prob = torch.log(grad_norm)
+            logits = torch.log(grad_norm)
         else:
             # The (non-normalized) log probability of each position will be 0
-            log_prob = torch.zeros_like(src_tokens).float()
-            # BUT we need to mask the special tokens with -infinity
-            token_is_special = torch.lt(src_tokens, self.src_dict.nspecial)
-            # apply mask
-            log_prob.masked_fill(token_is_special, -np.inf)
-        # Sample from the Gumbel distribution
-        uniform_noise = torch.rand_like(log_prob)
-        gumbel_noise = -torch.log(-torch.log(uniform_noise + 1e-20) + 1e-20)
-        # For stable behaviour at both high and low temperature we either rescale
-        # the logprob or the gumbel noise
-        if self.temperature > 1:
-            noisy_log_prob = log_prob / self.temperature + gumbel_noise
-        else:
-            noisy_log_prob = log_prob + gumbel_noise * self.temperature
-        # Use the Gumbel trick to sample positions (not sure if valid for k>1)
-        _, random_positions = noisy_log_prob.topk(max_swaps)
-        # Now for each position we sample a random replacement word
-        random_words = torch.randint(
-            low=self.src_dict.nspecial,
-            high=len(self.src_dict),
-            size=(batch_size, max_swaps),
-            device=src_tokens.device,
-        ).long()
-        # Replace words at position to get adversarial sample
+            logits = torch.zeros_like(src_tokens).float()
+        # 2. Expand logits to shape B x T x |V|to apply constraints
+        logits = logits.unsqueeze(-1).expand(-1, -1, len(self.src_dict)).clone()
+        # 2.5. Apply constraints
+        self.constraints.apply(logits, src_tokens, src_embeds, embedding_matrix)
+        # 3. Get the logits for the positions
+        logits_pos, _ = logits.max(dim=2)
+        # 3.5 Sample positions with the Gumbel trick
+        random_positions = sample_gumbel_trick(
+            logits_pos, temperature=self.temperature, num_samples=max_swaps, dim=1
+        )
+        # 4. Now for each position we sample a random replacement word
+        # We still need to do gumbel sampling to account for the -inf log probs
+        # corresponding to the forbidden tokens.
+        # word_logits[b, k, w] = logits[b, random_positions[b, k], w]
+        word_logits = logits.gather(
+            dim=1,
+            # Expand the position indices (can we do more efficient than this??)
+            index=random_positions.unsqueeze(-1).expand(-1, -1, len(self.src_dict))
+        )
+        # Sample words with the Gumbel trick
+        random_words = sample_gumbel_trick(word_logits, dim=2)
+        # 5. Create adversarial examples.
         adv_tokens = src_tokens.detach()
-        batch_range = torch.arange(0, batch_size)
-        for swap_id in range(max_swaps):
-            swap_position = random_positions[:, swap_id]
-            adv_tokens[batch_range, swap_position] = random_words[:, swap_id]
-
+        # Assign new values
+        # adv_tokens[b, random_positions[b, k]]=random_words[b, random_positions[b, k]]
+        adv_tokens.scatter_(
+            dim=1,
+            index=random_positions,
+            src=random_words,
+        )
+        # Return
         return adv_tokens

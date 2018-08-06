@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import torch.nn as nn
+from ..adversarial_constraints import AdversarialConstraints
 
 
 class BaseAdversary(nn.Module):
@@ -10,8 +11,9 @@ class BaseAdversary(nn.Module):
         super().__init__()
         self.task = task
         self.src_dict = task.src_dict
-        self.dst_dict = task.tgt_dict
+        self.tgt_dict = task.tgt_dict
         self.args = args
+        self.constraints = AdversarialConstraints(args, task)
 
     def forward(self, sample, input_gradients):
         """Takes in a sample and the gradients of some adversarial criterion

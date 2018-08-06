@@ -53,6 +53,9 @@ class AllBadWordsCriterion(FairseqCriterion):
         else:
             loss = lp_not_targets.view(net_output.size(0), -1).sum(-1)
 
+        # Negate because we're minimizing the criterion
+        loss = -loss
+
         if self.args.sentence_avg:
             sample_size = sample["target"].size(0)
         else:
@@ -271,6 +274,14 @@ class ForceWordsHingeCriterion(FairseqCriterion):
             "opposed to AND). This is superseded by --only-first."
         )
 
+        parser.add_argument(
+            "--topk",
+            default=1,
+            type=int,
+            help="This will sum the max margin objective over the top-k logits. "
+            "Maybe useful in case we want to break beam search."
+        )
+
     def hinge_loss(self, sample, net_output):
         # 1. Retrieve logits
         logits = net_output[0]
@@ -283,17 +294,17 @@ class ForceWordsHingeCriterion(FairseqCriterion):
 
         # 3. Take the max over the other tokens
         logits[:, :, self.target_tokens] = -np.inf
-        max_logits, _ = logits.max(dim=2, keepdim=True)
+        max_logits, _ = logits.topk(self.args.topk, dim=2)
 
         # 4. Compute the hinge loss
-        margin = max_logits - target_tokens_logits
+        margin = max_logits.unsqueeze(-1) - target_tokens_logits.unsqueeze(2)
         if self.args.force_not:
             # Reverse the margin if we want to force the model not to generate
             # the words
             margin = -margin
         # Compute the hinge loss and reduce (here min works better than sum
         # from my experience)
-        hinge_loss = F.relu(margin + self.args.hinge_slack)
+        hinge_loss = F.relu(margin + self.args.hinge_slack).sum(2)
 
         # 5. At each timestep choose the easiest option (this is important)
         loss_at_position, _ = hinge_loss.min(2)

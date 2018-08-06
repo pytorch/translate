@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+
 from fairseq.options import eval_str_list
 from fairseq.models import ARCH_MODEL_REGISTRY, ARCH_CONFIG_REGISTRY
 from fairseq.criterions import CRITERION_REGISTRY
@@ -10,6 +11,7 @@ from fairseq.optim.lr_scheduler import LR_SCHEDULER_REGISTRY
 from pytorch_translate.research.adversarial.adversaries import (
     ADVERSARY_REGISTRY, BaseAdversary
 )
+from .adversarial_constraints import AdversarialConstraints
 
 
 def add_adversarial_args(parser):
@@ -25,6 +27,15 @@ def add_adversarial_args(parser):
         default=None,
         help="path(s) to model file(s), colon separated "
         "(only one model is supported right now)"
+    )
+    # Trainer Arguments
+    group.add_argument(
+        "--modify-gradient",
+        default="",
+        metavar="ACTION",
+        choices=["", "sign", "normalize", "normalize"],
+        help="Modify the gradient by taking the sign or normalizing along the "
+        "word vector dimension.",
     )
     # Adversarial criterion
     group.add_argument(
@@ -45,6 +56,17 @@ def add_adversarial_args(parser):
         "minimizing it. This is convenient way of reusing training criterions "
         "for adversarial attacks.",
     )
+    # Number of iterations for the attack
+    group.add_argument(
+        "--n-attack-iterations",
+        default=1,
+        metavar="N",
+        type=int,
+        help="Number of iterations during the attack. One iteration consists "
+        "in: 1. Forward pass on the current input "
+        "2. Backward pass to get the gradient"
+        "3. Generate a new input with the adversary",
+    )
     # Adversaries definitions can be found under research/adversarial/adversaries
     group.add_argument(
         "--adversary",
@@ -56,6 +78,9 @@ def add_adversarial_args(parser):
     )
     # Add arguments specific to all adversaries
     BaseAdversary.add_args(group)
+
+    # Add constraints specific arguments
+    AdversarialConstraints.add_args(parser)
 
     return group
 

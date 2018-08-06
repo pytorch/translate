@@ -2,6 +2,7 @@
 
 from collections import defaultdict, OrderedDict
 import torch
+import torch.nn.functional as F
 
 from fairseq.trainer import Trainer
 from fairseq.meters import AverageMeter, TimeMeter
@@ -78,27 +79,41 @@ class AdversarialTrainer(Trainer):
         # Set the model to adversarial mode
         self.model.encoder.set_gradient_tracking_mode(True)
 
-        # forward pass
-        (
-            loss, sample_sizes, logging_outputs, ooms_fwd
-        ) = self._forward_adversarial(sample)
+        # The initial adversarial input is just the original input
+        adversarial_input = sample["net_input"]["src_tokens"]
 
-        # aggregate stats and logging outputs
-        ntokens = sum(log.get("ntokens", 0) for log in logging_outputs)
-        nsentences = sum(log.get("nsentences", 0) for log in logging_outputs)
+        for _ in range(self.args.n_attack_iterations):
+            # Set sample input tokens to the adversarial input
+            sample["net_input"]["src_tokens"] = adversarial_input
 
-        # backward pass, get input_gradients
-        input_gradients, ooms_bwd = self._get_gradients_wrt_input(loss)
+            # forward pass
+            (
+                loss, sample_sizes, logging_outputs, ooms_fwd
+            ) = self._forward_adversarial(sample)
 
-        # perturbate input
-        adversarial_input = self.adversary(sample, input_gradients)
+            # aggregate stats and logging outputs
+            ntokens = sum(log.get("ntokens", 0) for log in logging_outputs)
+            nsentences = sum(log.get("nsentences", 0) for log in logging_outputs)
 
-        # update meters
+            # backward pass, get input_gradients
+            input_gradients, ooms_bwd = self._get_gradients_wrt_input(loss)
+
+            # Modify gradients if needs be
+            if self.args.modify_gradient == "sign":
+                input_gradients = torch.sign(input_gradients)
+            elif self.args.modify_gradient == "normalize":
+                input_gradients = F.normalize(input_gradients, dim=2)
+
+            # perturbate input
+            adversarial_input = self.adversary(sample, input_gradients)
+
+            # Update ooms at each iteration
+            self.meters["oom"].update(ooms_fwd + ooms_bwd)
+
+        # update other meters after all iterations
         self.meters["wps"].update(ntokens)
         self.meters["wpb"].update(ntokens)
         self.meters["bsz"].update(nsentences)
-        self.meters["oom"].update(ooms_fwd + ooms_bwd)
-
         # Deactivate adversarial mode
         self.model.encoder.set_gradient_tracking_mode(False)
 
