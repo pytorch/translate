@@ -51,6 +51,8 @@ def average_checkpoints(inputs: Iterable[str]) -> Dict[str, Any]:
     for k, v in params_dict.items():
         summed_v = None
         for x in v:
+            if isinstance(x, torch.HalfTensor):
+                x = x.float()
             summed_v = summed_v + x if summed_v is not None else x
         if summed_v is not None:
             averaged_params[k] = summed_v / len(v)
