@@ -275,14 +275,24 @@ class AdversarialTrainer(Trainer):
             adv_input, ooms_adv = self.gen_adversarial_examples(detach_sample(sample))
 
             if self.args.accumulate_adv_gradient:
-                # Preform a forward/backward pass on the adversarial input
+                # Perform a forward/backward pass on the adversarial input
                 adv_sample = clone_sample(sample)
                 adv_sample["net_input"]["src_tokens"] = adv_input
+                # Weigh samples accordingly
+                sample["weights"] = (1 - self.adv_weight) * torch.ones_like(
+                    sample["net_input"]["src_lengths"]
+                ).float()
+                adv_sample["weights"] = self.adv_weight * torch.ones_like(
+                    adv_sample["net_input"]["src_lengths"]
+                ).float()
+                # Compute parameter gradients on the adversarial input
                 super(AdversarialTrainer, self).train_step(
                     adv_sample, update_params=False,
                 )
             else:
-                # Add the adversarial input to the sample
+                # Add the adversarial input to the sample, effectively
+                # creating one big batch. This will be faster (because
+                # of GPU parallelization) but takes more memory.
                 sample, ooms_inc = self._incorporate_adv_input_to_sample(sample, adv_input)
                 ooms_adv += ooms_inc
 
@@ -314,9 +324,14 @@ class AdversarialTrainer(Trainer):
             sample["net_input"] = net_input
             sample["target"] = tile(sample["target"], 0, 2)
             # Weights
+            # We want the final loss to be (1-w) * loss_src + w * loss_adv
+            # However pytorch will automatically average the loss over the batch,
+            # effectively giving 0.5 * ((1-w) * loss_src + w * loss_adv)
+            # therefore we multiply each weight by 2 so that the average weight
+            # of each batch element is 1
             sample["weights"] = torch.ones_like(net_input["src_lengths"]).float()
-            sample["weights"][::2] = 1 - self.adv_weight
-            sample["weights"][1::2] = self.adv_weight
+            sample["weights"][::2] = (1 - self.adv_weight) * 2
+            sample["weights"][1::2] = self.adv_weight * 2
         except RuntimeError as e:
             if "out of memory" in str(e):
                 print(
