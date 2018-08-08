@@ -2,9 +2,21 @@
 
 Translate is a library for machine translation written in PyTorch. It provides training for sequence-to-sequence models. Translate relies on [fairseq](https://github.com/pytorch/fairseq), a general sequence-to-sequence library, which means that models implemented in both Translate and Fairseq can be trained. Translate also provides the ability to export some models to Caffe2 graphs via [ONNX](https://onnx.ai/) and to load and run these models from C++ for production purposes. Currently, we export components (encoder, decoder) to Caffe2 separately and beam search is implemented in C++. In the near future, we will be able to export the beam search as well. We also plan to add export support to more models.
 
-## Requirements and Installation
+## Quickstart
+
+If you are not interested in ONNX exportation and just in training/evaluating MT models, you can install Translate for Python 3 by following those few steps:
+
+1. [Install pytorch](https://pytorch.org/)
+2. [Install fairseq](https://github.com/pytorch/fairseq#requirements-and-installation)
+3. Clone this repository `git clone https://github.com/pytorch/translate.git pytorch-translate && cd pytorch-translate`
+4. Run `python setup.py install`
+
+Provided you have CUDA installed you should be good to go.
+
+## Requirements and Full Installation
 
 ### Translate Requires:
+
 * A Linux operating system with a CUDA compatible card
 * GNU C++ compiler version 4.9.2 and above
 * A [CUDA installation](https://docs.nvidia.com/cuda/). We recommend CUDA 8.0 or CUDA 9.0
