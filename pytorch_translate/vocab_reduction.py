@@ -18,11 +18,12 @@ MAX_TRANSLATION_CANDIDATES_PER_WORD_DEFAULT = 30
 
 def add_args(parser):
     parser.add_argument(
-        "--lexical-dictionaries",
+        "--lexical-dictionary",
         type=str,
         metavar="EXPR",
+        action='append',
         help=(
-            "list of lexical dictionaries for vocab reduction, separated by" "commas"
+            "lexical dictionary(ies) for vocab reduction"
         ),
     )
     parser.add_argument(
@@ -41,7 +42,7 @@ def add_args(parser):
 
 def set_arg_defaults(args):
     # lexical_dictionaries is the only required argument for vocab reduction
-    lexical_dictionaries = getattr(args, "lexical_dictionaries", None)
+    lexical_dictionaries = getattr(args, "lexical_dictionary", None)
     if hasattr(args, "vocab_reduction_params"):
         # We've already created the vocab reduction params from the bottom-level
         # lexical_dictionaries, num_top_words and
@@ -56,14 +57,14 @@ def set_arg_defaults(args):
             MAX_TRANSLATION_CANDIDATES_PER_WORD_DEFAULT,
         )
         args.vocab_reduction_params = {
-            "lexical_dictionaries": lexical_dictionaries.split(","),
+            "lexical_dictionaries": lexical_dictionaries,
             "num_top_words": num_top_words,
             "max_translation_candidates_per_word": max_translation_candidates_per_word,
         }
         # For less redundant logging when we print out the args Namespace,
         # delete the bottom-level args, since we'll just be dealing with
         # args.vocab_reduction_params from now on
-        delattr(args, "lexical_dictionaries")
+        delattr(args, "lexical_dictionary")
         if hasattr(args, "num_top_words"):
             delattr(args, "num_top_words")
         if hasattr(args, "max_translation_candidates_per_word"):
