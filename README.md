@@ -4,7 +4,7 @@ Translate is a library for machine translation written in PyTorch. It provides t
 
 ## Quickstart
 
-If you are not interested in ONNX exportation and just in training/evaluating MT models, you can install Translate for Python 3 by following those few steps:
+If you are just interested in training/evaluating MT models, and not in exporting the models to Caffe2 via ONNX, you can install Translate for Python 3 by following these few steps:
 
 1. [Install pytorch](https://pytorch.org/)
 2. [Install fairseq](https://github.com/pytorch/fairseq#requirements-and-installation)
