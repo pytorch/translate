@@ -76,7 +76,7 @@ class RandomSwapAdversary(BaseAdversary):
         # Sample words with the Gumbel trick
         random_words = sample_gumbel_trick(word_logits, dim=2)
         # 5. Create adversarial examples.
-        adv_tokens = src_tokens.detach()
+        adv_tokens = src_tokens.clone()
         # Assign new values
         # adv_tokens[b, random_positions[b, k]]=random_words[b, random_positions[b, k]]
         adv_tokens.scatter_(

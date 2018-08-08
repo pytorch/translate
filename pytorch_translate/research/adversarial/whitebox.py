@@ -265,17 +265,29 @@ def adversarial_attack_iterator(
     for sample in itr:
         net_input = sample["net_input"]
         bsz, srclen = net_input["src_tokens"].size()
+        src_tokens = net_input["src_tokens"].long().cpu()
         # Generate the adversarial tokens
         timer.start()
         adv_tokens, _ = adv_trainer.gen_adversarial_examples(sample)
-        adv_tokens = adv_tokens.int().cpu()
+        adv_tokens = adv_tokens.long().cpu()
         timer.stop(srclen)
         # Iterate over the samples in the batch
         for b, id in enumerate(sample["id"]):
-            # Strip padding
+            # Remove padding
+            nopad_src_tokens = utils.strip_pad(src_tokens[b], task.src_dict.pad())
             nopad_adv_tokens = utils.strip_pad(adv_tokens[b], task.src_dict.pad())
-            # Convert back to string
-            adv_str = task.src_dict.string(nopad_adv_tokens)
+            # Retrieve source string
+            src_str = task.dataset(adv_split).src.get_original_text(id)
+            # Process the source string in reverse if applicable
+            if reverse_source:
+                src_str = " ".join(reversed(src_str.split()))
+            # Convert to string
+            adv_str = " ".join(
+                # We do this to recover <unk> from the original source
+                src_tok_str if src_tok == adv_tok else task.src_dict[adv_tok]
+                for src_tok_str, src_tok, adv_tok
+                in zip(src_str.split(), nopad_src_tokens, nopad_adv_tokens)
+            )
             # Reverse the string back if applicable
             if reverse_source:
                 adv_str = " ".join(reversed(adv_str.split()))
