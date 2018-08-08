@@ -151,10 +151,7 @@ class EncoderEnsemble(nn.Module):
             outputs.append(encoder_outputs)
             output_names.append(f"encoder_output_{i}")
 
-            init_hiddens, init_cells = model.decoder._init_prev_states(encoder_out)
-            for h, c in zip(init_hiddens, init_cells):
-                states.extend([h, c])
-            states.append(model.decoder.initial_attn_context)
+            states.extend(model.decoder._init_prev_states(encoder_out))
 
         # underlying assumption is each model has same vocab_reduction_module
         vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
@@ -1014,10 +1011,7 @@ class CharSourceEncoderEnsemble(nn.Module):
             outputs.append(encoder_outputs)
             output_names.append(f"encoder_output_{i}")
 
-            init_hiddens, init_cells = model.decoder._init_prev_states(encoder_out)
-            for h, c in zip(init_hiddens, init_cells):
-                states.extend([h, c])
-            states.append(model.decoder.initial_attn_context)
+            states.extend(model.decoder._init_prev_states(encoder_out))
 
         # underlying assumption is each model has same vocab_reduction_module
         vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
