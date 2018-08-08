@@ -31,13 +31,20 @@ class MultilingualEncoder(FairseqEncoder):
     """
 
     def __init__(
-        self, dictionary, encoders, hidden_dim, num_layers, rescale_grads=False
+        self,
+        dictionary,
+        encoders,
+        hidden_dim,
+        num_layers,
+        embed_dim,
+        rescale_grads=False,
     ):
         super().__init__(dictionary)
         self.dictionary = dictionary
         self.encoders = nn.ModuleList(encoders)
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
+        self.word_dim = embed_dim
         if rescale_grads and len(encoders) > 1:
             register_hooks(self, encoders)
 
@@ -62,6 +69,7 @@ class MultilingualEncoder(FairseqEncoder):
         # from LongInt to Int
         all_src_lengths = utils.maybe_cuda(torch.zeros(bsz, dtype=torch.int))
         all_src_tokens = torch.zeros_like(src_tokens)
+        all_embedded_words = utils.maybe_cuda(torch.zeros(seq_len, bsz, self.word_dim))
         self.last_bsz = bsz
         self.last_lang_bszs = []
         for lang_id, encoder in enumerate(self.encoders):
@@ -81,6 +89,7 @@ class MultilingualEncoder(FairseqEncoder):
                 lang_final_cell,
                 lang_src_lengths,
                 lang_src_tokens,
+                lang_embedded_words,
             ) = encoder(src_tokens[indices], src_lengths[indices])
             lang_seq_len = lang_encoder_outs.size(0)
             all_encoder_outs[:lang_seq_len, indices, :] = lang_encoder_outs
@@ -88,12 +97,14 @@ class MultilingualEncoder(FairseqEncoder):
             all_final_cell[:, indices, :] = lang_final_cell
             all_src_lengths[indices] = lang_src_lengths
             all_src_tokens[indices] = lang_src_tokens
+            all_embedded_words[:, indices, :] = lang_embedded_words
         return (
             all_encoder_outs,
             all_final_hidden,
             all_final_cell,
             all_src_lengths,
             all_src_tokens,
+            all_embedded_words,
         )
 
     def reorder_encoder_out(self, encoder_out, new_order):
@@ -184,6 +195,7 @@ class MultilingualDecoder(FairseqIncrementalDecoder):
                 encoder_out[2][:, indices, :],
                 encoder_out[3][indices],
                 encoder_out[4][indices, :max_source_length],
+                encoder_out[5][:max_source_length, indices, :],
             )
 
             lang_logits, lang_attn_scores, _ = decoder(

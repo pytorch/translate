@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from fairseq.models import FairseqIncrementalDecoder
 from fairseq import utils
+from pytorch_translate.research.lexical_choice import lexical_translation
 from pytorch_translate import rnn_cell  # noqa
 from pytorch_translate import vocab_reduction
 
@@ -193,6 +194,9 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
         out_embed_dim=512,
         project_output=True,
         pretrained_embed=None,
+        att_weighted_src_embeds=False,
+        src_embed_dim=512,
+        att_weighted_activation_type="tanh",
     ):
         super().__init__(dst_dict)
         self.project_output = project_output
@@ -200,6 +204,8 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
             self.num_embeddings = len(dst_dict)
             self.out_embed_dim = out_embed_dim
             self.vocab_reduction_module = None
+            self.att_weighted_src_embeds = att_weighted_src_embeds
+            self.src_embed_dim = src_embed_dim
             if vocab_reduction_params:
                 self.vocab_reduction_module = vocab_reduction.VocabReduction(
                     src_dict, dst_dict, vocab_reduction_params
@@ -221,6 +227,33 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
             self.output_projection_b = nn.Parameter(
                 torch.FloatTensor(self.num_embeddings).zero_()
             )
+            if att_weighted_activation_type == "tanh":
+                activation_fn = nn.Tanh
+                self.att_weighted_activation_fn = torch.tanh
+            elif att_weighted_activation_type == "relu":
+                activation_fn = nn.ReLU
+                self.att_weighted_activation_fn = torch.relu
+            else:
+                raise Exception(
+                    "att_weighted_activation_type '%s' not implemented"
+                    % att_weighted_activation_type
+                )
+            if att_weighted_src_embeds:
+                print(att_weighted_activation_type)
+                self.lexical_layer = NonlinearLayer(
+                    self.src_embed_dim,
+                    self.out_embed_dim,
+                    bias=False,
+                    activation_fn=activation_fn
+                )
+                self.output_projection_w_lex = nn.Parameter(
+                    torch.FloatTensor(self.num_embeddings, self.out_embed_dim).uniform_(
+                        -0.1, 0.1
+                    )
+                )
+                self.output_projection_b_lex = nn.Parameter(
+                    torch.FloatTensor(self.num_embeddings).zero_()
+                )
 
     def forward(
         self,
@@ -229,7 +262,7 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
         incremental_state=None,
         possible_translation_tokens=None,
     ):
-        (_, _, _, _, src_tokens) = encoder_out
+        (_, _, _, src_lengths, src_tokens, src_embeddings) = encoder_out
         x, attn_scores = self.forward_unprojected(
             input_tokens, encoder_out, incremental_state
         )
@@ -265,6 +298,34 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
             )
             + output_projection_b
         )
+        if self.att_weighted_src_embeds:
+            # use the attention weights to form a weighted average of embeddings
+            lex = lexical_translation.attention_weighted_src_embedding(
+                src_embeddings, attn_scores, self.att_weighted_activation_fn
+            )
+            # avoiding transpose of projection weights during ONNX tracing
+            batch_time_hidden_lex = torch.onnx.operators.shape_as_tensor(lex)
+            lex_flat_shape = torch.cat(
+                (torch.LongTensor([-1]), batch_time_hidden_lex[2].view(1))
+            )
+            lex_flat = torch.onnx.operators.reshape_from_tensor_shape(
+                lex,
+                lex_flat_shape
+            )
+            lex_logits_shape = torch.cat(
+                (batch_time_hidden_lex[:2], torch.LongTensor([-1]))
+            )
+            # add one-hidden-layer FFNN
+            lex_h = self.lexical_layer(lex_flat)
+            # lexical logits of output of previous FFNN
+            lex_logits = lexical_translation.lex_logits(
+                lex_h,
+                self.output_projection_w_lex,
+                self.output_projection_b_lex,
+                lex_logits_shape
+            )
+            # combine lexical logits with the original decoder logits
+            logits.add_(lex_logits)
 
         return logits, attn_scores, possible_translation_tokens
 

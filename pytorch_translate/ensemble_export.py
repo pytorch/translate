@@ -301,6 +301,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
             # notional, not actually used for decoder computation
             src_tokens = torch.LongTensor(np.array([[0] * src_length_int]))
+            src_embeddings = encoder_output.new_zeros(encoder_output.shape)
 
             encoder_out = (
                 encoder_output,
@@ -308,6 +309,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 prev_cells,
                 src_length,
                 src_tokens,
+                src_embeddings,
             )
 
             # store cached states, use evaluation mode
@@ -743,6 +745,7 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
 
             # notional, not actually used for decoder computation
             src_tokens = torch.LongTensor(np.array([[0] * src_length_int]))
+            src_embeddings = encoder_output.new_zeros(encoder_output.shape)
 
             encoder_out = (
                 encoder_output,
@@ -750,6 +753,7 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
                 prev_cells,
                 src_length,
                 src_tokens,
+                src_embeddings,
             )
 
             # store cached states, use evaluation mode

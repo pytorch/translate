@@ -332,6 +332,8 @@ class CharRNNEncoder(FairseqEncoder):
         if self.dropout_in != 0:
             x = F.dropout(x, p=self.dropout_in, training=self.training)
 
+        embedded_words = x
+
         # Generate packed seq to deal with varying source seq length
         # packed_input is of type PackedSequence, which consists of:
         # element [0]: a tensor, the packed data, and
@@ -378,7 +380,14 @@ class CharRNNEncoder(FairseqEncoder):
         #  [max_seqlen, batch_size, hidden_dim]
         unpacked_output, _ = pad_packed_sequence(packed_input)
 
-        return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
+        return (
+            unpacked_output,
+            final_hiddens,
+            final_cells,
+            src_lengths,
+            src_tokens,
+            embedded_words,
+        )
 
     def reorder_encoder_out(self, encoder_out, new_order):
         """Reorder all outputs according to new_order."""
@@ -497,6 +506,7 @@ class CharCNNEncoder(FairseqEncoder):
 
         if self.dropout_in != 0:
             x = F.dropout(x, p=self.dropout_in, training=self.training)
+        embedded_words = x
 
         # The rest is the same as CharRNNEncoder, so could be refactored
         # Generate packed seq to deal with varying source seq length
@@ -545,7 +555,14 @@ class CharCNNEncoder(FairseqEncoder):
         #  [max_seqlen, batch_size, hidden_dim]
         unpacked_output, _ = pad_packed_sequence(packed_input)
 
-        return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
+        return (
+            unpacked_output,
+            final_hiddens,
+            final_cells,
+            src_lengths,
+            src_tokens,
+            embedded_words,
+        )
 
     def reorder_encoder_out(self, encoder_out, new_order):
         """Reorder all outputs according to new_order."""

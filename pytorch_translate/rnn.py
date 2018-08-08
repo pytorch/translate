@@ -51,13 +51,28 @@ def torch_find(index, query, vocab_size):
 
 def reorder_encoder_output(encoder_out, new_order):
     """Reorder all outputs according to new_order."""
-    (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens) = encoder_out
+    (
+        unpacked_output,
+        final_hiddens,
+        final_cells,
+        src_lengths,
+        src_tokens,
+        src_embeddings,
+    ) = encoder_out
     unpacked_output = unpacked_output.index_select(1, new_order)
     final_hiddens = final_hiddens.index_select(1, new_order)
     final_cells = final_cells.index_select(1, new_order)
     src_lengths = src_lengths.index_select(0, new_order)
     src_tokens = src_tokens.index_select(0, new_order)
-    return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
+    src_embeddings = src_embeddings.index_select(1, new_order)
+    return (
+        unpacked_output,
+        final_hiddens,
+        final_cells,
+        src_lengths,
+        src_tokens,
+        src_embeddings,
+    )
 
 
 @register_model("rnn")
@@ -349,6 +364,25 @@ class RNNModel(FairseqModel):
                 "for the n-th decoder in an adaptive ensemble."
             ),
         )
+        parser.add_argument(
+            "--att-weighted-source-embeds",
+            default=False,
+            action="store_true",
+            help=(
+                "whether use attention weighted src embeddings to improve rare "
+                "words translation or not"
+            ),
+        )
+        parser.add_argument(
+            "--att-weighted-activation-type",
+            default="tanh",
+            type=str,
+            metavar="EXPR",
+            help=(
+                "Activation in FF layers of the attention weighted src embeddings, "
+                "defaults to relu, values: relu, tanh"
+            ),
+        )
 
         # Args for vocab reduction
         vocab_reduction.add_args(parser)
@@ -438,6 +472,9 @@ class RNNModel(FairseqModel):
                 pretrained_embed=args.decoder_pretrained_embed,
                 projection_pretrained_embed=args.decoder_out_pretrained_embed,
                 tie_embeddings=args.decoder_tie_embeddings,
+                att_weighted_src_embeds=args.att_weighted_src_embeds,
+                src_embed_dim=args.encoder_embed_dim,
+                att_weighted_activation_type=args.att_weighted_activation_type,
             )
         return decoder
 
@@ -522,6 +559,7 @@ class RNNModel(FairseqModel):
             encoders,
             hidden_dim=args.encoder_hidden_dim,
             num_layers=args.encoder_layers,
+            embed_dim=args.encoder_embed_dim,
             rescale_grads=args.multiling_rescale_grads,
         )
         decoders = []
@@ -659,6 +697,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
 
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
+        embedded_words = x
 
         # Allows compatibility with Caffe2 inputs for tracing (int32)
         # as well as the current format of Fairseq-Py inputs (int64)
@@ -713,7 +752,14 @@ class LSTMSequenceEncoder(FairseqEncoder):
             packed_input, padding_value=self.padding_value
         )
 
-        return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
+        return (
+            unpacked_output,
+            final_hiddens,
+            final_cells,
+            src_lengths,
+            src_tokens,
+            embedded_words,
+        )
 
     def reorder_encoder_out(self, encoder_out, new_order):
         """Reorder all outputs according to new_order."""
@@ -739,7 +785,7 @@ class DummyEncoder(FairseqEncoder):
         bsz = src_lengths.size(0)
         ones = maybe_cuda(torch.ones((self.num_layers, bsz, 1)))
         dummy_out = torch.ones((1, bsz, 1))
-        return dummy_out, ones, ones, src_lengths, src_tokens
+        return dummy_out, ones, ones, src_lengths, src_tokens, dummy_out
 
     def max_positions(self):
         """Maximum input length supported by the encoder."""
@@ -831,6 +877,7 @@ class RNNEncoder(FairseqEncoder):
 
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
+        embedded_words = x
 
         # Generate packed seq to deal with varying source seq length
         packed_input, batch_sizes = pack_padded_sequence(x, src_lengths)
@@ -879,7 +926,14 @@ class RNNEncoder(FairseqEncoder):
             PackedSequence(packed_input, batch_sizes), padding_value=self.padding_value
         )
 
-        return (unpacked_output, final_hiddens, final_cells, src_lengths, src_tokens)
+        return (
+            unpacked_output,
+            final_hiddens,
+            final_cells,
+            src_lengths,
+            src_tokens,
+            embedded_words,
+        )
 
     def reorder_encoder_out(self, encoder_out, new_order):
         """Reorder all outputs according to new_order."""
@@ -914,6 +968,9 @@ class RNNDecoder(DecoderWithOutputProjection):
         tie_embeddings=False,
         pretrained_embed=None,
         projection_pretrained_embed=None,
+        att_weighted_src_embeds=False,
+        src_embed_dim=512,
+        att_weighted_activation_type="tanh",
     ):
         super().__init__(
             src_dict,
@@ -922,6 +979,9 @@ class RNNDecoder(DecoderWithOutputProjection):
             out_embed_dim,
             project_output=project_output,
             pretrained_embed=projection_pretrained_embed,
+            att_weighted_src_embeds=att_weighted_src_embeds,
+            src_embed_dim=src_embed_dim,
+            att_weighted_activation_type=att_weighted_activation_type,
         )
         encoder_hidden_dim = max(1, encoder_hidden_dim)
         self.encoder_hidden_dim = encoder_hidden_dim
@@ -1005,7 +1065,14 @@ class RNNDecoder(DecoderWithOutputProjection):
         bsz, seqlen = input_tokens.size()
 
         # get outputs from encoder
-        (encoder_outs, final_hidden, final_cell, src_lengths, src_tokens) = encoder_out
+        (
+            encoder_outs,
+            final_hidden,
+            final_cell,
+            src_lengths,
+            src_tokens,
+            _,
+        ) = encoder_out
 
         # embed tokens
         x = self.embed_tokens(input_tokens)
@@ -1123,6 +1190,7 @@ class RNNDecoder(DecoderWithOutputProjection):
             final_cells,
             src_lengths,
             src_tokens,
+            _,
         ) = encoder_out
         num_layers = len(self.layers)
         if self.averaging_encoder:
@@ -1186,7 +1254,15 @@ def base_architecture(args):
     word_dropout.set_arg_defaults(args)
     args.sequence_lstm = getattr(args, "sequence_lstm", False)
     args.decoder_tie_embeddings = getattr(args, "decoder_tie_embeddings", False)
-
+    args.encoder_pretrained_embed = getattr(args, "encoder_pretrained_embed", None)
+    args.decoder_pretrained_embed = getattr(args, "decoder_pretrained_embed", None)
+    args.decoder_out_pretrained_embed = getattr(
+        args, "decoder_out_pretrained_embed", None
+    )
+    args.att_weighted_src_embeds = getattr(args, "att_weighted_source_embeds", False)
+    args.att_weighted_activation_type = getattr(
+        args, "att_weighted_activation_type", "tanh"
+    )
 
 @register_model_architecture("rnn", "rnn_big_test")
 def rnn_big_test(args):
