@@ -17,9 +17,9 @@ from pytorch_translate import (
     attention,
     data as pytorch_translate_data,
     dictionary as pytorch_translate_dictionary,
+    utils as pytorch_translate_utils,
     vocab_reduction,
     word_dropout,
-    utils as pytorch_translate_utils,
 )
 from pytorch_translate.common_layers import (
     DecoderWithOutputProjection,
@@ -653,9 +653,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
         # embed tokens
         x = self.embed_tokens(src_tokens)
         # Track token embeddings
-        self.tracker.track(
-            x, "token_embeddings", retain_grad=self.track_gradients
-        )
+        self.tracker.track(x, "token_embeddings", retain_grad=self.track_gradients)
 
         x = F.dropout(x, p=self.dropout_in, training=self.training)
 
@@ -1024,7 +1022,14 @@ class RNNDecoder(DecoderWithOutputProjection):
             prev_hiddens, prev_cells, input_feed = cached_state
         else:
             # first time step, initialize previous states
-            prev_hiddens, prev_cells = self._init_prev_states(encoder_out)
+            init_prev_states = self._init_prev_states(encoder_out)
+            prev_hiddens = []
+            prev_cells = []
+
+            # init_prev_states may or may not include initial attention context
+            for (h, c) in zip(init_prev_states[0::2], init_prev_states[1::2]):
+                prev_hiddens.append(h)
+                prev_cells.append(c)
             if self.attention.context_dim:
                 input_feed = self.initial_attn_context.expand(
                     bsz, self.attention.context_dim
@@ -1133,7 +1138,13 @@ class RNNDecoder(DecoderWithOutputProjection):
                 prev_hiddens[i] = self.hidden_init_fc_list[i](prev_hiddens[i])
                 prev_cells[i] = self.cell_init_fc_list[i](prev_cells[i])
 
-        return prev_hiddens, prev_cells
+        prev_states = []
+        for h, c in zip(prev_hiddens, prev_cells):
+            prev_states.extend([h, c])
+        if self.attention.context_dim:
+            prev_states.append(self.initial_attn_context)
+
+        return prev_states
 
 
 @register_model_architecture("rnn", "rnn")
@@ -1151,7 +1162,9 @@ def base_architecture(args):
     args.decoder_hidden_dim = getattr(args, "decoder_hidden_dim", 512)
     args.decoder_pretrained_embed = getattr(args, "decoder_pretrained_embed", None)
     args.decoder_out_embed_dim = getattr(args, "decoder_out_embed_dim", 512)
-    args.decoder_out_pretrained_embed = getattr(args, "decoder_out_pretrained_embed", None)
+    args.decoder_out_pretrained_embed = getattr(
+        args, "decoder_out_pretrained_embed", None
+    )
     args.attention_type = getattr(args, "attention_type", "dot")
     args.decoder_dropout_in = getattr(args, "decoder_dropout_in", args.dropout)
     args.decoder_dropout_out = getattr(args, "decoder_dropout_out", args.dropout)
