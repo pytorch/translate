@@ -45,6 +45,15 @@ def add_adversarial_args(parser, attack_only=False, train=False):
             help="Minimum number of epochs of training before adversarial "
             "augmentation kicks in"
         )
+        group.add_argument(
+            "--accumulate-adv-gradient",
+            action="store_true",
+            default=False,
+            help="Run one forward/backward pass for the adversarial input "
+            "and one for the normal input before updating. This is slower "
+            "but more memory efficient than wrapping the two in a single "
+            "batch, effectively doubling the batch size."
+        )
 
     # Trainer Arguments
     group.add_argument(

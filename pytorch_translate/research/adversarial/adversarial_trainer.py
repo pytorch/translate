@@ -274,87 +274,25 @@ class AdversarialTrainer(Trainer):
             # Get adv input
             adv_input, ooms_adv = self.gen_adversarial_examples(detach_sample(sample))
 
-            # Create the augmented sample
-            sample, ooms_inc = self._incorporate_adv_input_to_sample(sample, adv_input)
-
-            self.meters["oom"].update(ooms_adv + ooms_inc)
-
-        # Deactivate adversarial mode
-        self.model.encoder.set_gradient_tracking_mode(False)
-
-        # forward pass
-        loss, sample_size, logging_output, oom_fwd = self._forward(sample)
-
-        # backward pass
-        oom_bwd = self._backward(loss)
-
-        # buffer stats and logging outputs
-        self._buffered_stats['sample_sizes'].append(sample_size)
-        self._buffered_stats['logging_outputs'].append(logging_output)
-        self._buffered_stats['ooms_fwd'].append(oom_fwd)
-        self._buffered_stats['ooms_bwd'].append(oom_bwd)
-
-        # Update (for some reason this is not in another method in fairseq now)
-        if update_params:
-            # gather logging outputs from all replicas
-            sample_sizes = self._buffered_stats['sample_sizes']
-            logging_outputs = self._buffered_stats['logging_outputs']
-            ooms_fwd = self._buffered_stats['ooms_fwd']
-            ooms_bwd = self._buffered_stats['ooms_bwd']
-            if self.args.distributed_world_size > 1:
-                sample_sizes, logging_outputs, ooms_fwd, ooms_bwd = map(
-                    lambda l: list(chain.from_iterable(l)),
-                    zip(*distributed_utils.all_gather_list(
-                        (sample_sizes, logging_outputs, ooms_fwd, ooms_bwd)
-                    ))
+            if self.args.accumulate_adv_gradient:
+                # Preform a forward/backward pass on the adversarial input
+                adv_sample = clone_sample(sample)
+                adv_sample["net_input"]["src_tokens"] = adv_input
+                super(AdversarialTrainer, self).train_step(
+                    adv_sample, update_params=False,
                 )
-            ooms_fwd = sum(ooms_fwd)
-            ooms_bwd = sum(ooms_bwd)
+            else:
+                # Add the adversarial input to the sample
+                sample, ooms_inc = self._incorporate_adv_input_to_sample(sample, adv_input)
+                ooms_adv += ooms_inc
 
-            # aggregate stats and logging outputs
-            ntokens = sum(log.get('ntokens', 0) for log in logging_outputs)
-            nsentences = sum(log.get('nsentences', 0) for log in logging_outputs)
-            agg_logging_output = self.criterion.__class__.aggregate_logging_outputs(
-                logging_outputs
-            )
-            grad_denom = self.criterion.__class__.grad_denom(sample_sizes)
+            self.meters["oom"].update(ooms_adv)
 
-            try:
-                # all-reduce and rescale gradients, then take an optimization step
-                grad_norm = self._all_reduce_and_rescale(grad_denom)
-                self._opt()
+        agg_logging_output = super(AdversarialTrainer, self).train_step(
+            sample, update_params=update_params,
+        )
 
-                # update meters
-                self.meters['wps'].update(ntokens)
-                self.meters['ups'].update(1.)
-                self.meters['wpb'].update(ntokens)
-                self.meters['bsz'].update(nsentences)
-                if grad_norm is not None:
-                    self.meters['gnorm'].update(grad_norm)
-                    self.meters['clip'].update(
-                        1. if grad_norm > self.args.clip_norm else 0.
-                    )
-                self.meters['oom'].update(ooms_fwd + ooms_bwd)
-
-                # update loss meters for training
-                if 'loss' in agg_logging_output:
-                    self.meters['train_loss'].update(
-                        agg_logging_output['loss'], grad_denom
-                    )
-                # criterions can optionally log the NLL loss too
-                if 'nll_loss' in agg_logging_output:
-                    self.meters['train_nll_loss'].update(
-                        agg_logging_output['nll_loss'], ntokens
-                    )
-            except OverflowError as e:
-                self.zero_grad()
-                print('| WARNING: overflow detected, ' + str(e))
-
-            self.clear_buffered_stats()
-
-            return agg_logging_output
-        else:
-            return None  # buffering updates
+        return agg_logging_output
 
     def _incorporate_adv_input_to_sample(self, sample, adv_input):
         """Interleaves normal input and adv input
