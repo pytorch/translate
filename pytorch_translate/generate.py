@@ -340,9 +340,9 @@ def add_args(parser):
         default=0.0,
         help=(
             "Value to add to (log-prob) score for each token except EOS. "
-            "IMPORTANT NOTE: higher values of --lenpen and --word-reward "
+            "IMPORTANT NOTE: higher values of --length-penalty and --word-reward "
             "both encourage longer translations, while higher values of "
-            "--unkpen penalize UNKs more."
+            "--unk-reward penalize UNKs more."
         ),
     )
     group.add_argument(
