@@ -465,15 +465,15 @@ def expand_checkpointing_args(group):
         "to allow BLEU to work properly.",
     )
     group.add_argument(
-        "--restore-checkpoint-dir",
+        "--pretrained-checkpoint-file",
         default="",
         type=str,
+        metavar="FILE",
         help=(
             "Allows the user to resume or fine-tune training (possibly with "
-            "different parameter) from another run's checkpoint. Will look for "
-            "the previous checkpoint under "
-            "os.path.join(--restore-checkpoint-dir, --restore-file). Note that "
-            "if --restore-file is already present under --save-dir, this "
+            "different parameter) from another run's checkpoint. Note that "
+            "if there's already an existing checkpoint at "
+            "os.path.join(--save-dir, --restore-file), this "
             "flag will have no effect. We prefer using --save-dir over this "
             "flag to ensure that if user resumes training on a model that "
             "was originaly initialized from another run's checkpoint, we won't "
@@ -482,15 +482,16 @@ def expand_checkpointing_args(group):
         ),
     )
     group.add_argument(
-        "--restore-checkpoint-state",
+        "--load-pretrained-checkpoint-state",
         type=utils.bool_flag,
         nargs="?",
         const=True,
-        default=True,
+        default=False,
         help=(
-            "Whether to also restore optimizer extra_state (epoch, "
-            "training time, etc) when loading from --restore-file. "
-            "If false, only model weights are loaded from that file."
+            "Whether to also load optimizer extra_state (epoch, "
+            "training time, etc) when loading from --pretrained-checkpoint-file. "
+            "If false, only model weights are loaded from that file. "
+            "Note that this has no effect when restoring from --restore-file."
         ),
     )
 
