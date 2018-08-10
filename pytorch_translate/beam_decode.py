@@ -533,9 +533,22 @@ class SequenceGenerator(torch.nn.Module):
                     possible_translation_tokens = decoder_out[2]
                 else:
                     possible_translation_tokens = None
-            probs = model_weight * model.get_normalized_probs(
-                decoder_out, log_probs=False
-            )
+                if (
+                    hasattr(model.decoder, "adaptive_softmax")
+                    and model.decoder.adaptive_softmax is not None
+                ):
+                    decoder_out[0] = decoder_out[0].unsqueeze(1)
+                    # to use get_normalized_probs in adaptive softmax decoder
+                    # the sample object is needed. During inference, the target
+                    # should be set to None
+                    probs = model_weight * model.get_normalized_probs(
+                        decoder_out, log_probs=False, sample={"target": None}
+                    )
+                    probs = probs[:, -1, :]
+                else:
+                    probs = model_weight * model.get_normalized_probs(
+                        decoder_out, log_probs=False
+                    )
             if avg_probs is None:
                 avg_probs = probs
             else:
