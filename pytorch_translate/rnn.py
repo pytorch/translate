@@ -5,13 +5,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.onnx.operators
-from fairseq import utils
+from fairseq import options, utils
 from fairseq.models import (
     FairseqEncoder,
     FairseqModel,
     register_model,
     register_model_architecture,
 )
+from fairseq.modules import AdaptiveSoftmax
 from pytorch_translate import rnn_cell  # noqa
 from pytorch_translate import (
     attention,
@@ -383,6 +384,12 @@ class RNNModel(FairseqModel):
                 "defaults to relu, values: relu, tanh"
             ),
         )
+        parser.add_argument(
+            '--adaptive-softmax-cutoff',
+            metavar='EXPR',
+            help='comma separated list of adaptive softmax cutoff points. '
+            'Must be used with adaptive_loss criterion'
+        )
 
         # Args for vocab reduction
         vocab_reduction.add_args(parser)
@@ -417,6 +424,8 @@ class RNNModel(FairseqModel):
     def build_single_decoder(
         args, src_dict, dst_dict, ngram_decoder=None, project_output=True, is_lm=False
     ):
+        if args.adaptive_softmax_cutoff is not None:
+            project_output = False
         attention_type = args.attention_type
         encoder_hidden_dim = args.encoder_hidden_dim
         if is_lm:
@@ -475,6 +484,17 @@ class RNNModel(FairseqModel):
                 att_weighted_src_embeds=args.att_weighted_src_embeds,
                 src_embed_dim=args.encoder_embed_dim,
                 att_weighted_activation_type=args.att_weighted_activation_type,
+            )
+
+        # Being able to use adaptive softmax for RNN decoder
+        decoder.adaptive_softmax = None
+
+        if args.adaptive_softmax_cutoff is not None:
+            decoder.adaptive_softmax = AdaptiveSoftmax(
+                len(dst_dict),
+                args.decoder_out_embed_dim or args.decoder_hidden_dim,
+                options.eval_str_list(args.adaptive_softmax_cutoff, type=int),
+                dropout=args.dropout,
             )
         return decoder
 
@@ -1263,6 +1283,7 @@ def base_architecture(args):
     args.att_weighted_activation_type = getattr(
         args, "att_weighted_activation_type", "tanh"
     )
+    args.adaptive_softmax_cutoff = getattr(args, "adaptive_softmax_cutoff", None)
 
 @register_model_architecture("rnn", "rnn_big_test")
 def rnn_big_test(args):

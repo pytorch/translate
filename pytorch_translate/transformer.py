@@ -5,7 +5,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from fairseq import utils
+from fairseq import options, utils
 from fairseq.models import (
     FairseqEncoder,
     FairseqIncrementalDecoder,
@@ -14,11 +14,8 @@ from fairseq.models import (
     register_model_architecture,
     transformer as fairseq_transformer,
 )
-from fairseq.modules import SinusoidalPositionalEmbedding
-from pytorch_translate.common_layers import (
-    Embedding,
-    VariableTracker,
-)
+from fairseq.modules import AdaptiveSoftmax, SinusoidalPositionalEmbedding
+from pytorch_translate.common_layers import Embedding, VariableTracker
 
 
 @register_model("ptt_transformer")
@@ -153,6 +150,13 @@ class TransformerModel(FairseqModel):
             help="share encoder, decoder and output embeddings"
             " (requires shared dictionary and embed dim)",
         )
+        parser.add_argument(
+            "--adaptive-softmax-cutoff",
+            default=None,
+            metavar="EXPR",
+            help="comma separated list of adaptive softmax cutoff points. "
+            "Must be used with adaptive_loss criterion",
+        )
 
     @classmethod
     def build_model(cls, args, task):
@@ -256,9 +260,7 @@ class TransformerEncoder(FairseqEncoder):
         # Embed tokens
         x = self.embed_tokens(src_tokens)
         # Track token embeddings
-        self.tracker.track(
-            x, "token_embeddings", retain_grad=self.track_gradients
-        )
+        self.tracker.track(x, "token_embeddings", retain_grad=self.track_gradients)
         # Add position embeddings and dropout
         x = self.embed_scale * x
         x += self.embed_positions(src_tokens)
@@ -331,7 +333,16 @@ class TransformerDecoder(FairseqIncrementalDecoder):
             ]
         )
 
-        if not self.share_input_output_embed:
+        self.adaptive_softmax = None
+
+        if args.adaptive_softmax_cutoff is not None:
+            self.adaptive_softmax = AdaptiveSoftmax(
+                len(dictionary),
+                args.decoder_embed_dim,
+                options.eval_str_list(args.adaptive_softmax_cutoff, type=int),
+                dropout=args.dropout,
+            )
+        elif not self.share_input_output_embed:
             self.embed_out = nn.Parameter(torch.Tensor(len(dictionary), embed_dim))
             nn.init.normal_(self.embed_out, mean=0, std=embed_dim ** -0.5)
 
@@ -362,11 +373,12 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         # T x B x C -> B x T x C
         x = x.transpose(0, 1)
 
-        # project back to size of vocabulary
-        if self.share_input_output_embed:
-            x = F.linear(x, self.embed_tokens.weight)
-        else:
-            x = F.linear(x, self.embed_out)
+        if self.adaptive_softmax is None:
+            # project back to size of vocabulary
+            if self.share_input_output_embed:
+                x = F.linear(x, self.embed_tokens.weight)
+            else:
+                x = F.linear(x, self.embed_out)
 
         return x, attn
 
@@ -409,3 +421,4 @@ def base_architecture(args):
     args.attention_dropout = getattr(args, "attention_dropout", 0.)
     args.relu_dropout = getattr(args, "relu_dropout", 0.)
     args.dropout = getattr(args, "dropout", 0.1)
+    args.adaptive_softmax_cutoff = getattr(args, "addaptive_softmax_cutoff", None)
