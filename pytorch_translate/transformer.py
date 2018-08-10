@@ -42,7 +42,7 @@ class TransformerModel(FairseqModel):
             help="dropout probability after ReLU in FFN",
         )
         parser.add_argument(
-            "--encoder-embed-path",
+            "--encoder-pretrained-embed",
             type=str,
             metavar="STR",
             help="path to pre-trained encoder embedding",
@@ -90,7 +90,7 @@ class TransformerModel(FairseqModel):
             help="use learned positional embeddings in the encoder",
         )
         parser.add_argument(
-            "--decoder-embed-path",
+            "--decoder-pretrained-embed",
             type=str,
             metavar="STR",
             help="path to pre-trained decoder embedding",
@@ -187,16 +187,17 @@ class TransformerModel(FairseqModel):
                     "--share-all-embeddings requires --encoder-embed-dim "
                     "to match --decoder-embed-dim"
                 )
-            if args.decoder_embed_path and (
-                args.decoder_embed_path != args.encoder_embed_path
+            if args.decoder_pretrained_embed and (
+                args.decoder_pretrained_embed != args.encoder_pretrained_embed
             ):
                 raise RuntimeError(
-                    "--share-all-embeddings not compatible with --decoder-embed-path"
+                    "--share-all-embeddings not compatible with "
+                    "--decoder-pretrained-embed"
                 )
             encoder_embed_tokens = build_embedding(
                 src_dict,
                 args.encoder_embed_dim,
-                args.encoder_embed_path,
+                args.encoder_pretrained_embed,
                 args.encoder_freeze_embed,
             )
             decoder_embed_tokens = encoder_embed_tokens
@@ -205,13 +206,13 @@ class TransformerModel(FairseqModel):
             encoder_embed_tokens = build_embedding(
                 src_dict,
                 args.encoder_embed_dim,
-                args.encoder_embed_path,
+                args.encoder_pretrained_embed,
                 args.encoder_freeze_embed,
             )
             decoder_embed_tokens = build_embedding(
                 tgt_dict,
                 args.decoder_embed_dim,
-                args.decoder_embed_path,
+                args.decoder_pretrained_embed,
                 args.decoder_freeze_embed,
             )
 
@@ -396,7 +397,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
 @register_model_architecture("ptt_transformer", "ptt_transformer")
 def base_architecture(args):
-    args.encoder_embed_path = getattr(args, "encoder_embed_path", None)
+    args.encoder_pretrained_embed = getattr(args, "encoder_pretrained_embed", None)
     args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 256)
     args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", 512)
     args.encoder_layers = getattr(args, "encoder_layers", 3)
@@ -404,7 +405,7 @@ def base_architecture(args):
     args.encoder_freeze_embed = getattr(args, "encoder_freeze_embed", False)
     args.encoder_learned_pos = getattr(args, "encoder_normalize_before", False)
     args.encoder_normalize_before = getattr(args, "encoder_learned_pos", False)
-    args.decoder_embed_path = getattr(args, "decoder_embed_path", None)
+    args.decoder_pretrained_embed = getattr(args, "decoder_pretrained_embed", None)
     args.decoder_embed_dim = getattr(args, "decoder_embed_dim", args.encoder_embed_dim)
     args.decoder_ffn_embed_dim = getattr(
         args, "decoder_ffn_embed_dim", args.encoder_ffn_embed_dim
