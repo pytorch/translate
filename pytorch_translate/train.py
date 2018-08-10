@@ -40,12 +40,12 @@ from pytorch_translate import (
     preprocess,
     tasks as pytorch_translate_tasks,
 )
-from pytorch_translate.word_prediction import word_prediction_criterion  # noqa
-from pytorch_translate.word_prediction import word_prediction_model  # noqa
 from pytorch_translate.research.knowledge_distillation import (  # noqa
     knowledge_distillation_loss
 )
 from pytorch_translate.utils import ManagedCheckpoints
+from pytorch_translate.word_prediction import word_prediction_criterion  # noqa
+from pytorch_translate.word_prediction import word_prediction_model  # noqa
 
 
 from pytorch_translate import rnn  # noqa; noqa
@@ -215,28 +215,32 @@ def setup_training(args):
     os.makedirs(args.save_dir, exist_ok=True)
 
     # If --restore-file is already present under --save-dir, use that one
-    # instead of the --restore-file that may be present under
-    # --restore-checkpoint-dir. The idea is that --restore-checkpoint-dir
-    # allows the user to specify restoring from a different run's
-    # checkpoint (possibly with different training params), while not
-    # polluting the previous run's checkpoint directory with new checkpoints.
-    # However, if training gets interrupted and the user restarts training,
-    # we want to resume from the checkpoints under --save-dir, instead of
-    # restarting again from the old run's checkpoint under
-    # --restore-checkpoint-dir.
+    # instead of --pretrained-checkpoint-file. The idea is that
+    # --pretrained-checkpoint-file allows the user to specify restoring from a
+    # different run's checkpoint (possibly with different training params),
+    # while not polluting the previous run's checkpoint directory
+    # with new checkpoints. However, if training gets interrupted
+    # and the user restarts training, we want to resume from
+    # the checkpoints under --save-dir, instead of
+    # restarting again from the old run's checkpoint at
+    # --pretrained-checkpoint-file.
     #
     # Note that if args.restore_file is an absolute path, os.path.join() will
     # ignore previous directory args and just use the absolute path as is.
     checkpoint_path = os.path.join(args.save_dir, args.restore_file)
+    restore_state = True
     if os.path.exists(checkpoint_path):
         print(
             f"| Using --save-dir={args.save_dir}, --restore-file={args.restore_file}."
         )
-    elif args.restore_checkpoint_dir:
-        checkpoint_path = os.path.join(args.restore_checkpoint_dir, args.restore_file)
+    elif args.pretrained_checkpoint_file and os.path.exists(
+        args.pretrained_checkpoint_file
+    ):
+        checkpoint_path = args.pretrained_checkpoint_file
+        restore_state = args.load_pretrained_checkpoint_state
         print(
-            f"| Using --restore-checkpoint-dir={args.restore_checkpoint_dir}, "
-            f"--restore-file={args.restore_file}."
+            f"| Using --pretrained-checkpoint-file={args.pretrained_checkpoint_file}, "
+            f"--load-pretrained-checkpoint-state={args.load_pretrained_checkpoint_state}."
         )
 
     extra_state = default_extra_state(args)
@@ -247,7 +251,7 @@ def setup_training(args):
         loaded, loaded_extra_state = load_existing_checkpoint(
             checkpoint_path=checkpoint_path,
             trainer=trainer,
-            restore_state=args.restore_checkpoint_state,
+            restore_state=restore_state,
         )
         if loaded_extra_state:
             extra_state.update(loaded_extra_state)
@@ -597,7 +601,7 @@ def save_checkpoint(trainer, args, extra_state):
         trainer.save_checkpoint(epoch_filename, extra_state)
         extra_state["last_checkpoints"].append(epoch_filename)
 
-    last_filename = os.path.join(args.save_dir, "checkpoint_last.pt")
+    last_filename = os.path.join(args.save_dir, constants.LAST_CHECKPOINT_FILENAME)
     trainer.save_checkpoint(last_filename, extra_state)
 
     # This ensures we'll always have at least one checkpoint in the list to use
