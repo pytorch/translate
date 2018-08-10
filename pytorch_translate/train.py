@@ -102,6 +102,14 @@ def load_existing_checkpoint(
 ) -> Tuple[bool, Optional[Dict]]:
     loaded = False
     extra_state = None
+
+    if not os.path.isfile(checkpoint_path):
+        print(
+            f"| No existing checkpoint at {checkpoint_path}. "
+            f"Starting training from scratch."
+        )
+        return loaded, extra_state
+
     if restore_state:
         extra_state = trainer.load_checkpoint(checkpoint_path)
         if extra_state is None:
