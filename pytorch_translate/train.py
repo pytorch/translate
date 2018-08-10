@@ -269,7 +269,7 @@ def setup_training(args):
     epoch_itr = data.EpochBatchIterator(
         dataset=task.dataset(args.train_subset),
         max_tokens=args.max_tokens,
-        max_sentences=args.max_sentences_valid,
+        max_sentences=args.max_sentences,
         max_positions=trainer.get_model().max_positions(),
         ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
         seed=args.seed,
@@ -738,9 +738,15 @@ def _save_averaged_checkpoint(args, extra_state):
 
 
 def calculate_bleu_on_subset(args, task, epoch_str: str, offset, dataset_split):
+    # This is a trick to have generate use max_sentences_valid
+    max_sentences_train = args.max_sentences
+    args.max_sentences = args.max_sentences_valid
+    # Generate score
     scorer, num_sentences, gen_timer, translation_samples = generate.generate_score(
         args=args, task=task, dataset_split=dataset_split
     )
+    # Set max_sentences to its original value
+    args.max_sentences = max_sentences_train
 
     print(
         f"| epoch {epoch_str} | offset {offset} "
