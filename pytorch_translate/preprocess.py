@@ -119,7 +119,9 @@ def make_multiling_corpus_configs(
     assert len(language_ids) == len(oversampling_rates)
     return [
         pytorch_translate_data.MultilingualCorpusConfig(
-            dialect_id=i + pytorch_translate_data.MULTILING_DIALECT_ID_OFFSET,
+            dialect_id=None
+            if i is None
+            else i + pytorch_translate_data.MULTILING_DIALECT_ID_OFFSET,
             data_file=p,
             dict=d,
             oversampling=o,
