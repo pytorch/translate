@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
 import math
-import torch
 
-from pytorch_translate.beam_decode import SequenceGenerator
+import torch
 from fairseq.models import FairseqIncrementalDecoder
+from pytorch_translate.beam_decode import SequenceGenerator
 
 
 class CompetingCompletedSequenceGenerator(SequenceGenerator):

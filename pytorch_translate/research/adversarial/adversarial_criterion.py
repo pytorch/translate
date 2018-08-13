@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
 import math
-import torch
-import numpy as np
-import torch.nn.functional as F
 
+import numpy as np
+import torch
+import torch.nn.functional as F
 from fairseq import utils
-from fairseq.criterions import FairseqCriterion, register_criterion, CRITERION_REGISTRY
+from fairseq.criterions import CRITERION_REGISTRY, FairseqCriterion, register_criterion
 
 
 def build_criterion(args, task):
@@ -103,19 +103,19 @@ class ForceWordsCriterion(FairseqCriterion):
             default=["potato"],
             nargs="+",
             metavar="WORDS",
-            help="Words the adversary will try to force the model to predict"
+            help="Words the adversary will try to force the model to predict",
         )
         parser.add_argument(
             "--force-not",
             default=False,
             action="store_true",
-            help="Force the model *not* to generate the specified words."
+            help="Force the model *not* to generate the specified words.",
         )
         parser.add_argument(
             "--only-first",
             default=False,
             action="store_true",
-            help="Apply the criterion only to the first word of the output."
+            help="Apply the criterion only to the first word of the output.",
         )
         parser.add_argument(
             "--any-position",
@@ -123,13 +123,13 @@ class ForceWordsCriterion(FairseqCriterion):
             action="store_true",
             help="This will enforce that the model generates the word at LEAST "
             "once. Think of it as doing OR along the length dimension (as "
-            "opposed to AND). This is superseded by --only-first."
+            "opposed to AND). This is superseded by --only-first.",
         )
         parser.add_argument(
             "--mask-eos",
             default=False,
             action="store_true",
-            help="Exclude the EOS token from the objective."
+            help="Exclude the EOS token from the objective.",
         )
 
     def log_likelihood_loss(self, model, sample, net_output):
@@ -138,21 +138,16 @@ class ForceWordsCriterion(FairseqCriterion):
 
         # 2. Retrieve the logprobs for each target word
         #    B x T x |V| -> B x T x |target_tokens|
-        target_tokens_lprobs = lprobs.index_select(
-            dim=2,
-            index=self.target_tokens,
-        )
+        target_tokens_lprobs = lprobs.index_select(dim=2, index=self.target_tokens)
 
         # 3. We want to predict the any of the words so we take the sum in the
         #    log semiring (=OR)
         #    B x T x |target_tokens| -> B x T
         any_target_token_lprob = target_tokens_lprobs.logsumexp(2)
         if self.args.force_not:
-            any_target_token_lprob = torch.log(
-                1.0 - torch.exp(any_target_token_lprob)
-            )
+            any_target_token_lprob = torch.log(1.0 - torch.exp(any_target_token_lprob))
         # Reduce along length and return
-        return - self.reduce_along_length(any_target_token_lprob, sample)
+        return -self.reduce_along_length(any_target_token_lprob, sample)
 
     def reduce_along_length(self, loss_by_position, sample):
         # Sum over all positions (=AND)
@@ -245,25 +240,25 @@ class ForceWordsHingeCriterion(FairseqCriterion):
             default=["potato"],
             nargs="+",
             metavar="WORDS",
-            help="Words the adversary will try to force the model to predict"
+            help="Words the adversary will try to force the model to predict",
         )
         parser.add_argument(
             "--force-not",
             default=False,
             action="store_true",
-            help="Force the model *not* to generate the specified words."
+            help="Force the model *not* to generate the specified words.",
         )
         parser.add_argument(
             "--only-first",
             default=False,
             action="store_true",
-            help="Apply the criterion only to the first word of the output."
+            help="Apply the criterion only to the first word of the output.",
         )
         parser.add_argument(
             "--hinge-slack",
             default=1.0,
             type=float,
-            help="Slack variable for the hinge loss."
+            help="Slack variable for the hinge loss.",
         )
         parser.add_argument(
             "--any-position",
@@ -271,7 +266,7 @@ class ForceWordsHingeCriterion(FairseqCriterion):
             action="store_true",
             help="This will enforce that the model generates the word at LEAST "
             "once. Think of it as doing OR along the length dimension (as "
-            "opposed to AND). This is superseded by --only-first."
+            "opposed to AND). This is superseded by --only-first.",
         )
 
         parser.add_argument(
@@ -279,7 +274,7 @@ class ForceWordsHingeCriterion(FairseqCriterion):
             default=1,
             type=int,
             help="This will sum the max margin objective over the top-k logits. "
-            "Maybe useful in case we want to break beam search."
+            "Maybe useful in case we want to break beam search.",
         )
 
     def hinge_loss(self, sample, net_output):
@@ -287,10 +282,7 @@ class ForceWordsHingeCriterion(FairseqCriterion):
         logits = net_output[0]
 
         # 2. Pick up the llogits of the target words
-        target_tokens_logits = logits.index_select(
-            dim=2,
-            index=self.target_tokens,
-        )
+        target_tokens_logits = logits.index_select(dim=2, index=self.target_tokens)
 
         # 3. Take the max over the other tokens
         logits[:, :, self.target_tokens] = -np.inf

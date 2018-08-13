@@ -2,8 +2,8 @@
 
 from fairseq.tasks import register_task
 from pytorch_translate.tasks import PytorchTranslateTask
-from . import adversarial_criterion
-from . import adversaries
+
+from . import adversarial_criterion, adversaries
 
 
 @register_task("pytorch_translate_adversarial")

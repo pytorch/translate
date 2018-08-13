@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import torch.nn as nn
+
 from ..adversarial_constraints import AdversarialConstraints
 
 

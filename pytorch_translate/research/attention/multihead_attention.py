@@ -1,50 +1,37 @@
 #!/usr/bin/env python3
 
-import numpy as np
 import math
+
+import numpy as np
 import torch
 import torch.nn.functional as F
-
 from torch import nn
 
 
 def create_src_lengths_mask(batch_size, src_lengths):
     max_srclen = src_lengths.max()
-    src_indices = torch.arange(
-        0,
-        max_srclen,
-    ).unsqueeze(0).type_as(src_lengths)
+    src_indices = torch.arange(0, max_srclen).unsqueeze(0).type_as(src_lengths)
     src_indices = src_indices.expand(batch_size, max_srclen)
-    src_lengths = src_lengths.unsqueeze(dim=1).expand(
-        batch_size,
-        max_srclen,
-    )
+    src_lengths = src_lengths.unsqueeze(dim=1).expand(batch_size, max_srclen)
     # returns [batch_size, max_seq_len]
     return (src_indices < src_lengths).int().detach()
 
 
-def apply_masks(
-    scores,
-    batch_size,
-    unseen_mask,
-    src_lengths,
-):
+def apply_masks(scores, batch_size, unseen_mask, src_lengths):
     seq_len = scores.shape[-1]
 
     # [1, seq_len, seq_len]
     sequence_mask = torch.ones(seq_len, seq_len).unsqueeze(0).int()
     if unseen_mask:
         # [1, seq_len, seq_len]
-        sequence_mask = torch.tril(
-            torch.ones(seq_len, seq_len),
-            diagonal=0,
-        ).unsqueeze(0).int()
+        sequence_mask = (
+            torch.tril(torch.ones(seq_len, seq_len), diagonal=0).unsqueeze(0).int()
+        )
 
     if src_lengths is not None:
         # [batch_size, 1, seq_len]
         src_lengths_mask = create_src_lengths_mask(
-            batch_size=batch_size,
-            src_lengths=src_lengths,
+            batch_size=batch_size, src_lengths=src_lengths
         ).unsqueeze(-2)
 
         # [batch_size, seq_len, seq_len]
@@ -57,13 +44,7 @@ def apply_masks(
     return scores
 
 
-def scaled_dot_prod_attn(
-    query,
-    key,
-    value,
-    unseen_mask=False,
-    src_lengths=None,
-):
+def scaled_dot_prod_attn(query, key, value, unseen_mask=False, src_lengths=None):
     """
     Scaled Dot Product Attention
 
@@ -95,10 +76,7 @@ def scaled_dot_prod_attn(
     return torch.matmul(p_attn, value), p_attn
 
 
-def split_heads(
-    X,
-    nheads,
-):
+def split_heads(X, nheads):
     """
     Split heads:
     1) Split (reshape) last dimension (size d_model) into nheads, d_head
@@ -136,9 +114,7 @@ def combine_heads(X):
     """
     X = X.transpose(1, 2)
     nheads, d_head = X.shape[-2:]
-    return X.contiguous().view(
-        list(X.shape[:-2]) + [nheads * d_head],
-    )
+    return X.contiguous().view(list(X.shape[:-2]) + [nheads * d_head])
 
 
 class MultiheadAttention(nn.Module):
@@ -167,6 +143,7 @@ class MultiheadAttention(nn.Module):
     Output
       result : [batch_size, sequence length, d_model]
     """
+
     def __init__(self, nheads, d_model):
         "Take in model size and number of heads."
         super(MultiheadAttention, self).__init__()

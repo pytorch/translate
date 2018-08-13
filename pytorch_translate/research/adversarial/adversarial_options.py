@@ -2,15 +2,17 @@
 
 import argparse
 
-from fairseq.options import eval_str_list
-from fairseq.models import ARCH_MODEL_REGISTRY, ARCH_CONFIG_REGISTRY
 from fairseq.criterions import CRITERION_REGISTRY
-from fairseq.tasks import TASK_REGISTRY
+from fairseq.models import ARCH_CONFIG_REGISTRY, ARCH_MODEL_REGISTRY
 from fairseq.optim import OPTIMIZER_REGISTRY
 from fairseq.optim.lr_scheduler import LR_SCHEDULER_REGISTRY
+from fairseq.options import eval_str_list
+from fairseq.tasks import TASK_REGISTRY
 from pytorch_translate.research.adversarial.adversaries import (
-    ADVERSARY_REGISTRY, BaseAdversary
+    ADVERSARY_REGISTRY,
+    BaseAdversary,
 )
+
 from .adversarial_constraints import AdversarialConstraints
 
 
@@ -19,14 +21,17 @@ def add_adversarial_args(parser, attack_only=False, train=False):
     group = parser.add_argument_group("Adversarial examples arguments")
 
     if attack_only:
-        group.add_argument("--quiet", action="store_true",
-            help="Don't print the adversarial sentences to stdout")
+        group.add_argument(
+            "--quiet",
+            action="store_true",
+            help="Don't print the adversarial sentences to stdout",
+        )
         group.add_argument(
             "--path",
             metavar="DIR/FILE",
             default=None,
             help="path(s) to model file(s), colon separated "
-            "(only one model is supported right now)"
+            "(only one model is supported right now)",
         )
     if train:
         group.add_argument(
@@ -43,7 +48,7 @@ def add_adversarial_args(parser, attack_only=False, train=False):
             metavar="N",
             type=int,
             help="Minimum number of epochs of training before adversarial "
-            "augmentation kicks in"
+            "augmentation kicks in",
         )
         group.add_argument(
             "--accumulate-adv-gradient",
@@ -52,7 +57,7 @@ def add_adversarial_args(parser, attack_only=False, train=False):
             help="Run one forward/backward pass for the adversarial input "
             "and one for the normal input before updating. This is slower "
             "but more memory efficient than wrapping the two in a single "
-            "batch, effectively doubling the batch size."
+            "batch, effectively doubling the batch size.",
         )
 
     # Trainer Arguments
@@ -101,7 +106,8 @@ def add_adversarial_args(parser, attack_only=False, train=False):
         metavar="ADV",
         choices=ADVERSARY_REGISTRY.keys(),
         help="adversary type: {} (default: random_swap)".format(
-            ", ".join(ADVERSARY_REGISTRY.keys())),
+            ", ".join(ADVERSARY_REGISTRY.keys())
+        ),
     )
     # Add arguments specific to all adversaries
     BaseAdversary.add_args(group)
@@ -122,9 +128,9 @@ def parse_args_and_adversary(parser, input_args=None):
     args, _ = parser.parse_known_args(input_args)
 
     # Add model-specific args to parser.
-    if hasattr(args, 'arch'):
+    if hasattr(args, "arch"):
         model_specific_group = parser.add_argument_group(
-            'Model-specific configuration',
+            "Model-specific configuration",
             # Only include attributes which are explicitly given as command-line
             # arguments or which have default values.
             argument_default=argparse.SUPPRESS,
@@ -133,7 +139,7 @@ def parse_args_and_adversary(parser, input_args=None):
 
     # Add adversary-specific args to parser.
     adversary_specific_group = parser.add_argument_group(
-        f"Arguments for adversary \"{args.adversary}\"",
+        f'Arguments for adversary "{args.adversary}"',
         # Only include attributes which are explicitly given as command-line
         # arguments or which have default values.
         argument_default=argparse.SUPPRESS,
@@ -142,17 +148,17 @@ def parse_args_and_adversary(parser, input_args=None):
 
     # Add adversarial criterion-specific args to parser.
     adv_criterion_specific_group = parser.add_argument_group(
-        f"Arguments for criterion \"{args.adv_criterion}\"",
+        f'Arguments for criterion "{args.adv_criterion}"',
         # Only include attributes which are explicitly given as command-line
         # arguments or which have default values.
         argument_default=argparse.SUPPRESS,
     )
     CRITERION_REGISTRY[args.adv_criterion].add_args(adv_criterion_specific_group)
 
-    if hasattr(args, 'criterion'):
+    if hasattr(args, "criterion"):
         # Add criterion-specific args to parser.
         criterion_specific_group = parser.add_argument_group(
-            f"Arguments for criterion \"{args.criterion}\"",
+            f'Arguments for criterion "{args.criterion}"',
             # Only include attributes which are explicitly given as command-line
             # arguments or which have default values.
             argument_default=argparse.SUPPRESS,
@@ -160,22 +166,22 @@ def parse_args_and_adversary(parser, input_args=None):
         CRITERION_REGISTRY[args.criterion].add_args(criterion_specific_group)
 
     # Add other *-specific args to parser.
-    if hasattr(args, 'optimizer'):
+    if hasattr(args, "optimizer"):
         OPTIMIZER_REGISTRY[args.optimizer].add_args(parser)
-    if hasattr(args, 'lr_scheduler'):
+    if hasattr(args, "lr_scheduler"):
         LR_SCHEDULER_REGISTRY[args.lr_scheduler].add_args(parser)
-    if hasattr(args, 'task'):
+    if hasattr(args, "task"):
         TASK_REGISTRY[args.task].add_args(parser)
 
     # Parse a second time.
     args = parser.parse_args(input_args)
 
     # Post-process args.
-    if hasattr(args, 'lr'):
+    if hasattr(args, "lr"):
         args.lr = eval_str_list(args.lr, type=float)
-    if hasattr(args, 'update_freq'):
+    if hasattr(args, "update_freq"):
         args.update_freq = eval_str_list(args.update_freq, type=int)
-    if hasattr(args, 'max_sentences_valid') and args.max_sentences_valid is None:
+    if hasattr(args, "max_sentences_valid") and args.max_sentences_valid is None:
         args.max_sentences_valid = args.max_sentences
     # The following line is a hack to be able to use the cross_entropy
     # criterion without polluting the command line with unnecessary arguments
@@ -186,7 +192,7 @@ def parse_args_and_adversary(parser, input_args=None):
         args.multiling_source_lang = None
 
     # Apply architecture configuration.
-    if hasattr(args, 'arch'):
+    if hasattr(args, "arch"):
         ARCH_CONFIG_REGISTRY[args.arch](args)
 
     return args
@@ -203,7 +209,7 @@ def parse_args_and_arch_and_adversary(parser, input_args=None):
 
     # Add model-specific args to parser.
     model_specific_group = parser.add_argument_group(
-        'Model-specific configuration',
+        "Model-specific configuration",
         # Only include attributes which are explicitly given as command-line
         # arguments or which have default values.
         argument_default=argparse.SUPPRESS,
@@ -221,7 +227,7 @@ def parse_args_and_arch_and_adversary(parser, input_args=None):
     args = parser.parse_args(input_args)
 
     # Post-process args.
-    args.lr = list(map(float, args.lr.split(',')))
+    args.lr = list(map(float, args.lr.split(",")))
     if args.max_sentences_valid is None:
         args.max_sentences_valid = args.max_sentences
 

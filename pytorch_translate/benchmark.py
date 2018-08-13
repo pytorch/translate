@@ -6,7 +6,6 @@ import random
 import torch
 from fairseq import options, tasks
 from fairseq.meters import TimeMeter
-from pytorch_translate import rnn  # noqa; noqa
 from pytorch_translate import (
     beam_decode,
     data as pytorch_translate_data,
@@ -15,6 +14,9 @@ from pytorch_translate import (
     tasks as pytorch_translate_tasks,
     utils as pytorch_translate_utils,
 )
+
+
+from pytorch_translate import rnn  # noqa; noqa
 
 
 def get_parser_with_args():

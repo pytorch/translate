@@ -71,7 +71,7 @@ class RandomSwapAdversary(BaseAdversary):
         word_logits = logits.gather(
             dim=1,
             # Expand the position indices (can we do more efficient than this??)
-            index=random_positions.unsqueeze(-1).expand(-1, -1, len(self.src_dict))
+            index=random_positions.unsqueeze(-1).expand(-1, -1, len(self.src_dict)),
         )
         # Sample words with the Gumbel trick
         random_words = sample_gumbel_trick(word_logits, dim=2)
@@ -79,10 +79,6 @@ class RandomSwapAdversary(BaseAdversary):
         adv_tokens = src_tokens.clone()
         # Assign new values
         # adv_tokens[b, random_positions[b, k]]=random_words[b, random_positions[b, k]]
-        adv_tokens.scatter_(
-            dim=1,
-            index=random_positions,
-            src=random_words,
-        )
+        adv_tokens.scatter_(dim=1, index=random_positions, src=random_words)
         # Return
         return adv_tokens

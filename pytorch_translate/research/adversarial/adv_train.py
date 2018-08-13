@@ -13,15 +13,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import torch
-from fairseq import (
-    data,
-    distributed_utils,
-    options,
-    progress_bar,
-    tasks,
-    utils,
-)
-
+from fairseq import data, distributed_utils, options, progress_bar, tasks, utils
 from fairseq.meters import AverageMeter, StopwatchMeter
 from pytorch_translate import sequence_criterions  # noqa
 from pytorch_translate import transformer  # noqa
@@ -35,24 +27,25 @@ from pytorch_translate import (
     options as pytorch_translate_options,
     preprocess,
 )
-from pytorch_translate.word_prediction import word_prediction_criterion  # noqa
-from pytorch_translate.word_prediction import word_prediction_model  # noqa
+from pytorch_translate.research.adversarial import adversarial_criterion  # noqa
+from pytorch_translate.research.adversarial import adversarial_tasks  # noqa
+from pytorch_translate.research.adversarial import (
+    adversarial_options,
+    adversarial_trainer,
+    adversaries,
+)
 from pytorch_translate.research.knowledge_distillation import (  # noqa
     knowledge_distillation_loss
 )
 from pytorch_translate.utils import ManagedCheckpoints
+from pytorch_translate.word_prediction import word_prediction_criterion  # noqa
+from pytorch_translate.word_prediction import word_prediction_model  # noqa
 
 
 from pytorch_translate import rnn  # noqa; noqa
 
 
 from pytorch_translate import char_source_model  # noqa; noqa
-
-from pytorch_translate.research.adversarial import adversarial_options
-from pytorch_translate.research.adversarial import adversaries
-from pytorch_translate.research.adversarial import adversarial_trainer
-from pytorch_translate.research.adversarial import adversarial_criterion # noqa
-from pytorch_translate.research.adversarial import adversarial_tasks  # noqa
 
 
 def get_parser_with_args():
@@ -205,9 +198,7 @@ def setup_training(args):
     adv_criterion = task.build_adversarial_criterion(args)
 
     # Adversary
-    adversary = adversaries.build_adversary(
-        args, model, task
-    )
+    adversary = adversaries.build_adversary(args, model, task)
 
     # Print a bit of info
     print(
@@ -226,7 +217,7 @@ def setup_training(args):
         model=model,
         criterion=criterion,
         adversarial_criterion=adv_criterion,
-        adversary=adversary
+        adversary=adversary,
     )
 
     print(f"| training on {args.distributed_world_size} GPUs")

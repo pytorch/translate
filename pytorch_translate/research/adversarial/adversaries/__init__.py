@@ -42,7 +42,7 @@ def register_adversary(name):
 # automatically import any Python files in research/adversarial/adversaries/
 for file in os.listdir(os.path.dirname(__file__)):
     if file.endswith(".py") and not file.startswith("_"):
-        module = file[:file.find(".py")]
+        module = file[: file.find(".py")]
         importlib.import_module(
             f"pytorch_translate.research.adversarial.adversaries.{module}"
         )

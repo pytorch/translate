@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
 
-from fairseq.models import (
-    register_model,
-    register_model_architecture,
-    FairseqModel,
-)
+from fairseq.models import FairseqModel, register_model, register_model_architecture
 from pytorch_translate import rnn
 from pytorch_translate.rnn import (
-    torch_find,
     LSTMSequenceEncoder,
+    RNNDecoder,
     RNNEncoder,
-    RNNDecoder
+    torch_find,
 )
 from pytorch_translate.word_prediction import word_predictor
 
@@ -20,6 +16,7 @@ class WordPredictionModel(FairseqModel):
     An architecuture which jointly learns translation and target words
     prediction, as described in http://aclweb.org/anthology/D17-1013.
     """
+
     def __init__(self, task, encoder, decoder, predictor):
         super().__init__(encoder, decoder)
         self.predictor = predictor
@@ -35,22 +32,23 @@ class WordPredictionModel(FairseqModel):
         return self.predictor.get_normalized_probs(pred_output, log_probs)
 
     def get_target_words(self, sample):
-        return sample['target']
+        return sample["target"]
 
 
-@register_model('rnn_word_pred')
+@register_model("rnn_word_pred")
 class RNNWordPredictionModel(WordPredictionModel):
     """
     A subclass which adds words prediction to RNN arch.
     """
+
     @staticmethod
     def add_args(parser):
         rnn.RNNModel.add_args(parser)
         parser.add_argument(
-            '--predictor-hidden-dim',
+            "--predictor-hidden-dim",
             type=int,
-            metavar='N',
-            help='word predictor num units',
+            metavar="N",
+            help="word predictor num units",
         )
 
     @classmethod
@@ -99,19 +97,17 @@ class RNNWordPredictionModel(WordPredictionModel):
         return cls(task, encoder, decoder, predictor)
 
     def get_targets(self, sample, net_output):
-        targets = sample['target'].view(-1)
+        targets = sample["target"].view(-1)
         possible_translation_tokens = net_output[-1]
         if possible_translation_tokens is not None:
             targets = torch_find(
-                possible_translation_tokens,
-                targets,
-                len(self.task.target_dictionary),
+                possible_translation_tokens, targets, len(self.task.target_dictionary)
             )
         return targets
 
 
-@register_model_architecture('rnn_word_pred', 'rnn_word_pred')
+@register_model_architecture("rnn_word_pred", "rnn_word_pred")
 def base_architecture_wp(args):
     # default architecture
     rnn.base_architecture(args)
-    args.predictor_hidden_dim = getattr(args, 'predictor_hidden_dim', 512)
+    args.predictor_hidden_dim = getattr(args, "predictor_hidden_dim", 512)

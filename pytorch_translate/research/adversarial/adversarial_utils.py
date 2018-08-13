@@ -5,6 +5,7 @@ import re
 import torch
 import torch.nn.functional as F
 
+
 # Delimiter for the word to word file
 blank_delim = re.compile(r"[ \t]+")
 

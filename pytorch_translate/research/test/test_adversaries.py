@@ -3,15 +3,14 @@
 import time
 import unittest
 from itertools import product
+from typing import NamedTuple
 
 import torch
 import torch.nn.functional as F
-
 from pytorch_translate.dictionary import Dictionary
-from pytorch_translate.tasks import PytorchTranslateTask
 from pytorch_translate.research.adversarial import adversaries
+from pytorch_translate.tasks import PytorchTranslateTask
 
-from typing import NamedTuple
 
 # For determinism
 torch.manual_seed(11051993)
@@ -53,7 +52,6 @@ class DummyArgs(NamedTuple):
 
 
 class AdversariesTest(unittest.TestCase):
-
     def setUp(self):
         self.num_random_retries = 10
         self.n_symbols = 20
@@ -183,9 +181,8 @@ class AdversariesTest(unittest.TestCase):
         for tok in adv_tokens.view(-1):
             self.assertTrue(
                 tok == self.task.src_dict.unk_index
-                or
-                tok >= self.task.src_dict.nspecial,
-                f"[{name}]: forbidden token {self.task.src_dict[tok]}"
+                or tok >= self.task.src_dict.nspecial,
+                f"[{name}]: forbidden token {self.task.src_dict[tok]}",
             )
 
     def _brute_force_grid_args(self):
@@ -197,8 +194,8 @@ class AdversariesTest(unittest.TestCase):
             self.nearest_neighbors_range,
             self.cosine_nn_range,
             self.alternatives_file_range,
-            [False],    # by_gradient_norm
-            [0],        # temperature
+            [False],  # by_gradient_norm
+            [0],  # temperature
             self.forbidden_tokens_range,
             self.allowed_tokens_range,
             self.allow_identity_range,

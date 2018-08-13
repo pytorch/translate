@@ -5,11 +5,11 @@ import abc
 import numpy as np
 import torch
 import torch.nn as nn
-from fairseq.models import FairseqIncrementalDecoder
 from fairseq import utils
-from pytorch_translate.research.lexical_choice import lexical_translation
+from fairseq.models import FairseqIncrementalDecoder
 from pytorch_translate import rnn_cell  # noqa
 from pytorch_translate import vocab_reduction
+from pytorch_translate.research.lexical_choice import lexical_translation
 
 
 class VariableLengthRecurrent(nn.Module):
@@ -145,9 +145,7 @@ class RNNLayer(nn.Module):
         return next_hidden, output
 
 
-def Embedding(
-    num_embeddings, embedding_dim, padding_idx, freeze_embed
-):
+def Embedding(num_embeddings, embedding_dim, padding_idx, freeze_embed):
     """
     A wrapper around the embedding layer, which can be randomly
     initialized or loaded from a .npy file.
@@ -244,7 +242,7 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
                     self.src_embed_dim,
                     self.out_embed_dim,
                     bias=False,
-                    activation_fn=activation_fn
+                    activation_fn=activation_fn,
                 )
                 self.output_projection_w_lex = nn.Parameter(
                     torch.FloatTensor(self.num_embeddings, self.out_embed_dim).uniform_(
@@ -309,8 +307,7 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
                 (torch.LongTensor([-1]), batch_time_hidden_lex[2].view(1))
             )
             lex_flat = torch.onnx.operators.reshape_from_tensor_shape(
-                lex,
-                lex_flat_shape
+                lex, lex_flat_shape
             )
             lex_logits_shape = torch.cat(
                 (batch_time_hidden_lex[:2], torch.LongTensor([-1]))
@@ -322,7 +319,7 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
                 lex_h,
                 self.output_projection_w_lex,
                 self.output_projection_b_lex,
-                lex_logits_shape
+                lex_logits_shape,
             )
             # combine lexical logits with the original decoder logits
             logits.add_(lex_logits)

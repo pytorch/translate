@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 
-from collections import defaultdict, OrderedDict
+from collections import OrderedDict, defaultdict
 from itertools import chain
 
 import torch
 import torch.nn.functional as F
-
 from fairseq import distributed_utils
-from fairseq.trainer import Trainer
 from fairseq.meters import AverageMeter, TimeMeter
+from fairseq.trainer import Trainer
 
-from .adversarial_utils import tile, detach_sample, clone_sample
+from .adversarial_utils import clone_sample, detach_sample, tile
 
 
 class AdversarialTrainer(Trainer):
@@ -66,18 +65,18 @@ class AdversarialTrainer(Trainer):
     def init_meters(self):
         """Initialize the meters for logging"""
         self.meters = OrderedDict()
-        self.meters['train_loss'] = AverageMeter()
-        self.meters['train_nll_loss'] = AverageMeter()
-        self.meters['valid_loss'] = AverageMeter()
-        self.meters['valid_nll_loss'] = AverageMeter()
-        self.meters['wps'] = TimeMeter()       # words per second
-        self.meters['ups'] = TimeMeter()       # updates per second
-        self.meters['wpb'] = AverageMeter()    # words per batch
-        self.meters['bsz'] = AverageMeter()    # sentences per batch
-        self.meters['gnorm'] = AverageMeter()  # gradient norm
-        self.meters['clip'] = AverageMeter()   # % of updates clipped
-        self.meters['oom'] = AverageMeter()    # out of memory
-        self.meters['wall'] = TimeMeter()      # wall time in seconds
+        self.meters["train_loss"] = AverageMeter()
+        self.meters["train_nll_loss"] = AverageMeter()
+        self.meters["valid_loss"] = AverageMeter()
+        self.meters["valid_nll_loss"] = AverageMeter()
+        self.meters["wps"] = TimeMeter()  # words per second
+        self.meters["ups"] = TimeMeter()  # updates per second
+        self.meters["wpb"] = AverageMeter()  # words per batch
+        self.meters["bsz"] = AverageMeter()  # sentences per batch
+        self.meters["gnorm"] = AverageMeter()  # gradient norm
+        self.meters["clip"] = AverageMeter()  # % of updates clipped
+        self.meters["oom"] = AverageMeter()  # out of memory
+        self.meters["wall"] = TimeMeter()  # wall time in seconds
 
     def gen_adversarial_examples(self, sample):
         """Get adversarial examples from existing sample"""
@@ -282,24 +281,27 @@ class AdversarialTrainer(Trainer):
                 sample["weights"] = (1 - self.adv_weight) * torch.ones_like(
                     sample["net_input"]["src_lengths"]
                 ).float()
-                adv_sample["weights"] = self.adv_weight * torch.ones_like(
-                    adv_sample["net_input"]["src_lengths"]
-                ).float()
+                adv_sample["weights"] = (
+                    self.adv_weight
+                    * torch.ones_like(adv_sample["net_input"]["src_lengths"]).float()
+                )
                 # Compute parameter gradients on the adversarial input
                 super(AdversarialTrainer, self).train_step(
-                    adv_sample, update_params=False,
+                    adv_sample, update_params=False
                 )
             else:
                 # Add the adversarial input to the sample, effectively
                 # creating one big batch. This will be faster (because
                 # of GPU parallelization) but takes more memory.
-                sample, ooms_inc = self._incorporate_adv_input_to_sample(sample, adv_input)
+                sample, ooms_inc = self._incorporate_adv_input_to_sample(
+                    sample, adv_input
+                )
                 ooms_adv += ooms_inc
 
             self.meters["oom"].update(ooms_adv)
 
         agg_logging_output = super(AdversarialTrainer, self).train_step(
-            sample, update_params=update_params,
+            sample, update_params=update_params
         )
 
         return agg_logging_output

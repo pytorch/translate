@@ -21,10 +21,8 @@ def add_args(parser):
         "--lexical-dictionary",
         type=str,
         metavar="EXPR",
-        action='append',
-        help=(
-            "lexical dictionary(ies) for vocab reduction"
-        ),
+        action="append",
+        help=("lexical dictionary(ies) for vocab reduction"),
     )
     parser.add_argument(
         "--num-top-words",

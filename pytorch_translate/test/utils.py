@@ -213,13 +213,14 @@ def create_pretrained_embed(dictionary, embed_dim):
 
     embed_weights = np.random.random((len(dictionary), embed_dim))
     pretrained_embed_path = write_lines_to_temp_file(
-        ["{} {}".format(len(dictionary), embed_dim)] +
-        [
+        ["{} {}".format(len(dictionary), embed_dim)]
+        + [
             "{} {}".format(token, " ".join([str(val) for val in embedding]))
             for token, embedding in zip(dictionary.symbols, embed_weights)
         ]
     )
     return pretrained_embed_path, embed_weights
+
 
 def create_test_text_files():
     src = write_lines_to_temp_file(

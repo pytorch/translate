@@ -44,8 +44,7 @@ class TestRNNModel(unittest.TestCase):
         task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
         model = task.build_model(test_args)
         assert np.allclose(
-            model.encoder.embed_tokens.weight.data.numpy(),
-            embed_weights,
+            model.encoder.embed_tokens.weight.data.numpy(), embed_weights
         )
         os.remove(encoder_embed_path)
 

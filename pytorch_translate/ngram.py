@@ -4,10 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from fairseq import utils
-from pytorch_translate import (
-    attention,
-    utils as pytorch_translate_utils,
-)
+from pytorch_translate import attention, utils as pytorch_translate_utils
 from pytorch_translate.common_layers import (
     DecoderWithOutputProjection,
     Embedding,

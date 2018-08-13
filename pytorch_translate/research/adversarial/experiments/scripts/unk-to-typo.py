@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-import sys
 import argparse
 import random
+import sys
 
 
 def load_dictionary(filename):
@@ -20,28 +20,20 @@ def load_dictionary(filename):
 def get_parser():
     parser = argparse.ArgumentParser("Convert <unk> to actual typos")
     parser.add_argument("SRC", type=str, metavar="SRC", help="Source file.")
-    parser.add_argument(
-        "ADV",
-        type=str,
-        metavar="ADV",
-        help="Adversarial input."
-    )
+    parser.add_argument("ADV", type=str, metavar="ADV", help="Adversarial input.")
     parser.add_argument(
         "--dictionary-file",
         type=str,
         help="File containing the dictionary, one line per word.",
     )
     parser.add_argument(
-        "--unk-token",
-        type=str,
-        default="<unk>",
-        help="Token for unknown words."
+        "--unk-token", type=str, default="<unk>", help="Token for unknown words."
     )
     parser.add_argument(
         "--num-scrambling",
         type=int,
         default="10",
-        help="Number of times we'll try to swap characters to make an OOV."
+        help="Number of times we'll try to swap characters to make an OOV.",
     )
     return parser
 
@@ -53,8 +45,8 @@ def make_oov(word, dic, args):
         # For a fixed number of steps
         for _ in range(args.num_scrambling):
             # Swap two adjacent characters at the middle of the word
-            pos = random.randint(1, len(word)-3)
-            word = word[:pos] + word[pos+1] + word[pos] + word[pos+2:]
+            pos = random.randint(1, len(word) - 3)
+            word = word[:pos] + word[pos + 1] + word[pos] + word[pos + 2 :]
             # If we got an OOV already just return it
             if word not in dic:
                 return word
@@ -99,6 +91,5 @@ def main():
             print(" ".join(new_adv_words))
 
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

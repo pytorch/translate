@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 import math
-import torch
 
+import torch
 from fairseq import utils
 from fairseq.models import FairseqIncrementalDecoder
 
@@ -132,8 +132,7 @@ class MultiSourceSequenceGenerator(torch.nn.Module):
                 timer.stop(s["ntokens"])
             for i, id in enumerate(s["id"]):
                 src = input["src_tokens"].index_select(
-                    0,
-                    input['src_ids'][self.align_to]
+                    0, input["src_ids"][self.align_to]
                 )
                 # remove padding from ref
                 ref = utils.strip_pad(s["target"][i, :], self.pad)

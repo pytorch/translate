@@ -385,10 +385,10 @@ class RNNModel(FairseqModel):
             ),
         )
         parser.add_argument(
-            '--adaptive-softmax-cutoff',
-            metavar='EXPR',
-            help='comma separated list of adaptive softmax cutoff points. '
-            'Must be used with adaptive_loss criterion'
+            "--adaptive-softmax-cutoff",
+            metavar="EXPR",
+            help="comma separated list of adaptive softmax cutoff points. "
+            "Must be used with adaptive_loss criterion",
         )
 
         # Args for vocab reduction
@@ -1284,6 +1284,7 @@ def base_architecture(args):
         args, "att_weighted_activation_type", "tanh"
     )
     args.adaptive_softmax_cutoff = getattr(args, "adaptive_softmax_cutoff", None)
+
 
 @register_model_architecture("rnn", "rnn_big_test")
 def rnn_big_test(args):

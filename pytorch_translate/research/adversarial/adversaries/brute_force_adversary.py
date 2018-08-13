@@ -57,9 +57,7 @@ class BruteForceAdversary(BaseAdversary):
         # 2. Now take grad[x_i]^T * x_i for each position i. We do this with
         #    einsum: multiply all dimensions together and sum along the last one
         #    (the word embedding dim)
-        prev_embed_dot_grad = torch.einsum(
-            "bij,bij->bi", (input_gradients, src_embeds)
-        )
+        prev_embed_dot_grad = torch.einsum("bij,bij->bi", (input_gradients, src_embeds))
         # 3. Take the difference for each possible word. The resulting tensor is
         #    of shape B x T x |V|. The value at index b,t,i is the dot product
         #    between the gradient wrt. step t of batch element b and the
@@ -74,17 +72,12 @@ class BruteForceAdversary(BaseAdversary):
             neg_dir_dot_grad /= direction_norm
         # 4. Apply constraints
         self.constraints.apply(
-            neg_dir_dot_grad,
-            src_tokens,
-            src_embeds,
-            embedding_matrix
+            neg_dir_dot_grad, src_tokens, src_embeds, embedding_matrix
         )
         # 4. Next we find the best substitution at each step by taking the max
         score_at_each_step, best_at_each_step = neg_dir_dot_grad.max(2)
         # 5. Pick the best positions (the topk highest scores)
-        _, best_positions = score_at_each_step.topk(
-            max_swaps
-        )
+        _, best_positions = score_at_each_step.topk(max_swaps)
         # 6. Create adversarial examples.
         adv_tokens = src_tokens.clone()
         # Assign new values

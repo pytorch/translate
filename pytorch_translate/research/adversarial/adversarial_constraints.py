@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 
-import torch
 import numpy as np
-
+import torch
 
 from .adversarial_utils import (
-    pairwise_dot_product,
-    pairwise_distance,
     load_one_to_many_dict,
+    pairwise_distance,
+    pairwise_dot_product,
 )
 
 
@@ -27,15 +26,15 @@ class AdversarialConstraints(object):
         if self.alternatives_file:
             self.load_alternatives()
         # Forbidden tokens
-        self.forbidden_token_ids = torch.LongTensor([
-            self.src_dict.index(word) for word in self.args.forbidden_tokens
-        ])
+        self.forbidden_token_ids = torch.LongTensor(
+            [self.src_dict.index(word) for word in self.args.forbidden_tokens]
+        )
         if torch.cuda.is_available():
             self.forbidden_token_ids = self.forbidden_token_ids.cuda()
         # Allowed tokens
-        self.allowed_token_ids = torch.LongTensor([
-            self.src_dict.index(word) for word in self.args.allowed_tokens
-        ])
+        self.allowed_token_ids = torch.LongTensor(
+            [self.src_dict.index(word) for word in self.args.allowed_tokens]
+        )
         if torch.cuda.is_available():
             self.allowed_token_ids = self.allowed_token_ids.cuda()
 
@@ -110,10 +109,14 @@ class AdversarialConstraints(object):
         token_is_special = torch.lt(src_tokens, self.src_dict.nspecial)
         scores.masked_fill_(token_is_special.unsqueeze(-1), -np.inf)
         # Nor replace an existing word with a special token (except <unk>)
-        special_tokens = torch.tensor([
-            token_id for token_id in range(self.src_dict.nspecial)
-            if token_id != self.src_dict.unk()
-        ], device=scores.device).long()
+        special_tokens = torch.tensor(
+            [
+                token_id
+                for token_id in range(self.src_dict.nspecial)
+                if token_id != self.src_dict.unk()
+            ],
+            device=scores.device,
+        ).long()
         scores.index_fill_(dim=2, index=special_tokens, value=-np.inf)
 
         # Forbid some tokens specifically
@@ -141,9 +144,7 @@ class AdversarialConstraints(object):
         # Allowed tokens (this is general for all tokens)
         if len(self.allowed_token_ids) > 0:
             allowed.append(
-                self.allowed_token_ids.unsqueeze(0).unsqueeze(0).expand(
-                    bsz, srclen, -1
-                )
+                self.allowed_token_ids.unsqueeze(0).unsqueeze(0).expand(bsz, srclen, -1)
             )
 
         # Allow the identity replacement (we don't need to do this if there are)

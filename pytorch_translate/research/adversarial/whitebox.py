@@ -2,20 +2,24 @@
 
 import collections
 import os
-import torch
 from typing import NamedTuple
 
+import torch
 from fairseq import data, options, progress_bar, tasks, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
-from pytorch_translate import options as pytorch_translate_options
-from pytorch_translate import utils as pytorch_translate_utils
 from pytorch_translate import rnn  # noqa
 from pytorch_translate import transformer  # noqa
-from pytorch_translate.research.adversarial import adversarial_options
-from pytorch_translate.research.adversarial import adversaries
-from pytorch_translate.research.adversarial import adversarial_trainer
-from pytorch_translate.research.adversarial import adversarial_criterion # noqa
+from pytorch_translate import (
+    options as pytorch_translate_options,
+    utils as pytorch_translate_utils,
+)
+from pytorch_translate.research.adversarial import adversarial_criterion  # noqa
 from pytorch_translate.research.adversarial import adversarial_tasks  # noqa
+from pytorch_translate.research.adversarial import (
+    adversarial_options,
+    adversarial_trainer,
+    adversaries,
+)
 
 
 class AttackInfo(NamedTuple):
@@ -91,9 +95,9 @@ def validate_args(args):
     """Make sure the arguments are correct (files exist, no ensembles, etc...)"""
     # Verify that the path is specified and that it points to one model only
     assert args.path is not None, "--path required for generation!"
-    assert len(args.path.split(':')) == 1, (
-        "Whitebox attacks on ensembles are not supported yet"
-    )
+    assert (
+        len(args.path.split(":")) == 1
+    ), "Whitebox attacks on ensembles are not supported yet"
     # Check data files
     assert args.source_vocab_file and os.path.isfile(
         args.source_vocab_file
@@ -101,11 +105,11 @@ def validate_args(args):
     assert args.target_vocab_file and os.path.isfile(
         args.target_vocab_file
     ), "Please specify a valid file for --target-vocab_file"
-    assert (
-        args.source_text_file and os.path.isfile(args.source_text_file)
+    assert args.source_text_file and os.path.isfile(
+        args.source_text_file
     ), "Please specify a valid file for --source-text-file"
-    assert (
-        args.target_text_file and os.path.isfile(args.target_text_file)
+    assert args.target_text_file and os.path.isfile(
+        args.target_text_file
     ), "Please specify a valid file for --target-text-file"
 
 
@@ -117,7 +121,7 @@ def setup_attack(args):
 
     # Load model
     models, models_args = pytorch_translate_utils.load_diverse_ensemble_for_inference(
-        args.path.split(':'), task,
+        args.path.split(":"), task
     )
 
     # Only one model is supported as of now
@@ -144,9 +148,7 @@ def setup_attack(args):
     adv_criterion = task.build_adversarial_criterion(args)
 
     # Adversary
-    adversary = adversaries.build_adversary(
-        args, model, task
-    )
+    adversary = adversaries.build_adversary(args, model, task)
 
     # Print a bit of info
     print(
@@ -162,7 +164,7 @@ def setup_attack(args):
         model=model,
         criterion=None,
         adversarial_criterion=adv_criterion,
-        adversary=adversary
+        adversary=adversary,
     )
 
     # Device infos
@@ -201,12 +203,7 @@ def create_iterator(args, trainer, task, adv_split):
     ).next_epoch_itr(shuffle=False)
 
 
-def _generate_adversarial_inputs(
-    adv_trainer,
-    args,
-    task,
-    adv_split,
-):
+def _generate_adversarial_inputs(adv_trainer, args, task, adv_split):
     """Run the adversarial attack over the dataset"""
 
     # Keep track of the generated sentences
@@ -285,8 +282,9 @@ def adversarial_attack_iterator(
             adv_str = " ".join(
                 # We do this to recover <unk> from the original source
                 src_tok_str if src_tok == adv_tok else task.src_dict[adv_tok]
-                for src_tok_str, src_tok, adv_tok
-                in zip(src_str.split(), nopad_src_tokens, nopad_adv_tokens)
+                for src_tok_str, src_tok, adv_tok in zip(
+                    src_str.split(), nopad_src_tokens, nopad_adv_tokens
+                )
             )
             # Reverse the string back if applicable
             if reverse_source:
@@ -322,13 +320,8 @@ def attack(args):
 
     adv_trainer, task = setup_attack(args)
 
-    (
-        num_sentences, gen_timer, adversarial_samples
-    ) = _generate_adversarial_inputs(
-        adv_trainer=adv_trainer,
-        args=args,
-        task=task,
-        adv_split=args.gen_subset
+    (num_sentences, gen_timer, adversarial_samples) = _generate_adversarial_inputs(
+        adv_trainer=adv_trainer, args=args, task=task, adv_split=args.gen_subset
     )
     print(
         f"| Generated {num_sentences} adversarial inputs ({gen_timer.n} tokens) "

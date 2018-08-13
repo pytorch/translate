@@ -3,7 +3,9 @@
 import torch
 
 
-def attention_weighted_src_embedding(src_embedding, attn_scores, activation_fn=torch.tanh):
+def attention_weighted_src_embedding(
+    src_embedding, attn_scores, activation_fn=torch.tanh
+):
     """
     use the attention weights to form a weighted average of embeddings
     parameters:

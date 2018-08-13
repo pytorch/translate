@@ -2,11 +2,7 @@
 
 import numpy as np
 import torch
-
 from fairseq import data, tokenizer
-from typing import Optional, List
-
-from pytorch_translate import dictionary as pytorch_translate_dictionary
 
 
 class MultisourceLanguagePairDataset(data.LanguagePairDataset):
@@ -23,13 +19,23 @@ class MultisourceLanguagePairDataset(data.LanguagePairDataset):
 
     def collater(self, samples):
         return MultisourceLanguagePairDataset.collate(
-            samples, self.src_dict.pad(), self.src_dict.eos(), self.tgt is not None,
-            self.left_pad_source, self.left_pad_target,
+            samples,
+            self.src_dict.pad(),
+            self.src_dict.eos(),
+            self.tgt is not None,
+            self.left_pad_source,
+            self.left_pad_target,
         )
 
     @staticmethod
-    def collate(samples, pad_idx, eos_idx, has_target=True,
-                left_pad_source=True, left_pad_target=False):
+    def collate(
+        samples,
+        pad_idx,
+        eos_idx,
+        has_target=True,
+        left_pad_source=True,
+        left_pad_target=False,
+    ):
         if len(samples) == 0:
             return {}
 
@@ -42,10 +48,7 @@ class MultisourceLanguagePairDataset(data.LanguagePairDataset):
             if source:
                 # Collate source sentences all source sentences together. Each
                 return data.data_utils.collate_tokens(
-                    [
-                        s[key][src_id]
-                        for s in samples for src_id in range(n_sources)
-                    ],
+                    [s[key][src_id] for s in samples for src_id in range(n_sources)],
                     pad_idx,
                     eos_idx,
                     left_pad,
@@ -61,25 +64,23 @@ class MultisourceLanguagePairDataset(data.LanguagePairDataset):
                 )
 
         id = torch.LongTensor([s["id"] for s in samples])
-        src_tokens = merge(
-            "source", left_pad=left_pad_source, source=True
-        )
+        src_tokens = merge("source", left_pad=left_pad_source, source=True)
         # We sort all source sentences from each batch element by length
-        src_lengths = torch.LongTensor([
-            s["source"][src_id].numel()
-            for s in samples for src_id in range(n_sources)
-        ])
+        src_lengths = torch.LongTensor(
+            [
+                s["source"][src_id].numel()
+                for s in samples
+                for src_id in range(n_sources)
+            ]
+        )
         src_lengths, sort_order = src_lengths.sort(descending=True)
-        #id = id.index_select(0, sort_order)
+        # id = id.index_select(0, sort_order)
         src_tokens = src_tokens.index_select(0, sort_order)
         # Record which sentence corresponds to which source and sample
         _, rev_order = sort_order.sort()
         # srcs_ids[k] contains the indices of kth source sentences of each
         # sample in src_tokens
-        srcs_ids = [
-            rev_order[k::n_sources]
-            for k in range(n_sources)
-        ]
+        srcs_ids = [rev_order[k::n_sources] for k in range(n_sources)]
 
         prev_output_tokens = None
         target = None
@@ -89,9 +90,7 @@ class MultisourceLanguagePairDataset(data.LanguagePairDataset):
             # we create a shifted version of targets for feeding the
             # previous output token(s) into the next decoder step
             prev_output_tokens = merge(
-                "target",
-                left_pad=left_pad_target,
-                move_eos_to_beginning=True,
+                "target", left_pad=left_pad_target, move_eos_to_beginning=True
             )
             ntokens = sum(len(s["target"]) for s in samples)
 
