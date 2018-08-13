@@ -69,7 +69,9 @@ class WordPredictionCriterion(LabelSmoothedCrossEntropyCriterion):
         }
 
         if reduce:
-            logging_output['loss'] = utils.item(logging_output['loss'])
+            logging_output["translation_loss"] = utils.item(
+                logging_output["translation_loss"]
+            )
             logging_output['word_prediction_loss'] = utils.item(
                 logging_output['word_prediction_loss'])
 
