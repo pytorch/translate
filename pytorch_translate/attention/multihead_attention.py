@@ -92,7 +92,7 @@ def combine_heads(X):
     2) Combine (reshape) last 2 dimensions (nheads, d_head) into 1 (d_model)
 
     Inputs:
-      X : [batch size * nheads, sequence length, d_head]
+      X : [batch size, nheads, sequence length, d_head]
       nheads : integer
       d_head : integer
 
