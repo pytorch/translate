@@ -807,6 +807,10 @@ class DummyEncoder(FairseqEncoder):
         dummy_out = torch.ones((1, bsz, 1))
         return dummy_out, ones, ones, src_lengths, src_tokens, dummy_out
 
+    def reorder_encoder_out(self, encoder_out, new_order):
+        """Reorder encoder_out unchanged."""
+        return encoder_out
+
     def max_positions(self):
         """Maximum input length supported by the encoder."""
         return int(1e5)  # an arbitrary large number
