@@ -790,12 +790,14 @@ class DummyEncoder(FairseqEncoder):
     def forward(self, src_tokens, src_lengths):
         bsz = src_lengths.size(0)
         ones = maybe_cuda(torch.ones((self.num_layers, bsz, 1)))
-        dummy_out = torch.ones((1, bsz, 1))
+        dummy_out = maybe_cuda(torch.ones((1, bsz, 1)))
+
+        # ones are returned so that FC layer corresponds to learned initial
+        # state for language model
         return dummy_out, ones, ones, src_lengths, src_tokens, dummy_out
 
     def reorder_encoder_out(self, encoder_out, new_order):
-        """Reorder encoder_out unchanged."""
-        return encoder_out
+        return reorder_encoder_output(encoder_out, new_order)
 
     def max_positions(self):
         """Maximum input length supported by the encoder."""
