@@ -32,22 +32,8 @@ from pytorch_translate.common_layers import (
 from pytorch_translate.multi_model import MultiDecoder, MultiEncoder
 from pytorch_translate.multilingual import MultilingualDecoder, MultilingualEncoder
 from pytorch_translate.ngram import NGramDecoder
-from pytorch_translate.utils import maybe_cat, maybe_cuda
+from pytorch_translate.utils import maybe_cat, maybe_cuda, torch_find
 from torch.nn.utils.rnn import PackedSequence, pack_padded_sequence, pad_packed_sequence
-
-
-def torch_find(index, query, vocab_size):
-    """
-    Finds elements of query from index, outputting the last (max) index for each
-    query.
-    preconditions:  (1) index and query are flat arrays (can be different sizes)
-                    (2) all tokens in index and query have values < vocab_size
-    """
-    full_to_index = maybe_cuda(torch.zeros(vocab_size).long())
-    index_shape_range = maybe_cuda(torch.arange(index.shape[0]).long())
-    full_to_index[index] = index_shape_range
-    result = full_to_index[query]
-    return result
 
 
 def reorder_encoder_output(encoder_out, new_order):

@@ -2,12 +2,8 @@
 
 from fairseq.models import FairseqModel, register_model, register_model_architecture
 from pytorch_translate import rnn
-from pytorch_translate.rnn import (
-    LSTMSequenceEncoder,
-    RNNDecoder,
-    RNNEncoder,
-    torch_find,
-)
+from pytorch_translate.rnn import LSTMSequenceEncoder, RNNDecoder, RNNEncoder
+from pytorch_translate.utils import torch_find
 from pytorch_translate.word_prediction import word_predictor
 
 
