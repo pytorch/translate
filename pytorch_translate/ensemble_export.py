@@ -10,15 +10,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.onnx.operators
-from caffe2.python import core, dyndep, workspace
+from caffe2.python import core, workspace
 from caffe2.python.onnx import backend as caffe2_backend
 from caffe2.python.predictor import predictor_exporter
 from fairseq import utils
 from pytorch_translate import char_source_model, dictionary, rnn, tasks  # noqa
 from torch.onnx import ExportTypes
 
-
-dyndep.InitOpsLibrary("@/caffe2/caffe2/contrib/aten:aten_op")
 
 logger = logging.getLogger(__name__)
 
