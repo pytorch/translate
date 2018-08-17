@@ -15,13 +15,16 @@ from fairseq.models import (
     transformer as fairseq_transformer,
 )
 from fairseq.modules import AdaptiveSoftmax, SinusoidalPositionalEmbedding
+from pytorch_translate import vocab_reduction
 from pytorch_translate.common_layers import Embedding, VariableTracker
+from pytorch_translate.utils import torch_find
 
 
 @register_model("ptt_transformer")
 class TransformerModel(FairseqModel):
-    def __init__(self, encoder, decoder):
+    def __init__(self, task, encoder, decoder):
         super().__init__(encoder, decoder)
+        self.task = task
 
     @staticmethod
     def add_args(parser):
@@ -158,6 +161,9 @@ class TransformerModel(FairseqModel):
             "Must be used with adaptive_loss criterion",
         )
 
+        # Args for vocab reduction
+        vocab_reduction.add_args(parser)
+
     @classmethod
     def build_model(cls, args, task):
         """Build a new model instance."""
@@ -217,8 +223,17 @@ class TransformerModel(FairseqModel):
             )
 
         encoder = TransformerEncoder(args, src_dict, encoder_embed_tokens)
-        decoder = TransformerDecoder(args, tgt_dict, decoder_embed_tokens)
-        return TransformerModel(encoder, decoder)
+        decoder = TransformerDecoder(args, src_dict, tgt_dict, decoder_embed_tokens)
+        return TransformerModel(task, encoder, decoder)
+
+    def get_targets(self, sample, net_output):
+        targets = sample["target"].view(-1)
+        possible_translation_tokens = net_output[-1]
+        if possible_translation_tokens is not None:
+            targets = torch_find(
+                possible_translation_tokens, targets, len(self.task.target_dictionary)
+            )
+        return targets
 
 
 class TransformerEncoder(FairseqEncoder):
@@ -279,15 +294,17 @@ class TransformerEncoder(FairseqEncoder):
         for layer in self.layers:
             x = layer(x, encoder_padding_mask)
 
-        return x, encoder_padding_mask
+        return x, src_tokens, encoder_padding_mask
 
     def reorder_encoder_out(self, encoder_out, new_order):
-        (x, encoder_padding_mask) = encoder_out
+        (x, src_tokens, encoder_padding_mask) = encoder_out
         if x is not None:
             x = x.index_select(1, new_order)
+        if src_tokens is not None:
+            src_tokens = src_tokens.index_select(0, new_order)
         if encoder_padding_mask is not None:
             encoder_padding_mask = encoder_padding_mask.index_select(0, new_order)
-        return (x, encoder_padding_mask)
+        return (x, src_tokens, encoder_padding_mask)
 
     def max_positions(self):
         """Maximum input length supported by the encoder."""
@@ -308,8 +325,8 @@ class TransformerEncoder(FairseqEncoder):
 class TransformerDecoder(FairseqIncrementalDecoder):
     """Transformer decoder."""
 
-    def __init__(self, args, dictionary, embed_tokens, left_pad=False):
-        super().__init__(dictionary)
+    def __init__(self, args, src_dict, dst_dict, embed_tokens, left_pad=False):
+        super().__init__(dst_dict)
         self.dropout = args.dropout
         self.share_input_output_embed = args.share_decoder_input_output_embed
 
@@ -338,17 +355,32 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
         if args.adaptive_softmax_cutoff is not None:
             self.adaptive_softmax = AdaptiveSoftmax(
-                len(dictionary),
+                len(dst_dict),
                 args.decoder_embed_dim,
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int),
                 dropout=args.dropout,
             )
         elif not self.share_input_output_embed:
-            self.embed_out = nn.Parameter(torch.Tensor(len(dictionary), embed_dim))
+            self.embed_out = nn.Parameter(torch.Tensor(len(dst_dict), embed_dim))
             nn.init.normal_(self.embed_out, mean=0, std=embed_dim ** -0.5)
 
-    def forward(self, prev_output_tokens, encoder_out, incremental_state=None):
-        (encoder_x, encoder_padding_mask) = encoder_out
+        self.vocab_reduction_module = None
+        if args.vocab_reduction_params:
+            assert (
+                self.adaptive_softmax is None
+            ), "vocabulary reduction not compatible with adaptive softmax!"
+            self.vocab_reduction_module = vocab_reduction.VocabReduction(
+                src_dict, dst_dict, args.vocab_reduction_params
+            )
+
+    def forward(
+        self,
+        prev_output_tokens,
+        encoder_out,
+        incremental_state=None,
+        possible_translation_tokens=None,
+    ):
+        (encoder_x, src_tokens, encoder_padding_mask) = encoder_out
 
         # embed positions
         positions = self.embed_positions(
@@ -374,14 +406,28 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         # T x B x C -> B x T x C
         x = x.transpose(0, 1)
 
-        if self.adaptive_softmax is None:
-            # project back to size of vocabulary
-            if self.share_input_output_embed:
-                x = F.linear(x, self.embed_tokens.weight)
-            else:
-                x = F.linear(x, self.embed_out)
+        if self.adaptive_softmax is not None:
+            return x, attn, None
 
-        return x, attn
+        # project back to size of vocabulary
+        if self.share_input_output_embed:
+            # x = F.linear(x, self.embed_tokens.weight)
+            output_weights = self.embed_tokens.weight
+        else:
+            output_weights = self.embed_out
+
+        if self.vocab_reduction_module is not None:
+            decoder_input_tokens = prev_output_tokens.contiguous()
+            possible_translation_tokens = self.vocab_reduction_module(
+                src_tokens, decoder_input_tokens=decoder_input_tokens
+            )
+            output_weights = output_weights.index_select(
+                dim=0, index=possible_translation_tokens
+            )
+
+        logits = F.linear(x, output_weights)
+
+        return logits, attn, possible_translation_tokens
 
     def max_positions(self):
         """Maximum output length supported by the decoder."""
@@ -423,3 +469,4 @@ def base_architecture(args):
     args.relu_dropout = getattr(args, "relu_dropout", 0.)
     args.dropout = getattr(args, "dropout", 0.1)
     args.adaptive_softmax_cutoff = getattr(args, "adaptive_softmax_cutoff", None)
+    vocab_reduction.set_arg_defaults(args)
