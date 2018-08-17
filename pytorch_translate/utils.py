@@ -292,3 +292,17 @@ def load_embedding(embedding, dictionary, pretrained_embed):
     else:
         embed_dict = utils.parse_embedding(pretrained_embed)
         utils.load_embedding(embed_dict, dictionary, embedding)
+
+
+def torch_find(index, query, vocab_size):
+    """
+    Finds elements of query from index, outputting the last (max) index for each
+    query.
+    preconditions:  (1) index and query are flat arrays (can be different sizes)
+                    (2) all tokens in index and query have values < vocab_size
+    """
+    full_to_index = maybe_cuda(torch.zeros(vocab_size).long())
+    index_shape_range = maybe_cuda(torch.arange(index.shape[0]).long())
+    full_to_index[index] = index_shape_range
+    result = full_to_index[query]
+    return result
