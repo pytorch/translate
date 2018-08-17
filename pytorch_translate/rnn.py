@@ -71,6 +71,12 @@ class RNNModel(FairseqModel):
     @staticmethod
     def add_args(parser):
         parser.add_argument(
+            "--language-model-only",
+            default=False,
+            action="store_true",
+            help="whether to train a language model only where no encoder is used",
+        )
+        parser.add_argument(
             "--dropout",
             default=0.1,
             type=float,
@@ -384,7 +390,7 @@ class RNNModel(FairseqModel):
 
     @staticmethod
     def build_single_encoder(args, src_dict):
-        if not args.encoder_hidden_dim:
+        if args.language_model_only:
             return DummyEncoder(src_dict, num_layers=args.encoder_layers)
         if args.sequence_lstm:
             encoder_class = LSTMSequenceEncoder
