@@ -201,9 +201,10 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
         if project_output:
             self.num_embeddings = len(dst_dict)
             self.out_embed_dim = out_embed_dim
-            self.vocab_reduction_module = None
             self.att_weighted_src_embeds = att_weighted_src_embeds
             self.src_embed_dim = src_embed_dim
+
+            self.vocab_reduction_module = None
             if vocab_reduction_params:
                 self.vocab_reduction_module = vocab_reduction.VocabReduction(
                     src_dict, dst_dict, vocab_reduction_params
