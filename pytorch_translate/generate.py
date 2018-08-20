@@ -25,7 +25,7 @@ from pytorch_translate.research.multisource import multisource_data, multisource
 
 
 def generate_score(args, task, dataset_split):
-    models, _ = utils.load_ensemble_for_inference(args.path, task)
+    models, _ = utils.load_ensemble_for_inference(args.path.split(":"), task)
     return _generate_score(models, args, task, dataset_split)
 
 
@@ -89,7 +89,7 @@ def _generate_score(models, args, task, dataset_split, optimize=True):
 
     # Load ensemble
     if not args.quiet:
-        print("| loading model(s) from {}".format(", ".join(args.path)))
+        print("| loading model(s) from {}".format(", ".join(args.path.split(":"))))
 
     # Optimize ensemble for generation
     if optimize:
