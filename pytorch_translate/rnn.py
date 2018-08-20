@@ -1282,6 +1282,7 @@ def base_architecture(args):
         args, "att_weighted_activation_type", "tanh"
     )
     args.adaptive_softmax_cutoff = getattr(args, "adaptive_softmax_cutoff", None)
+    args.language_model_only = getattr(args, "language_model_only", False)
 
 
 @register_model_architecture("rnn", "rnn_big_test")
