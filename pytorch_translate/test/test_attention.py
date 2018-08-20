@@ -117,105 +117,29 @@ class MultiheadAttentionTest(unittest.TestCase):
         src_lengths_tensor = torch.from_numpy(src_lengths).int()
         return src_lengths, src_lengths_tensor
 
-    def _scaled_dot_attn_test_helper(self, use_src_lengths):
-        """ Tests that the production and reference implementation of scaled
-        dot attention produce the same values """
-        for _ in range(100):
-            # (batch size, nheads, sequence length, d_head)
-            dims = [random.randint(2, 10) for r in range(4)]
-            Q = np.random.rand(*dims).astype(np.float32)
-            K = np.random.rand(*dims).astype(np.float32)
-            V = np.random.rand(*dims).astype(np.float32)
-
-            src_lengths = None
-            src_lengths_tensor = None
-            if use_src_lengths:
-                src_lengths, src_lengths_tensor = self._generate_src_lengths(
-                    batch_size=dims[0], seq_len=dims[2]
-                )
-
-            Q_tensor = torch.from_numpy(Q).float()
-            K_tensor = torch.from_numpy(K).float()
-            V_tensor = torch.from_numpy(V).float()
-
-            result = multihead_attention.scaled_dot_prod_attn(
-                query=Q_tensor,
-                key=K_tensor,
-                value=V_tensor,
-                src_lengths=src_lengths_tensor,
-            )[0].numpy()
-
-            reference = self._scaled_dot_attn_ref(
-                Q=Q, K=K, V=V, dims=dims, src_lengths=src_lengths
-            )
-
-            np.testing.assert_allclose(result, reference, atol=1e-5)
-
-    def test_scaled_dot_attn_no_masking(self):
-        self._scaled_dot_attn_test_helper(use_src_lengths=None)
-
-    def test_scaled_dot_attn_with_src_lengths(self):
-        self._scaled_dot_attn_test_helper(use_src_lengths=True)
-
     def _split_heads_ref(self, X, dims, nheads, d_head):
         X_split = np.reshape(X, dims[:2] + [nheads, d_head])
         X_split_transposed = np.transpose(X_split, [0, 2, 1, 3])
         reference = np.reshape(X_split_transposed, [dims[0], nheads, dims[1], d_head])
         return reference
 
-    def test_split_heads(self):
-        for _ in range(100):
-
-            batch_and_seq_len = [random.randint(2, 10) for r in range(2)]
-            d_head = random.randint(3, 10)
-            nheads = random.randint(3, 10)
-            d_model = d_head * nheads
-            dims = batch_and_seq_len + [d_model]
-            X = np.random.rand(*dims).astype(np.float32)
-
-            X_tensor = torch.from_numpy(X).float()
-
-            result = multihead_attention.split_heads(X_tensor, nheads).numpy()
-
-            reference = self._split_heads_ref(X, dims, nheads, d_head)
-            np.testing.assert_allclose(result, reference, atol=1e-5)
-
     def _combine_heads_ref(self, X, dims, nheads, d_head):
         X_transposed = np.transpose(X, [0, 2, 1, 3])
         reference = np.reshape(X_transposed, dims[:2] + [nheads * d_head])
         return reference
 
-    def test_combine_heads(self):
-        for _ in range(100):
-            batch_and_seq_len = [random.randint(2, 10) for r in range(2)]
-            d_head = random.randint(3, 10)
-            nheads = random.randint(3, 10)
-            d_model = d_head * nheads
-            dims = batch_and_seq_len + [d_model]
-            X = np.random.rand(*dims).astype(np.float32)
-
-            X_split_heads = self._split_heads_ref(X, dims, nheads, d_head)
-            X_split_heads_tensor = torch.from_numpy(X_split_heads).float()
-            result = multihead_attention.combine_heads(X_split_heads_tensor)
-
-            reference = self._combine_heads_ref(X_split_heads, dims, nheads, d_head)
-
-            # Makes sure combine_heads is an exact inverse of split_heads_output
-            np.testing.assert_allclose(result, X, atol=1e-5)
-            np.testing.assert_allclose(result, reference, atol=1e-5)
-
-    def _fc(self, X, X_name, module):
-        X_fc_b = 0
-        X_fc_w = 0
+    def _fc(self, X, X_name, module, start=None, end=None):
+        X_fc_b = None
+        X_fc_w = None
         for name, param in module.named_parameters():
-            if X_name + "_fc.weight" in name:
-                if X_fc_w != 0:
+            if X_name + "weight" in name:
+                if X_fc_w is not None:
                     raise Exception(f"Duplicate FC name {name} found")
-                X_fc_w = param.detach().numpy()
-            elif X_name + "_fc.bias" in name:
-                if X_fc_b != 0:
+                X_fc_w = param[start:end, :].detach().numpy()
+            elif X_name + "bias" in name:
+                if X_fc_b is not None:
                     raise Exception(f"Duplicate FC name {name} found")
-                X_fc_b = param.detach().numpy()
+                X_fc_b = param[start:end].detach().numpy()
         return np.matmul(X, np.transpose(X_fc_w)) + X_fc_b
 
     def _multihead_attn_test_helper(self, use_src_lengths):
@@ -255,12 +179,11 @@ class MultiheadAttentionTest(unittest.TestCase):
                 .numpy()
             )
 
-            # Problem is that the production query does not have
-            # different items for each element in the seq
-
-            Q_fc = self._fc(Q, "Q", multihead_attn_module)
-            K_fc = self._fc(K, "K", multihead_attn_module)
-            V_fc = self._fc(V, "V", multihead_attn_module)
+            Q_fc = self._fc(Q, "in_proj_", multihead_attn_module, end=d_model)
+            K_fc = self._fc(
+                K, "in_proj_", multihead_attn_module, start=d_model, end=2 * d_model
+            )
+            V_fc = self._fc(V, "in_proj_", multihead_attn_module, start=2 * d_model)
 
             Q_split = self._split_heads_ref(
                 Q_fc, [batch_sz, 1, d_model], nheads, d_head
@@ -280,7 +203,9 @@ class MultiheadAttentionTest(unittest.TestCase):
                 X=attn_heads, dims=[batch_sz, 1], nheads=nheads, d_head=d_head
             )
 
-            reference = self._fc(combined_attn_heads, "output", multihead_attn_module)
+            reference = self._fc(
+                combined_attn_heads, "out_proj.", multihead_attn_module
+            )
             reference = np.squeeze(reference, axis=1)
             self.assertEqual(tuple(result.shape), (batch_sz, d_model))
             np.testing.assert_allclose(result, reference, atol=1e-5)
