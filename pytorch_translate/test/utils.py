@@ -16,6 +16,7 @@ class ModelParamsDict:
     def __init__(self, **kwargs):
         # Model params
         self.arch = "rnn"
+        self.language_model_only = False
         self.encoder_embed_dim = 10
         self.encoder_embed_path = None
         self.encoder_freeze_embed = False
