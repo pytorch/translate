@@ -267,7 +267,7 @@ def setup_training(args):
         if loaded_extra_state:
             extra_state.update(loaded_extra_state)
         if loaded:
-            args.path = [checkpoint_path]
+            args.path = checkpoint_path
             calculate_bleu_on_subset(
                 args=args,
                 task=task,
@@ -770,7 +770,7 @@ def calculate_bleu_on_subset(args, task, epoch_str: str, offset, dataset_split):
 def evaluate_bleu(args, task, extra_state):
     epoch, offset = extra_state["epoch"], extra_state["batch_offset"]
     filename = _save_averaged_checkpoint(args, extra_state)
-    args.path = [filename]
+    args.path = filename
     val_bleu, translation_samples = calculate_bleu_on_subset(
         args=args,
         task=task,

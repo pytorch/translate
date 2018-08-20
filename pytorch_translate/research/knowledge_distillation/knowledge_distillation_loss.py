@@ -20,7 +20,7 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
 
         # Load model ensemble from checkpoints
         self.teacher_models, self.teacher_model_args = pytorch_translate_utils.load_diverse_ensemble_for_inference(
-            [args.teacher_path], task
+            args.teacher_path.split(":"), task
         )
 
         # Move models to device and to evaluation mode
@@ -42,8 +42,7 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
         parser.add_argument(
             "--teacher-path",
             metavar="FILE",
-            action="append",
-            help="path(s) to teacher model file(s)",
+            help="path(s) to teacher model file(s) colon separated",
         )
         parser.add_argument(
             "--kd-weight",
