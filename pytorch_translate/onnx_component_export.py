@@ -16,12 +16,12 @@ def get_parser_with_args():
     parser = argparse.ArgumentParser(
         description=("Export PyTorch-trained FBTranslate models to Caffe2 components")
     )
+
     parser.add_argument(
         "--path",
         "--checkpoint",
-        action="append",
-        nargs="+",
-        help="PyTorch checkpoint file (at least one required)",
+        metavar="FILE",
+        help="path(s) to model file(s), colon separated",
     )
     parser.add_argument(
         "--encoder-output-file",
@@ -90,7 +90,7 @@ def main():
 
 def export(args):
     assert_required_args_are_set(args)
-    checkpoint_filenames = [arg[0] for arg in args.path]
+    checkpoint_filenames = args.path.split(":")
 
     if args.char_source:
         encoder_class = CharSourceEncoderEnsemble
