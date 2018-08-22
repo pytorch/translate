@@ -13,34 +13,45 @@ from pytorch_translate import (
 
 
 class ModelParamsDict:
-    def __init__(self, **kwargs):
+    def __init__(self, transformer=False, **kwargs):
         # Model params
-        self.arch = "rnn"
-        self.language_model_only = False
-        self.encoder_embed_dim = 10
-        self.encoder_embed_path = None
-        self.encoder_freeze_embed = False
-        self.encoder_hidden_dim = 10
-        self.encoder_layers = 2
-        self.encoder_bidirectional = False
-        self.encoder_dropout_in = 0
-        self.encoder_dropout_out = 0
-        self.decoder_embed_dim = 10
-        self.decoder_embed_path = None
-        self.decoder_freeze_embed = False
-        self.decoder_hidden_dim = 10
-        self.decoder_out_embed_dim = 5
-        self.decoder_out_embed_path = None
-        self.decoder_layers = 2
-        self.dropout = 0
-        self.decoder_dropout_in = 0
-        self.decoder_dropout_out = 0
-        self.attention_type = "dot"
-        self.residual_level = None
-        self.averaging_encoder = False
-        self.cell_type = "lstm"
-        self.sequence_lstm = False
-        self.decoder_tie_embeddings = False
+        if transformer:
+            self.arch = "ptt_transformer"
+            self.encoder_embed_dim = 10
+            self.encoder_ffn_embed_dim = 16
+            self.encoder_layers = 2
+            self.encoder_attention_heads = 2
+            self.decoder_embed_dim = 10
+            self.decoder_ffn_embed_dim = 16
+            self.decoder_layers = 2
+            self.decoder_attention_heads = 2
+        else:
+            self.arch = "rnn"
+            self.encoder_embed_dim = 10
+            self.encoder_embed_path = None
+            self.encoder_freeze_embed = False
+            self.encoder_hidden_dim = 10
+            self.encoder_layers = 2
+            self.encoder_bidirectional = False
+            self.encoder_dropout_in = 0
+            self.encoder_dropout_out = 0
+            self.decoder_embed_dim = 10
+            self.decoder_embed_path = None
+            self.decoder_freeze_embed = False
+            self.decoder_hidden_dim = 10
+            self.decoder_out_embed_dim = 5
+            self.decoder_out_embed_path = None
+            self.decoder_layers = 2
+            self.dropout = 0
+            self.decoder_dropout_in = 0
+            self.decoder_dropout_out = 0
+            self.attention_type = "dot"
+            self.residual_level = None
+            self.averaging_encoder = False
+            self.cell_type = "lstm"
+            self.sequence_lstm = False
+            self.decoder_tie_embeddings = False
+            self.language_model_only = False
         # Training params
         self.criterion = "cross_entropy"
         self.lr = [0.1]
