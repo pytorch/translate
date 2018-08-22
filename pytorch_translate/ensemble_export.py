@@ -15,7 +15,7 @@ from caffe2.python.onnx import backend as caffe2_backend
 from caffe2.python.predictor import predictor_exporter
 from fairseq import utils
 from pytorch_translate import char_source_model, dictionary, rnn, tasks  # noqa
-from torch.onnx import ExportTypes
+from torch.onnx import ExportTypes, OperatorExportTypes
 
 
 logger = logging.getLogger(__name__)
@@ -35,6 +35,7 @@ def onnx_export_ensemble(module, output_path, input_tuple, input_names, output_n
             input_names=input_names,
             output_names=output_names,
             export_type=ExportTypes.ZIP_ARCHIVE,
+            operator_export_type=OperatorExportTypes.ONNX_ATEN_FALLBACK,
         )
 
 
@@ -125,6 +126,9 @@ class EncoderEnsemble(nn.Module):
         self.models = models
         self.src_dict = src_dict
         for i, model in enumerate(self.models):
+            if hasattr(model.encoder, "embed_positions"):
+                model.encoder.embed_positions.onnx_trace = True
+
             self._modules[f"model_{i}"] = model
 
     def forward(self, src_tokens, src_lengths):
@@ -148,8 +152,8 @@ class EncoderEnsemble(nn.Module):
             encoder_outputs = encoder_out[0]
             outputs.append(encoder_outputs)
             output_names.append(f"encoder_output_{i}")
-
-            states.extend(model.decoder._init_prev_states(encoder_out))
+            if hasattr(model.decoder, "_init_prev_states"):
+                states.extend(model.decoder._init_prev_states(encoder_out))
 
         # underlying assumption is each model has same vocab_reduction_module
         vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
@@ -1013,7 +1017,8 @@ class CharSourceEncoderEnsemble(nn.Module):
             outputs.append(encoder_outputs)
             output_names.append(f"encoder_output_{i}")
 
-            states.extend(model.decoder._init_prev_states(encoder_out))
+            if hasattr(model.decoder, "_init_prev_states"):
+                states.extend(model.decoder._init_prev_states(encoder_out))
 
         # underlying assumption is each model has same vocab_reduction_module
         vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
