@@ -236,7 +236,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
         super().__init__()
         self.models = models
         for i, model in enumerate(self.models):
-            model.decoder.attention.src_length_masking = False
+            model.prepare_for_onnx_export_()
             self._modules[f"model_{i}"] = model
 
         self.tgt_dict = tgt_dict
@@ -695,9 +695,7 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
         self.models = models
         self.tgt_dict = tgt_dict
         for i, model in enumerate(self.models):
-            if isinstance(model.encoder, char_source_model.CharRNNEncoder):
-                model.encoder.onnx_export_model = True
-            model.decoder.attention.src_length_masking = False
+            model.prepare_for_onnx_export_()
             self._modules[f"model_{i}"] = model
 
         self.word_reward = word_reward
@@ -987,8 +985,7 @@ class CharSourceEncoderEnsemble(nn.Module):
         self.models = models
         self.src_dict = src_dict
         for i, model in enumerate(self.models):
-            if isinstance(model.encoder, char_source_model.CharRNNEncoder):
-                model.encoder.onnx_export_model = True
+            model.prepare_for_onnx_export_()
             self._modules[f"model_{i}"] = model
 
     def forward(self, src_tokens, src_lengths, char_inds, word_lengths):
