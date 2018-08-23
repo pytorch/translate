@@ -36,6 +36,9 @@ class MLPAttention(BaseAttention):
         self.to_scores = Linear(self.attention_dim, 1, bias=False)
         self.src_length_masking = kwargs.get("src_length_masking", True)
 
+    def prepare_for_onnx_export_(self, **kwargs):
+        self.src_length_masking = False
+
     def forward(self, decoder_state, source_hids, src_lengths):
         """The expected input dimensions are:
 

@@ -22,6 +22,9 @@ class DotAttention(BaseAttention):
             self.input_proj = Linear(decoder_hidden_state_dim, context_dim, bias=True)
         self.src_length_masking = kwargs.get("src_length_masking", True)
 
+    def prepare_for_onnx_export_(self, **kwargs):
+        self.src_length_masking = False
+
     def forward(self, decoder_state, source_hids, src_lengths):
         # Reshape to bsz x src_len x context_dim
         source_hids = source_hids.transpose(0, 1)

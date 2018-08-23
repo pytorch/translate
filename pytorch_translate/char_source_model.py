@@ -262,6 +262,9 @@ class CharRNNEncoder(FairseqEncoder):
         # (enables ONNX tracing of length-sorted input with batch_size = 1)
         self.onnx_export_model = False
 
+    def prepare_for_onnx_export_(self, **kwargs):
+        self.onnx_export_model = True
+
     def forward(self, src_tokens, src_lengths, char_inds, word_lengths):
 
         # char_inds has shape (batch_size, max_words_per_sent, max_word_len)
