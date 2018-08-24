@@ -15,6 +15,7 @@ from caffe2.python.onnx import backend as caffe2_backend
 from caffe2.python.predictor import predictor_exporter
 from fairseq import utils
 from pytorch_translate import char_source_model, dictionary, rnn, tasks  # noqa
+from pytorch_translate.word_prediction import word_prediction_model
 from torch.onnx import ExportTypes, OperatorExportTypes
 
 
@@ -57,6 +58,10 @@ def load_models_from_checkpoints(
         task = tasks.DictionaryHolderTask(src_dict, dst_dict)
         if checkpoint_data["args"].arch == "char_source":
             model = char_source_model.CharSourceModel.build_model(
+                checkpoint_data["args"], task
+            )
+        elif checkpoint_data["args"].arch == "rnn_word_pred":
+            model = word_prediction_model.RNNWordPredictionModel.build_model(
                 checkpoint_data["args"], task
             )
         else:
