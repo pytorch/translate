@@ -222,7 +222,6 @@ class VocabReduction(nn.Module):
             # The tensors should be on CPU since unique is currently CPU-only.
             vocab_list.append(flat_decoder_input_tokens.cpu())
 
-        # reduced_vocab = self.translation_candidates[src_tokens].view(-1)
         reduced_vocab = self.translation_candidates.index_select(
             dim=0, index=src_tokens.view(-1)
         ).view(-1)
