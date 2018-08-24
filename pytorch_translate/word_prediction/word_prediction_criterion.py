@@ -29,7 +29,7 @@ class WordPredictionCriterion(LabelSmoothedCrossEntropyCriterion):
         """
         predictor_output, decoder_output = model(**sample["net_input"])
         # translation loss
-        translation_loss, _ = super().compute_loss(
+        translation_loss, nll_loss = super().compute_loss(
             model, decoder_output, sample, reduce
         )
         prediction_target = model.get_target_words(sample)
@@ -61,6 +61,7 @@ class WordPredictionCriterion(LabelSmoothedCrossEntropyCriterion):
             sample_size = sample["ntokens"]
 
         logging_output = {
+            "nll_loss": nll_loss,
             "translation_loss": translation_loss.data,
             "word_prediction_loss": word_prediction_loss.data,
             "ntokens": sample["ntokens"],
@@ -74,6 +75,8 @@ class WordPredictionCriterion(LabelSmoothedCrossEntropyCriterion):
             logging_output["word_prediction_loss"] = utils.item(
                 logging_output["word_prediction_loss"]
             )
+            logging_output["nll_loss"] = utils.item(logging_output["nll_loss"])
+        logging_output["loss"] = utils.item(logging_output["translation_loss"])
 
         return loss, sample_size, logging_output
 
