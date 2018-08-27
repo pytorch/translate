@@ -315,10 +315,22 @@ class SequenceGenerator(torch.nn.Module):
 
             # apply unk reward
             if possible_translation_tokens is None:
+                # No vocab reduction, so unk is represented by self.unk at
+                # position self.unk
                 unk_index = self.unk
+                logprobs[:, unk_index] += self.unk_reward
             else:
-                unk_index = torch.nonzero(possible_translation_tokens == self.unk)[0, 0]
-            logprobs[:, unk_index] += self.unk_reward
+                # When we use vocab reduction, the token value self.unk may not
+                # be at the position self.unk, but somewhere else in the list
+                # of possible_translation_tokens. It's also possible not to
+                # show up in possible_translation_tokens at all, meaning we
+                # can't generate an unk.
+                unk_pos = torch.nonzero(possible_translation_tokens == self.unk)
+                if unk_pos.size()[0] != 0:
+                    # only add unk_reward if unk index appears in
+                    # possible_translation_tokens
+                    unk_index = unk_pos[0][0]
+                    logprobs[:, unk_index] += self.unk_reward
 
             # external lexicon reward
             logprobs[:, self.lexicon_indices] += self.lexicon_reward
