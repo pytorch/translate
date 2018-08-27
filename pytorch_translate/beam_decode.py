@@ -315,10 +315,22 @@ class SequenceGenerator(torch.nn.Module):
 
             # apply unk reward
             if possible_translation_tokens is None:
+                # No vocab reduction, so unk is represented by self.unk at
+                # position self.unk
                 unk_index = self.unk
+                logprobs[:, unk_index] += self.unk_reward
             else:
-                unk_index = torch.nonzero(possible_translation_tokens == self.unk)[0, 0]
-            logprobs[:, unk_index] += self.unk_reward
+                # When we use vocab reduction, the token value self.unk may not
+                # be at the position self.unk, but somewhere else in the list
+                # of possible_translation_tokens. It's also possible not to
+                # show up in possible_translation_tokens at all, meaning we
+                # can't generate an unk.
+                unk_pos = torch.nonzero(possible_translation_tokens == self.unk)
+                if unk_pos.size()[0] != 0:
+                    # only add unk_reward if unk index appears in
+                    # possible_translation_tokens
+                    unk_index = unk_pos[0][0]
+                    logprobs[:, unk_index] += self.unk_reward
 
             # external lexicon reward
             logprobs[:, self.lexicon_indices] += self.lexicon_reward
@@ -517,9 +529,99 @@ class SequenceGenerator(torch.nn.Module):
             encoder_outs.append(encoder_out)
         return encoder_outs, incremental_states
 
-    def _decode(self, tokens, encoder_outs, incremental_states):
+    @staticmethod
+    def gather_probs(all_translation_tokens, all_probs):
+        """
+        Maps probabilities for multiple models with different output softmax
+        dimensions to the same combined token space. This is a simplified
+        example, normally probs would be in log space and would be size
+        [bsz, len(possible_translation_tokens)]
+
+        Model 1:
+        possible_translation_tokens: [3, 7, 8, 9]
+        probs: [0.25, 0.25, 0.25, 0.25]
+
+        Model 2:
+        possible_translation_tokens: [0, 3, 5]
+        probs: [0.4, 0.5, 0.1]
+
+        all_translation_tokens: [[3, 7, 8, 9], [0, 3, 5]]
+        all_probs: [[0.25, 0.25, 0.25, 0.25], [0.4, 0.5, 0.1]]
+        possible_translation_tokens = [0, 3, 5, 7, 8, 9] (order varies)
+        mapped_probs for model 1: [0  , 0.25, 0  , 0.25, 0.25, 0.25]
+        mapped_probs for model 2: [0.4, 0.5 , 0.1, 0   , 0   , 0]
+
+        avg_probs = [0.4, 0.75, 0.1, 0.25, 0.25, 0.25] (order varies but
+        corresponds to possible_translation_tokens)
+
+        Inputs:
+            all_translation_tokens: List[Optional[possible_translation_tokens]]
+                where possible_translation_tokens is a flat Tensor representing
+                the possible translation tokens from model output. Note that the
+                possible_translation_tokens will be None only if vocab reduction
+                was not used.
+            all_probs: List[probs] where probs is a flat Tensor of normalized
+                probs for each model output. If vocab reduction was not used,
+                each probs list will be of length vocab size. Otherwise, each
+                probs will be the same length as that model's
+                possible_translation_tokens
+
+        Returns:
+            avg_probs: average probabilities of tokens from a merged list of
+                possible_translation_tokens from every model.
+            possible_translation_tokens: merged list of
+                possible_translation_tokens from every model.
+        """
+
+        assert len(all_translation_tokens) == len(all_probs), (
+            f"Number of possible_translation_tokens tensors in "
+            f"all_translation_tokens list -- got length "
+            f"{len(all_translation_tokens)} -- should match the number of "
+            f"probs tensors in all_probs list -- got length {len(all_probs)}.\n"
+            f"all_translation_tokens: {all_translation_tokens}\n"
+            f"all_probs: {all_probs}"
+        )
+        possible_translation_tokens = None
+        inv_indices_per_model = [None] * len(all_translation_tokens)
+        if all_translation_tokens[0] is not None:
+            # Get unique translation tokens out of all the
+            # possible_translation_tokens for every model.
+            # inverse indices for the example above: [5, 4, 2, 1, 3, 5, 0]
+            possible_translation_tokens, inverse_indices = torch.unique(
+                torch.cat(all_translation_tokens, dim=0),
+                sorted=False,
+                return_inverse=True,
+            )
+            # softmax_sizes for the example above: [4, 3]
+            softmax_sizes = [
+                translation_tokens.size(0)
+                for translation_tokens in all_translation_tokens
+            ]
+            inv_indices_per_model = torch.split(
+                inverse_indices, split_size_or_sections=softmax_sizes
+            )
+
         avg_probs = None
+        for inv_ind, probs in zip(inv_indices_per_model, all_probs):
+            mapped_probs = probs
+            if possible_translation_tokens is not None:
+                # The corresponding model did not use vocab reduction if
+                # possible_translation_tokens is None.
+                mapped_probs = torch.zeros(
+                    (probs.size(0), possible_translation_tokens.size(0))
+                ).cuda()
+
+                mapped_probs[:, inv_ind] = probs
+            if avg_probs is None:
+                avg_probs = mapped_probs
+            else:
+                avg_probs.add_(mapped_probs)
+        return avg_probs, possible_translation_tokens
+
+    def _decode(self, tokens, encoder_outs, incremental_states):
         avg_attn = None
+        all_translation_tokens = []
+        all_probs = []
         for model_weight, model, encoder_out in zip(
             self.model_weights, self.models, encoder_outs
         ):
@@ -549,16 +651,18 @@ class SequenceGenerator(torch.nn.Module):
                     probs = model_weight * model.get_normalized_probs(
                         decoder_out, log_probs=False
                     )
-            if avg_probs is None:
-                avg_probs = probs
-            else:
-                avg_probs.add_(probs)
+                all_translation_tokens.append(possible_translation_tokens)
+                all_probs.append(probs)
+
             if attn is not None:
                 attn = attn[:, -1, :]
                 if avg_attn is None:
                     avg_attn = attn
                 else:
                     avg_attn.add_(attn)
+        avg_probs, possible_translation_tokens = SequenceGenerator.gather_probs(
+            all_translation_tokens=all_translation_tokens, all_probs=all_probs
+        )
         avg_probs.log_()
         if avg_attn is not None:
             avg_attn.div_(len(self.models))
