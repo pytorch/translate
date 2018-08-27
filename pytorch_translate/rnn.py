@@ -989,6 +989,7 @@ class RNNDecoder(DecoderWithOutputProjection):
         att_weighted_src_embeds=False,
         src_embed_dim=512,
         att_weighted_activation_type="tanh",
+        predictor=None,
     ):
         super().__init__(
             src_dict,
@@ -1000,6 +1001,7 @@ class RNNDecoder(DecoderWithOutputProjection):
             att_weighted_src_embeds=att_weighted_src_embeds,
             src_embed_dim=src_embed_dim,
             att_weighted_activation_type=att_weighted_activation_type,
+            predictor=predictor,
         )
         encoder_hidden_dim = max(1, encoder_hidden_dim)
         self.encoder_hidden_dim = encoder_hidden_dim
