@@ -198,37 +198,63 @@ def get_translation_candidates(
 
 
 class VocabReduction(nn.Module):
-    def __init__(self, src_dict, dst_dict, vocab_reduction_params):
+    def __init__(self, src_dict, dst_dict, vocab_reduction_params, predictor=None):
         super().__init__()
         self.src_dict = src_dict
         self.dst_dict = dst_dict
         self.vocab_reduction_params = vocab_reduction_params
 
-        translation_candidates = get_translation_candidates(
-            self.src_dict,
-            self.dst_dict,
-            self.vocab_reduction_params["lexical_dictionaries"],
-            self.vocab_reduction_params["num_top_words"],
-            self.vocab_reduction_params["max_translation_candidates_per_word"],
-        )
-        self.translation_candidates = nn.Parameter(
-            torch.Tensor(translation_candidates).long(), requires_grad=False
-        )
+        self.predictor = predictor
+        self.translation_candidates = None
+        if (
+            self.vocab_reduction_params is not None
+            and self.vocab_reduction_params["max_translation_candidates_per_word"] > 0
+        ):
+            translation_candidates = get_translation_candidates(
+                self.src_dict,
+                self.dst_dict,
+                self.vocab_reduction_params["lexical_dictionaries"],
+                self.vocab_reduction_params["num_top_words"],
+                self.vocab_reduction_params["max_translation_candidates_per_word"],
+            )
+            self.translation_candidates = nn.Parameter(
+                torch.Tensor(translation_candidates).long(), requires_grad=False
+            )
 
-    def forward(self, src_tokens, decoder_input_tokens=None):
+    # encoder_output is default None for backwards compatibility
+    def forward(self, src_tokens, encoder_output=None, decoder_input_tokens=None):
         vocab_list = []
         if decoder_input_tokens is not None:
             flat_decoder_input_tokens = decoder_input_tokens.view(-1)
             # The tensors should be on CPU since unique is currently CPU-only.
             vocab_list.append(flat_decoder_input_tokens.cpu())
 
-        reduced_vocab = self.translation_candidates.index_select(
-            dim=0, index=src_tokens.view(-1)
-        ).view(-1)
-        vocab_list.append(reduced_vocab.cpu())
+        if self.translation_candidates is not None:
+            # reduced_vocab = self.translation_candidates[src_tokens].view(-1)
+            reduced_vocab = self.translation_candidates.index_select(
+                dim=0, index=src_tokens.view(-1)
+            ).view(-1)
+            vocab_list.append(reduced_vocab.cpu())
+        if (
+            self.vocab_reduction_params is not None
+            and self.vocab_reduction_params["num_top_words"] > 0
+        ):
+            top_words = torch.arange(
+                self.vocab_reduction_params["num_top_words"]
+            ).long()
+            vocab_list.append(top_words.cpu())
 
-        top_words = torch.arange(self.vocab_reduction_params["num_top_words"]).long()
-        vocab_list.append(top_words.cpu())
+        # Get bag of words predicted by word predictor
+        if self.predictor is not None:
+            assert encoder_output is not None
+            pred_output = self.predictor(encoder_output)
+            # [batch, k]
+            topk_indices = self.predictor.get_topk_predicted_tokens(
+                pred_output, log_probs=True
+            )
+            # flatten indices for entire batch [1, batch * k]
+            topk_indices = topk_indices.view(-1)
+            vocab_list.append(topk_indices.detach().cpu())
 
         all_translation_tokens = torch.cat(vocab_list, dim=0)
         possible_translation_tokens = torch.unique(

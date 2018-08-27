@@ -195,6 +195,7 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
         att_weighted_src_embeds=False,
         src_embed_dim=512,
         att_weighted_activation_type="tanh",
+        predictor=None,
     ):
         super().__init__(dst_dict)
         self.project_output = project_output
@@ -203,11 +204,10 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
             self.out_embed_dim = out_embed_dim
             self.att_weighted_src_embeds = att_weighted_src_embeds
             self.src_embed_dim = src_embed_dim
-
             self.vocab_reduction_module = None
-            if vocab_reduction_params:
+            if vocab_reduction_params or predictor is not None:
                 self.vocab_reduction_module = vocab_reduction.VocabReduction(
-                    src_dict, dst_dict, vocab_reduction_params
+                    src_dict, dst_dict, vocab_reduction_params, predictor
                 )
 
             projection_weights = torch.FloatTensor(
@@ -273,7 +273,9 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
 
         if self.vocab_reduction_module and possible_translation_tokens is None:
             possible_translation_tokens = self.vocab_reduction_module(
-                src_tokens, decoder_input_tokens=decoder_input_tokens
+                src_tokens,
+                encoder_output=encoder_out,
+                decoder_input_tokens=decoder_input_tokens,
             )
 
         if possible_translation_tokens is not None:
