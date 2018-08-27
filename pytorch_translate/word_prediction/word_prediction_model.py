@@ -47,6 +47,14 @@ class RNNWordPredictionModel(WordPredictionModel):
             help="word predictor num units",
         )
 
+        parser.add_argument(
+            "--prediction-vocab-reduction-topk",
+            type=int,
+            metavar="N",
+            help="Top k predicted words from the word predictor module for use"
+            "as translation candidates in vocab reduction module.",
+        )
+
     @classmethod
     def build_model(cls, args, task):
         """Build a new model instance."""
@@ -70,6 +78,12 @@ class RNNWordPredictionModel(WordPredictionModel):
             residual_level=args.residual_level,
             bidirectional=bool(args.encoder_bidirectional),
         )
+        predictor = word_predictor.WordPredictor(
+            encoder_output_dim=args.encoder_hidden_dim,
+            hidden_dim=args.predictor_hidden_dim,
+            output_dim=len(dst_dict),
+            prediction_vocab_reduction_topk=args.prediction_vocab_reduction_topk,
+        )
         decoder = decoder_class(
             src_dict=src_dict,
             dst_dict=dst_dict,
@@ -86,10 +100,11 @@ class RNNWordPredictionModel(WordPredictionModel):
             dropout_out=args.decoder_dropout_out,
             residual_level=args.residual_level,
             averaging_encoder=args.averaging_encoder,
+            predictor=None
+            if args.prediction_vocab_reduction_topk is None
+            else predictor,
         )
-        predictor = word_predictor.WordPredictor(
-            args.encoder_hidden_dim, args.predictor_hidden_dim, len(dst_dict)
-        )
+
         return cls(task, encoder, decoder, predictor)
 
     def get_targets(self, sample, net_output):
@@ -107,3 +122,6 @@ def base_architecture_wp(args):
     # default architecture
     rnn.base_architecture(args)
     args.predictor_hidden_dim = getattr(args, "predictor_hidden_dim", 512)
+    args.prediction_vocab_reduction_topk = getattr(
+        args, "prediction_vocab_reduction_topk", None
+    )

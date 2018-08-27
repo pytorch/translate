@@ -6,7 +6,13 @@ import torch.nn.functional as F
 
 
 class WordPredictor(nn.Module):
-    def __init__(self, encoder_output_dim, hidden_dim, output_dim):
+    def __init__(
+        self,
+        encoder_output_dim,
+        hidden_dim,
+        output_dim,
+        prediction_vocab_reduction_topk=None,
+    ):
         super().__init__()
         self.encoder_output_dim = encoder_output_dim
         self.hidden_dim = hidden_dim
@@ -16,6 +22,8 @@ class WordPredictor(nn.Module):
         self.attn_layer = nn.Linear(2 * encoder_output_dim, 1)
         self.hidden_layer = nn.Linear(2 * encoder_output_dim, hidden_dim)
         self.output_layer = nn.Linear(hidden_dim, output_dim)
+
+        self.prediction_vocab_reduction_topk = prediction_vocab_reduction_topk
 
     def forward(self, encoder_output):
         # encoder_hiddens: [timestamp, batch_size, dim]
@@ -50,3 +58,16 @@ class WordPredictor(nn.Module):
             return F.log_softmax(logits, dim=1)
         else:
             return F.softmax(logits, dim=1)
+
+    def get_topk_predicted_tokens(self, net_output, log_probs: bool):
+        """
+        Get self.prediction_vocab_reduction_topk top predicted words for vocab
+        reduction.
+        """
+        assert (
+            isinstance(self.prediction_vocab_reduction_topk, int)
+            and self.prediction_vocab_reduction_topk > 0
+        ), "--prediction-vocab-reduction-topk must be a positive int, or None"
+        probs = self.get_normalized_probs(net_output, log_probs)  # [batch, vocab]
+        _, topk_indices = torch.topk(probs, self.prediction_vocab_reduction_topk, dim=1)
+        return topk_indices
