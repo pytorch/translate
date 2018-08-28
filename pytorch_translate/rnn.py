@@ -179,6 +179,21 @@ class RNNModel(FairseqModel):
             help="decoder attention, defaults to dot",
         )
         parser.add_argument(
+            "--attention-heads",
+            default=8,
+            type=int,
+            metavar="N",
+            help="number of encoder-decoder attention heads, used when attention"
+            " type is multihead. Ignored unless attention type is multihead.",
+        )
+        parser.add_argument(
+            "--first-layer-attention",
+            default=False,
+            action="store_true",
+            help="calculates attention after decoder's first RNN layer and"
+            "concatenates it in input of every subsequent layer",
+        )
+        parser.add_argument(
             "--residual-level",
             default=None,
             type=int,
@@ -465,6 +480,8 @@ class RNNModel(FairseqModel):
                 num_layers=args.decoder_layers,
                 hidden_dim=args.decoder_hidden_dim,
                 attention_type=attention_type,
+                attention_heads=args.attention_heads,
+                first_layer_attention=bool(args.first_layer_attention),
                 dropout_in=args.decoder_dropout_in,
                 dropout_out=args.decoder_dropout_out,
                 residual_level=args.residual_level,
@@ -963,7 +980,11 @@ class RNNEncoder(FairseqEncoder):
 
 
 class RNNDecoder(DecoderWithOutputProjection):
-    """RNN decoder."""
+    """
+    RNN decoder with multihead attention. Attention is calculated using encoder
+    output and output of decoder's first RNN layerself. Attention is applied
+    after first RNN layer and concatenated to input of subsequent layers.
+    """
 
     def __init__(
         self,
@@ -980,6 +1001,8 @@ class RNNDecoder(DecoderWithOutputProjection):
         dropout_in=0.1,
         dropout_out=0.1,
         attention_type="dot",
+        attention_heads=8,
+        first_layer_attention=False,
         residual_level=None,
         averaging_encoder=False,
         project_output=True,
@@ -1013,7 +1036,8 @@ class RNNDecoder(DecoderWithOutputProjection):
         self.attention_type = attention_type
         self.residual_level = residual_level
         self.tie_embeddings = tie_embeddings
-
+        self.attention_heads = attention_heads
+        self.first_layer_attention = first_layer_attention
         num_embeddings = len(dst_dict)
         padding_idx = dst_dict.pad()
         self.embed_tokens = Embedding(
@@ -1058,7 +1082,9 @@ class RNNDecoder(DecoderWithOutputProjection):
             attention_type=attention_type,
             decoder_hidden_state_dim=hidden_dim,
             context_dim=encoder_hidden_dim,
+            nheads=attention_heads,  # specific to multihead_attention
         )
+
         if self.attention.context_dim:
             self.initial_attn_context = nn.Parameter(
                 torch.Tensor(self.attention.context_dim).zero_()
@@ -1068,9 +1094,13 @@ class RNNDecoder(DecoderWithOutputProjection):
         layers = []
         for layer in range(num_layers):
             if layer == 0:
-                cell_input_dim = embed_dim + self.attention.context_dim
+                cell_input_dim = embed_dim
             else:
                 cell_input_dim = hidden_dim
+
+            # attention applied to first layer always.
+            if self.first_layer_attention or layer == 0:
+                cell_input_dim += self.attention.context_dim
             layers.append(cell_class(input_dim=cell_input_dim, hidden_dim=hidden_dim))
         self.layers = nn.ModuleList(layers)
 
@@ -1124,6 +1154,7 @@ class RNNDecoder(DecoderWithOutputProjection):
 
         attn_scores_per_step = []
         outs = []
+        step_attn_scores = None
         for j in range(seqlen):
             # input feeding: concatenate context vector from previous time step
             step_input = maybe_cat((x[j, :, :], input_feed), dim=1)
@@ -1131,6 +1162,14 @@ class RNNDecoder(DecoderWithOutputProjection):
             for i, rnn in enumerate(self.layers):
                 # recurrent cell
                 hidden, cell = rnn(step_input, (prev_hiddens[i], prev_cells[i]))
+
+                if self.first_layer_attention and i == 0:
+                    # tgt_len is 1 in decoder and squeezed for both matrices
+                    # input_feed.shape = tgt_len X bsz X embed_dim
+                    # step_attn_scores.shape = src_len X tgt_len X bsz
+                    input_feed, step_attn_scores = self.attention(
+                        hidden, encoder_outs, src_lengths
+                    )
 
                 # hidden state becomes the input to the next layer
                 layer_output = F.dropout(
@@ -1142,20 +1181,25 @@ class RNNDecoder(DecoderWithOutputProjection):
                     step_input = layer_output + previous_layer_input
                 else:
                     step_input = layer_output
+
+                if self.first_layer_attention:
+                    step_input = maybe_cat((step_input, input_feed), dim=1)
                 previous_layer_input = step_input
 
                 # save state for next time step
                 prev_hiddens[i] = hidden
                 prev_cells[i] = cell
 
-            out, step_attn_scores = self.attention(hidden, encoder_outs, src_lengths)
-            input_feed = out
+            if not self.first_layer_attention:
+                input_feed, step_attn_scores = self.attention(
+                    hidden, encoder_outs, src_lengths
+                )
+
             attn_scores_per_step.append(step_attn_scores.unsqueeze(1))
             attn_scores = torch.cat(attn_scores_per_step, dim=1)
             # srclen x tgtlen x bsz -> bsz x tgtlen x srclen
             attn_scores = attn_scores.transpose(0, 2)
-            combined_output_and_context = maybe_cat((hidden, out), dim=1)
-
+            combined_output_and_context = maybe_cat((hidden, input_feed), dim=1)
             # save final output
             outs.append(combined_output_and_context)
 
@@ -1254,6 +1298,8 @@ def base_architecture(args):
         args, "decoder_out_pretrained_embed", None
     )
     args.attention_type = getattr(args, "attention_type", "dot")
+    args.attention_heads = getattr(args, "attention_heads", 8)
+    args.first_layer_attention = getattr(args, "first_layer_attention", False)
     args.decoder_dropout_in = getattr(args, "decoder_dropout_in", args.dropout)
     args.decoder_dropout_out = getattr(args, "decoder_dropout_out", args.dropout)
     args.averaging_encoder = getattr(args, "averaging_encoder", False)

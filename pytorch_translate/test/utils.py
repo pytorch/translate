@@ -46,6 +46,8 @@ class ModelParamsDict:
             self.decoder_dropout_in = 0
             self.decoder_dropout_out = 0
             self.attention_type = "dot"
+            self.attention_heads = 8
+            self.first_layer_attention = False
             self.residual_level = None
             self.averaging_encoder = False
             self.cell_type = "lstm"

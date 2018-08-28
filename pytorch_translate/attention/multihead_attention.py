@@ -81,4 +81,7 @@ class MultiheadAttention(BaseAttention):
         attn, attn_weights = self._fair_attn.forward(
             query, key, value, key_padding_mask=src_len_mask, need_weights=True
         )
-        return attn.squeeze(), attn_weights
+
+        # attn.shape = tgt_len X bsz X embed_dim
+        # attn_weights.shape = src_len X tgt_len X bsz
+        return attn.squeeze(0), attn_weights.transpose(0, 2).squeeze(1)

@@ -97,3 +97,11 @@ class TestRNNModel(unittest.TestCase):
         # Loading checkpoint without restore state should reset extra state
         assert loaded and extra_state is None
         os.remove(test_save_file)
+
+    @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
+    def test_first_layer_multihead_attention_(self):
+        test_args = test_utils.ModelParamsDict(
+            attention_type="multihead", attention_heads=2, first_layer_attention=True
+        )
+        trainer, _ = self._gpu_train_step(test_args)
+        assert trainer.get_meter("gnorm").avg > 0
