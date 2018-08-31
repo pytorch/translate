@@ -20,7 +20,7 @@ TAGS = [
     "@NOTRANSLATE",
 ]
 
-SPACE_NORMALIZER = re.compile("\s+")
+SPACE_NORMALIZER = re.compile(r"\s+")
 
 
 def default_dictionary_path(save_dir: str, dialect: str) -> str:
