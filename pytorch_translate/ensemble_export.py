@@ -3,6 +3,7 @@
 import logging
 import os
 import tempfile
+from collections import OrderedDict
 
 import numpy as np
 import onnx
@@ -155,8 +156,8 @@ class EncoderEnsemble(nn.Module):
             encoder_outputs = encoder_out[0]
             outputs.append(encoder_outputs)
             output_names.append(f"encoder_output_{i}")
-            if hasattr(model.decoder, "_init_prev_states"):
-                states.extend(model.decoder._init_prev_states(encoder_out))
+            if hasattr(model.decoder, "get_init_prev_states"):
+                states.extend(model.decoder.get_init_prev_states(encoder_out))
 
         # underlying assumption is each model has same vocab_reduction_module
         vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
@@ -272,9 +273,6 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
         next_state_input = len(self.models)
 
-        # size of "batch" dimension of input as tensor
-        batch_size = torch.onnx.operators.shape_as_tensor(input_tokens)[0]
-
         # underlying assumption is each model has same vocab_reduction_module
         vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
         if vocab_reduction_module is not None:
@@ -285,20 +283,6 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
         for i, model in enumerate(self.models):
             encoder_output = inputs[i]
-            prev_hiddens = []
-            prev_cells = []
-
-            for _ in range(len(model.decoder.layers)):
-                prev_hiddens.append(inputs[next_state_input])
-                prev_cells.append(inputs[next_state_input + 1])
-                next_state_input += 2
-
-            # ensure previous attention context has batch dimension
-            input_feed_shape = torch.cat((batch_size.view(1), torch.LongTensor([-1])))
-            prev_input_feed = torch.onnx.operators.reshape_from_tensor_shape(
-                inputs[next_state_input], input_feed_shape
-            )
-            next_state_input += 1
 
             # no batching, we only care about care about "max" length
             src_length_int = int(encoder_output.size()[0])
@@ -310,8 +294,8 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
             encoder_out = (
                 encoder_output,
-                prev_hiddens,
-                prev_cells,
+                None,
+                None,
                 src_length,
                 src_tokens,
                 src_embeddings,
@@ -321,16 +305,12 @@ class DecoderBatchedStepEnsemble(nn.Module):
             model.decoder._is_incremental_eval = True
             model.eval()
 
-            # placeholder
-            incremental_state = {}
-
-            # cache previous state inputs
-            utils.set_incremental_state(
-                model.decoder,
-                incremental_state,
-                "cached_state",
-                (prev_hiddens, prev_cells, prev_input_feed),
-            )
+            # pass state inputs via incremental_state
+            num_states = model.decoder.get_num_states()
+            prev_states = inputs[next_state_input : next_state_input + num_states]
+            next_state_input += num_states
+            incremental_state = OrderedDict()
+            model.decoder.populate_incremental_state(incremental_state, prev_states)
 
             decoder_output = model.decoder(
                 input_tokens,
@@ -345,13 +325,8 @@ class DecoderBatchedStepEnsemble(nn.Module):
             log_probs_per_model.append(log_probs)
             attn_weights_per_model.append(attn_scores)
 
-            (next_hiddens, next_cells, next_input_feed) = utils.get_incremental_state(
-                model.decoder, incremental_state, "cached_state"
-            )
-
-            for h, c in zip(next_hiddens, next_cells):
-                state_outputs.extend([h, c])
-            state_outputs.append(next_input_feed)
+            next_states = model.decoder.serialize_incremental_state(incremental_state)
+            state_outputs.extend(next_states)
 
         average_log_probs = torch.mean(
             torch.cat(log_probs_per_model, dim=1), dim=1, keepdim=True
@@ -735,15 +710,6 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
 
         for i, model in enumerate(self.models):
             encoder_output = inputs[i]
-            prev_hiddens = []
-            prev_cells = []
-
-            for _ in range(len(model.decoder.layers)):
-                prev_hiddens.append(inputs[next_state_input])
-                prev_cells.append(inputs[next_state_input + 1])
-                next_state_input += 2
-            prev_input_feed = inputs[next_state_input].view(1, -1)
-            next_state_input += 1
 
             # no batching, we only care about care about "max" length
             src_length_int = int(encoder_output.size()[0])
@@ -755,8 +721,8 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
 
             encoder_out = (
                 encoder_output,
-                prev_hiddens,
-                prev_cells,
+                None,
+                None,
                 src_length,
                 src_tokens,
                 src_embeddings,
@@ -766,16 +732,12 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
             model.decoder._is_incremental_eval = True
             model.eval()
 
-            # placeholder
-            incremental_state = {}
-
-            # cache previous state inputs
-            utils.set_incremental_state(
-                model.decoder,
-                incremental_state,
-                "cached_state",
-                (prev_hiddens, prev_cells, prev_input_feed),
-            )
+            # pass state inputs via incremental_state
+            num_states = model.decoder.get_num_states()
+            prev_states = inputs[next_state_input : next_state_input + num_states]
+            next_state_input += num_states
+            incremental_state = OrderedDict()
+            model.decoder.populate_incremental_state(incremental_state, prev_states)
 
             decoder_output = model.decoder(
                 input_token.view(1, 1),
@@ -789,13 +751,8 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
 
             log_probs_per_model.append(log_probs)
 
-            (next_hiddens, next_cells, next_input_feed) = utils.get_incremental_state(
-                model.decoder, incremental_state, "cached_state"
-            )
-
-            for h, c in zip(next_hiddens, next_cells):
-                state_outputs.extend([h, c])
-            state_outputs.append(next_input_feed)
+            next_states = model.decoder.serialize_incremental_state(incremental_state)
+            state_outputs.extend(next_states)
 
         average_log_probs = torch.mean(
             torch.cat(log_probs_per_model, dim=0), dim=0, keepdim=True
@@ -1020,8 +977,8 @@ class CharSourceEncoderEnsemble(nn.Module):
             outputs.append(encoder_outputs)
             output_names.append(f"encoder_output_{i}")
 
-            if hasattr(model.decoder, "_init_prev_states"):
-                states.extend(model.decoder._init_prev_states(encoder_out))
+            if hasattr(model.decoder, "get_init_prev_states"):
+                states.extend(model.decoder.get_init_prev_states(encoder_out))
 
         # underlying assumption is each model has same vocab_reduction_module
         vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
