@@ -212,8 +212,9 @@ class EncoderEnsemble(nn.Module):
             num_workers=2 * len(self.models),
         )
 
-    @staticmethod
+    @classmethod
     def build_from_checkpoints(
+        cls,
         checkpoint_filenames,
         src_dict_filename,
         dst_dict_filename,
@@ -225,7 +226,7 @@ class EncoderEnsemble(nn.Module):
             dst_dict_filename,
             lexical_dict_paths,
         )
-        return EncoderEnsemble(models, src_dict=src_dict)
+        return cls(models, src_dict=src_dict)
 
 
 class DecoderBatchedStepEnsemble(nn.Module):
@@ -444,8 +445,9 @@ class DecoderBatchedStepEnsemble(nn.Module):
             output_names=self.output_names,
         )
 
-    @staticmethod
+    @classmethod
     def build_from_checkpoints(
+        cls,
         checkpoint_filenames,
         src_dict_filename,
         dst_dict_filename,
@@ -460,7 +462,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
             dst_dict_filename,
             lexical_dict_paths,
         )
-        return DecoderBatchedStepEnsemble(
+        return cls(
             models,
             tgt_dict,
             beam_size=beam_size,
@@ -649,8 +651,9 @@ class BeamSearch(torch.jit.ScriptModule):
                 export_type=ExportTypes.ZIP_ARCHIVE,
             )
 
-    @staticmethod
+    @classmethod
     def build_from_checkpoints(
+        cls,
         checkpoint_filenames,
         src_dict_filename,
         dst_dict_filename,
@@ -668,7 +671,7 @@ class BeamSearch(torch.jit.ScriptModule):
         )
         src_tokens = torch.LongTensor(np.ones((length, 1), dtype="int64"))
         src_lengths = torch.IntTensor(np.array([length], dtype="int32"))
-        return BeamSearch(
+        return cls(
             models,
             tgt_dict,
             src_tokens,
@@ -949,8 +952,9 @@ class ForcedDecoder(torch.jit.ScriptModule):
                 export_type=ExportTypes.ZIP_ARCHIVE,
             )
 
-    @staticmethod
+    @classmethod
     def build_from_checkpoints(
+        cls,
         checkpoint_filenames,
         src_dict_filename,
         dst_dict_filename,
@@ -964,9 +968,7 @@ class ForcedDecoder(torch.jit.ScriptModule):
             dst_dict_filename,
             lexical_dict_paths,
         )
-        return ForcedDecoder(
-            models, tgt_dict, word_reward=word_reward, unk_reward=unk_reward
-        )
+        return cls(models, tgt_dict, word_reward=word_reward, unk_reward=unk_reward)
 
     def save_to_db(self, output_path):
         """
@@ -1064,8 +1066,9 @@ class CharSourceEncoderEnsemble(nn.Module):
             output_names=self.output_names,
         )
 
-    @staticmethod
+    @classmethod
     def build_from_checkpoints(
+        cls,
         checkpoint_filenames,
         src_dict_filename,
         dst_dict_filename,
@@ -1077,7 +1080,7 @@ class CharSourceEncoderEnsemble(nn.Module):
             dst_dict_filename,
             lexical_dict_paths,
         )
-        return CharSourceEncoderEnsemble(models, src_dict=src_dict)
+        return cls(models, src_dict=src_dict)
 
     def save_to_db(self, output_path):
         """
