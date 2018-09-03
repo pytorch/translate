@@ -1139,7 +1139,7 @@ class RNNDecoder(DecoderWithOutputProjection):
             prev_hiddens, prev_cells, input_feed = cached_state
         else:
             # first time step, initialize previous states
-            init_prev_states = self._init_prev_states(encoder_out)
+            init_prev_states = self.get_init_prev_states(encoder_out)
             prev_hiddens = []
             prev_cells = []
 
@@ -1247,7 +1247,13 @@ class RNNDecoder(DecoderWithOutputProjection):
         """Maximum output length supported by the decoder."""
         return int(1e5)  # an arbitrary large number
 
-    def _init_prev_states(self, encoder_out):
+    def get_num_states(self):
+        num_states = 2 * len(self.layers)
+        if self.attention.context_dim:
+            num_states += 1
+        return num_states
+
+    def get_init_prev_states(self, encoder_out):
         (
             encoder_output,
             final_hiddens,
@@ -1274,9 +1280,42 @@ class RNNDecoder(DecoderWithOutputProjection):
         for h, c in zip(prev_hiddens, prev_cells):
             prev_states.extend([h, c])
         if self.attention.context_dim:
-            prev_states.append(self.initial_attn_context)
+            prev_states.append(self.initial_attn_context.view(1, -1))
 
         return prev_states
+
+    def populate_incremental_state(self, incremental_state, states):
+        """
+        From output of previous step outputs, for ONNX tracing.
+        """
+        prev_hiddens = []
+        prev_cells = []
+
+        for i in range(len(self.layers)):
+            prev_hiddens.append(states[2 * i])
+            prev_cells.append(states[2 * i + 1])
+
+        input_feed = states[-1]
+
+        # cache previous state inputs
+        utils.set_incremental_state(
+            self,
+            incremental_state,
+            "cached_state",
+            (prev_hiddens, prev_cells, input_feed),
+        )
+
+    def serialize_incremental_state(self, incremental_state):
+        state_outputs = []
+        (hiddens, cells, input_feed) = utils.get_incremental_state(
+            self, incremental_state, "cached_state"
+        )
+
+        for h, c in zip(hiddens, cells):
+            state_outputs.extend([h, c])
+        state_outputs.append(input_feed)
+
+        return state_outputs
 
 
 @register_model_architecture("rnn", "rnn")
