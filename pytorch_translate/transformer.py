@@ -373,18 +373,24 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 src_dict, dst_dict, args.vocab_reduction_params
             )
 
+        self.onnx_trace = False
+
+    def prepare_for_onnx_export_(self):
+        self.onnx_trace = True
+
     def forward(
         self,
         prev_output_tokens,
         encoder_out,
         incremental_state=None,
         possible_translation_tokens=None,
+        timestep=None,
     ):
         (encoder_x, src_tokens, encoder_padding_mask) = encoder_out
 
         # embed positions
         positions = self.embed_positions(
-            prev_output_tokens, incremental_state=incremental_state
+            prev_output_tokens, incremental_state=incremental_state, timestep=timestep
         )
 
         if incremental_state is not None:
@@ -400,8 +406,18 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         x = x.transpose(0, 1)
 
         # decoder layers
-        for layer in self.layers:
-            x, attn = layer(x, encoder_x, encoder_padding_mask, incremental_state)
+        if self.onnx_trace:
+            self_attn_outputs = []
+            for i, layer in enumerate(self.layers):
+                # (prev_key, prev_value)
+                self_attn_input = incremental_state[2 * i : 2 * i + 2]
+                x, attn, self_attn_out = layer(
+                    x, encoder_x, encoder_padding_mask, self_attn_input
+                )
+                self_attn_outputs.extend(self_attn_out)
+        else:
+            for layer in self.layers:
+                x, attn = layer(x, encoder_x, encoder_padding_mask, incremental_state)
 
         # T x B x C -> B x T x C
         x = x.transpose(0, 1)
@@ -416,16 +432,23 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         else:
             output_weights = self.embed_out
 
-        if self.vocab_reduction_module is not None:
+        if (
+            self.vocab_reduction_module is not None
+            and possible_translation_tokens is None
+        ):
             decoder_input_tokens = prev_output_tokens.contiguous()
             possible_translation_tokens = self.vocab_reduction_module(
                 src_tokens, decoder_input_tokens=decoder_input_tokens
             )
+        if possible_translation_tokens is not None:
             output_weights = output_weights.index_select(
                 dim=0, index=possible_translation_tokens
             )
 
         logits = F.linear(x, output_weights)
+
+        if self.onnx_trace:
+            return logits, attn, possible_translation_tokens, self_attn_outputs
 
         return logits, attn, possible_translation_tokens
 
@@ -439,6 +462,32 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 del state_dict["decoder.embed_positions.weights"]
             state_dict["decoder.embed_positions._float_tensor"] = torch.FloatTensor(1)
         return state_dict
+
+    def _init_prev_states(self, encoder_out):
+        """
+        This method creates dummy stand-in values for the initial step values
+        of self-attention layers for the sole purpose of ONNX tracing.
+        """
+        encoder_x, src_tokens, encoder_padding_mask = encoder_out
+        batch_size = torch.onnx.operators.shape_as_tensor(encoder_x)[1]
+        states = []
+        for layer in self.layers:
+            # dummy initial (prev_key, prev_value) for self-attention
+            for _ in range(2):
+                dummy_state_shape = torch.cat(
+                    [
+                        torch.LongTensor([0]),
+                        batch_size.view(1),
+                        torch.LongTensor([layer.embed_dim]),
+                    ]
+                )
+                dummy_state = torch.zeros([0, 1, layer.embed_dim])
+                reshaped_dummy_state = torch.onnx.operators.reshape_from_tensor_shape(
+                    dummy_state, dummy_state_shape
+                )
+                states.append(reshaped_dummy_state)
+
+        return states
 
 
 @register_model_architecture("ptt_transformer", "ptt_transformer")

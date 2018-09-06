@@ -213,6 +213,20 @@ class TestONNX(unittest.TestCase):
         }
         self._test_batched_beam_decoder_step(test_args)
 
+    def test_batched_beam_decoder_transformer(self):
+        test_args = test_utils.ModelParamsDict(transformer=True)
+        self._test_batched_beam_decoder_step(test_args)
+
+    def test_batched_beam_decoder_transformer_vocab_reduction(self):
+        test_args = test_utils.ModelParamsDict(transformer=True)
+        lexical_dictionaries = test_utils.create_lexical_dictionaries()
+        test_args.vocab_reduction_params = {
+            "lexical_dictionaries": lexical_dictionaries,
+            "num_top_words": 5,
+            "max_translation_candidates_per_word": 1,
+        }
+        self._test_batched_beam_decoder_step(test_args)
+
     def _test_full_beam_decoder(self, test_args):
         samples, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
         task = tasks.DictionaryHolderTask(src_dict, tgt_dict)

@@ -14,10 +14,17 @@ from caffe2.python import core, workspace
 from caffe2.python.onnx import backend as caffe2_backend
 from caffe2.python.predictor import predictor_exporter
 from fairseq import utils
-from pytorch_translate import char_source_model, dictionary, rnn, tasks  # noqa
 from pytorch_translate.word_prediction import word_prediction_model
 from torch.onnx import ExportTypes, OperatorExportTypes
 
+
+from pytorch_translate import (  # noqa; noqa
+    char_source_model,
+    dictionary,
+    rnn,
+    tasks,
+    transformer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,16 +63,24 @@ def load_models_from_checkpoints(
                 "lexical_dictionaries"
             ] = lexical_dict_paths
         task = tasks.DictionaryHolderTask(src_dict, dst_dict)
-        if checkpoint_data["args"].arch == "char_source":
+
+        architecture = checkpoint_data["args"].arch
+        if architecture == "rnn":
+            model = rnn.RNNModel.build_model(checkpoint_data["args"], task)
+        elif architecture == "char_source":
             model = char_source_model.CharSourceModel.build_model(
                 checkpoint_data["args"], task
             )
-        elif checkpoint_data["args"].arch == "rnn_word_pred":
+        elif architecture == "rnn_word_pred":
             model = word_prediction_model.RNNWordPredictionModel.build_model(
                 checkpoint_data["args"], task
             )
+        elif architecture == "ptt_transformer":
+            model = transformer.TransformerModel.build_model(
+                checkpoint_data["args"], task
+            )
         else:
-            model = rnn.RNNModel.build_model(checkpoint_data["args"], task)
+            raise RuntimeError("Architecture not supported: {architecture}")
         model.load_state_dict(checkpoint_data["model"])
         models.append(model)
 
@@ -267,6 +282,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
         log_probs_per_model = []
         attn_weights_per_model = []
         state_outputs = []
+        beam_axis_per_state = []
 
         # from flat to (batch x 1)
         input_tokens = input_tokens.unsqueeze(1)
@@ -285,74 +301,122 @@ class DecoderBatchedStepEnsemble(nn.Module):
             possible_translation_tokens = None
 
         for i, model in enumerate(self.models):
-            encoder_output = inputs[i]
-            prev_hiddens = []
-            prev_cells = []
+            if isinstance(model, rnn.RNNModel) or isinstance(
+                model, char_source_model.CharSourceModel
+            ):
+                encoder_output = inputs[i]
+                prev_hiddens = []
+                prev_cells = []
 
-            for _ in range(len(model.decoder.layers)):
-                prev_hiddens.append(inputs[next_state_input])
-                prev_cells.append(inputs[next_state_input + 1])
-                next_state_input += 2
+                for _ in range(len(model.decoder.layers)):
+                    prev_hiddens.append(inputs[next_state_input])
+                    prev_cells.append(inputs[next_state_input + 1])
+                    next_state_input += 2
 
-            # ensure previous attention context has batch dimension
-            input_feed_shape = torch.cat((batch_size.view(1), torch.LongTensor([-1])))
-            prev_input_feed = torch.onnx.operators.reshape_from_tensor_shape(
-                inputs[next_state_input], input_feed_shape
-            )
-            next_state_input += 1
+                # ensure previous attention context has batch dimension
+                input_feed_shape = torch.cat(
+                    (batch_size.view(1), torch.LongTensor([-1]))
+                )
+                prev_input_feed = torch.onnx.operators.reshape_from_tensor_shape(
+                    inputs[next_state_input], input_feed_shape
+                )
+                next_state_input += 1
 
-            # no batching, we only care about care about "max" length
-            src_length_int = int(encoder_output.size()[0])
-            src_length = torch.LongTensor(np.array([src_length_int]))
+                # no batching, we only care about care about "max" length
+                src_length_int = int(encoder_output.size()[0])
+                src_length = torch.LongTensor(np.array([src_length_int]))
 
-            # notional, not actually used for decoder computation
-            src_tokens = torch.LongTensor(np.array([[0] * src_length_int]))
-            src_embeddings = encoder_output.new_zeros(encoder_output.shape)
+                # notional, not actually used for decoder computation
+                src_tokens = torch.LongTensor(np.array([[0] * src_length_int]))
+                src_embeddings = encoder_output.new_zeros(encoder_output.shape)
 
-            encoder_out = (
-                encoder_output,
-                prev_hiddens,
-                prev_cells,
-                src_length,
-                src_tokens,
-                src_embeddings,
-            )
+                encoder_out = (
+                    encoder_output,
+                    prev_hiddens,
+                    prev_cells,
+                    src_length,
+                    src_tokens,
+                    src_embeddings,
+                )
 
-            # store cached states, use evaluation mode
-            model.decoder._is_incremental_eval = True
-            model.eval()
+                # store cached states, use evaluation mode
+                model.decoder._is_incremental_eval = True
+                model.eval()
 
-            # placeholder
-            incremental_state = {}
+                # placeholder
+                incremental_state = {}
 
-            # cache previous state inputs
-            utils.set_incremental_state(
-                model.decoder,
-                incremental_state,
-                "cached_state",
-                (prev_hiddens, prev_cells, prev_input_feed),
-            )
+                # cache previous state inputs
+                utils.set_incremental_state(
+                    model.decoder,
+                    incremental_state,
+                    "cached_state",
+                    (prev_hiddens, prev_cells, prev_input_feed),
+                )
 
-            decoder_output = model.decoder(
-                input_tokens,
-                encoder_out,
-                incremental_state=incremental_state,
-                possible_translation_tokens=possible_translation_tokens,
-            )
-            logits, attn_scores, _ = decoder_output
+                decoder_output = model.decoder(
+                    input_tokens,
+                    encoder_out,
+                    incremental_state=incremental_state,
+                    possible_translation_tokens=possible_translation_tokens,
+                )
+                logits, attn_scores, _ = decoder_output
 
-            log_probs = F.log_softmax(logits, dim=2)
+                log_probs = F.log_softmax(logits, dim=2)
 
-            log_probs_per_model.append(log_probs)
-            attn_weights_per_model.append(attn_scores)
+                log_probs_per_model.append(log_probs)
+                attn_weights_per_model.append(attn_scores)
 
-            (next_hiddens, next_cells, next_input_feed) = utils.get_incremental_state(
-                model.decoder, incremental_state, "cached_state"
-            )
+                (
+                    next_hiddens,
+                    next_cells,
+                    next_input_feed,
+                ) = utils.get_incremental_state(
+                    model.decoder, incremental_state, "cached_state"
+                )
 
-            for h, c in zip(next_hiddens, next_cells):
-                state_outputs.extend([h, c])
-            state_outputs.append(next_input_feed)
+                for h, c in zip(next_hiddens, next_cells):
+                    state_outputs.extend([h, c])
+                    beam_axis_per_state.extend([0, 0])
+
+                state_outputs.append(next_input_feed)
+                beam_axis_per_state.append(0)
+
+            elif isinstance(model, transformer.TransformerModel):
+                encoder_output = inputs[i]
+
+                # store cached states, use evaluation mode
+                model.decoder._is_incremental_eval = True
+                model.eval()
+
+                # placeholder
+                incremental_state = {}
+
+                dummy_initial_states = []
+                for _ in model.decoder.layers:
+                    dummy_initial_states.append(inputs[next_state_input])
+                    dummy_initial_states.append(inputs[next_state_input + 1])
+                    next_state_input += 2
+
+                encoder_out = (encoder_output, None, None)
+
+                decoder_output = model.decoder(
+                    input_tokens,
+                    encoder_out,
+                    incremental_state=dummy_initial_states,
+                    possible_translation_tokens=possible_translation_tokens,
+                    timestep=timestep,
+                )
+                logits, attn_scores, _, self_attn_states = decoder_output
+
+                log_probs = F.log_softmax(logits, dim=2)
+                log_probs_per_model.append(log_probs)
+                attn_weights_per_model.append(attn_scores)
+
+                state_outputs.extend(self_attn_states)
+                beam_axis_per_state.extend([1 for _ in self_attn_states])
+            else:
+                raise RuntimeError(f"Not a supported model: {type(model)}")
 
         average_log_probs = torch.mean(
             torch.cat(log_probs_per_model, dim=1), dim=1, keepdim=True
@@ -419,7 +483,8 @@ class DecoderBatchedStepEnsemble(nn.Module):
             outputs.append(possible_translation_tokens)
 
         for i, state in enumerate(state_outputs):
-            next_state = state.index_select(dim=0, index=prev_hypos)
+            beam_axis = beam_axis_per_state[i]
+            next_state = state.index_select(dim=beam_axis, index=prev_hypos)
             outputs.append(next_state)
             self.output_names.append(f"state_output_{i}")
             self.input_names.append(f"state_input_{i}")

@@ -230,7 +230,6 @@ class VocabReduction(nn.Module):
             vocab_list.append(flat_decoder_input_tokens.cpu())
 
         if self.translation_candidates is not None:
-            # reduced_vocab = self.translation_candidates[src_tokens].view(-1)
             reduced_vocab = self.translation_candidates.index_select(
                 dim=0, index=src_tokens.view(-1)
             ).view(-1)
