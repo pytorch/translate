@@ -301,8 +301,10 @@ class DecoderBatchedStepEnsemble(nn.Module):
             possible_translation_tokens = None
 
         for i, model in enumerate(self.models):
-            if isinstance(model, rnn.RNNModel) or isinstance(
-                model, char_source_model.CharSourceModel
+            if (
+                isinstance(model, rnn.RNNModel)
+                or isinstance(model, char_source_model.CharSourceModel)
+                or isinstance(model, word_prediction_model.WordPredictionModel)
             ):
                 encoder_output = inputs[i]
                 prev_hiddens = []
