@@ -975,7 +975,7 @@ class ForcedDecoder(torch.jit.ScriptModule):
 
         for i in range(num_steps):
             # Lint error expected (see @jamesreed's comment on D9021140)
-            index_t = _to_tensor(i)
+            index_t = _to_tensor(i)  # noqa F821
             (step_score, *states) = self.decoder_ens(
                 input_tokens.index_select(dim=1, index=index_t).view((1, 1)),
                 output_tokens.index_select(dim=1, index=index_t).view((1,)),
