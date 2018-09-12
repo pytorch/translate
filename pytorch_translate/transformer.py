@@ -407,14 +407,21 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
         # decoder layers
         if self.onnx_trace:
-            self_attn_outputs = []
+            state_outputs = []
             for i, layer in enumerate(self.layers):
                 # (prev_key, prev_value)
-                self_attn_input = incremental_state[2 * i : 2 * i + 2]
+                self_attn_input = incremental_state[4 * i : 4 * i + 2]
+                attn_state = incremental_state[4 * i + 2 : 4 * i + 4]
                 x, attn, self_attn_out = layer(
-                    x, encoder_x, encoder_padding_mask, self_attn_input
+                    x,
+                    encoder_x,
+                    encoder_padding_mask,
+                    incremental_state={},
+                    prev_self_attn_state=self_attn_input,
+                    prev_attn_state=attn_state,
                 )
-                self_attn_outputs.extend(self_attn_out)
+                state_outputs.extend(self_attn_out)
+                state_outputs.extend(attn_state)  # unchanged
         else:
             for layer in self.layers:
                 x, attn = layer(x, encoder_x, encoder_padding_mask, incremental_state)
@@ -448,7 +455,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         logits = F.linear(x, output_weights)
 
         if self.onnx_trace:
-            return logits, attn, possible_translation_tokens, self_attn_outputs
+            return logits, attn, possible_translation_tokens, state_outputs
 
         return logits, attn, possible_translation_tokens
 
@@ -465,8 +472,10 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
     def _init_prev_states(self, encoder_out):
         """
-        This method creates dummy stand-in values for the initial step values
-        of self-attention layers for the sole purpose of ONNX tracing.
+        For self-attention, initial (prev_key, prev_value) are dummy tensors
+        with a zero-size sequence dimension.
+        For encoder-decoder attention, key and value are computed once from
+        the encoder outputs and stay the same throughout decoding.
         """
         encoder_x, src_tokens, encoder_padding_mask = encoder_out
         batch_size = torch.onnx.operators.shape_as_tensor(encoder_x)[1]
@@ -486,6 +495,12 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                     dummy_state, dummy_state_shape
                 )
                 states.append(reshaped_dummy_state)
+
+            # (key, value) for encoder-decoder attention computed from encoder
+            # output and remain the same throughout decoding
+            key = layer.encoder_attn.in_proj_k(encoder_x)
+            value = layer.encoder_attn.in_proj_v(encoder_x)
+            states.extend([key, value])
 
         return states
 

@@ -394,29 +394,29 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 # placeholder
                 incremental_state = {}
 
-                dummy_initial_states = []
+                state_inputs = []
                 for _ in model.decoder.layers:
-                    dummy_initial_states.append(inputs[next_state_input])
-                    dummy_initial_states.append(inputs[next_state_input + 1])
-                    next_state_input += 2
+                    # (prev_key, prev_value) for self- and encoder-attention
+                    state_inputs.extend(inputs[next_state_input : next_state_input + 4])
+                    next_state_input += 4
 
                 encoder_out = (encoder_output, None, None)
 
                 decoder_output = model.decoder(
                     input_tokens,
                     encoder_out,
-                    incremental_state=dummy_initial_states,
+                    incremental_state=state_inputs,
                     possible_translation_tokens=possible_translation_tokens,
                     timestep=timestep,
                 )
-                logits, attn_scores, _, self_attn_states = decoder_output
+                logits, attn_scores, _, attention_states = decoder_output
 
                 log_probs = F.log_softmax(logits, dim=2)
                 log_probs_per_model.append(log_probs)
                 attn_weights_per_model.append(attn_scores)
 
-                state_outputs.extend(self_attn_states)
-                beam_axis_per_state.extend([1 for _ in self_attn_states])
+                state_outputs.extend(attention_states)
+                beam_axis_per_state.extend([1 for _ in attention_states])
             else:
                 raise RuntimeError(f"Not a supported model: {type(model)}")
 
