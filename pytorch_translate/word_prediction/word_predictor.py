@@ -11,7 +11,7 @@ class WordPredictor(nn.Module):
         encoder_output_dim,
         hidden_dim,
         output_dim,
-        prediction_vocab_reduction_topk=None,
+        topk_labels_per_source_token=None,
     ):
         super().__init__()
         self.encoder_output_dim = encoder_output_dim
@@ -23,7 +23,7 @@ class WordPredictor(nn.Module):
         self.hidden_layer = nn.Linear(2 * encoder_output_dim, hidden_dim)
         self.output_layer = nn.Linear(hidden_dim, output_dim)
 
-        self.prediction_vocab_reduction_topk = prediction_vocab_reduction_topk
+        self.topk_labels_per_source_token = topk_labels_per_source_token
 
     def forward(self, encoder_output):
         # encoder_hiddens: [timestamp, batch_size, dim]
@@ -59,15 +59,20 @@ class WordPredictor(nn.Module):
         else:
             return F.softmax(logits, dim=1)
 
-    def get_topk_predicted_tokens(self, net_output, log_probs: bool):
+    def get_topk_predicted_tokens(self, net_output, src_tokens, log_probs: bool):
         """
-        Get self.prediction_vocab_reduction_topk top predicted words for vocab
-        reduction.
+        Get self.topk_labels_per_source_token top predicted words for vocab
+        reduction (per source token).
         """
         assert (
-            isinstance(self.prediction_vocab_reduction_topk, int)
-            and self.prediction_vocab_reduction_topk > 0
-        ), "--prediction-vocab-reduction-topk must be a positive int, or None"
-        probs = self.get_normalized_probs(net_output, log_probs)  # [batch, vocab]
-        _, topk_indices = torch.topk(probs, self.prediction_vocab_reduction_topk, dim=1)
+            isinstance(self.topk_labels_per_source_token, int)
+            and self.topk_labels_per_source_token > 0
+        ), "topk_labels_per_source_token must be a positive int, or None"
+
+        # number of labels to predict for each example in batch
+        k = src_tokens.size(1) * self.topk_labels_per_source_token
+        # [batch_size, vocab_size]
+        probs = self.get_normalized_probs(net_output, log_probs)
+        _, topk_indices = torch.topk(probs, k, dim=1)
+
         return topk_indices

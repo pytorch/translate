@@ -48,11 +48,12 @@ class RNNWordPredictionModel(WordPredictionModel):
         )
 
         parser.add_argument(
-            "--prediction-vocab-reduction-topk",
+            "--topk-labels-per-source-token",
             type=int,
             metavar="N",
             help="Top k predicted words from the word predictor module for use"
-            "as translation candidates in vocab reduction module.",
+            "as translation candidates in vocab reduction module, as a multiple"
+            "of source tokens.",
         )
 
     @classmethod
@@ -82,7 +83,7 @@ class RNNWordPredictionModel(WordPredictionModel):
             encoder_output_dim=args.encoder_hidden_dim,
             hidden_dim=args.predictor_hidden_dim,
             output_dim=len(dst_dict),
-            prediction_vocab_reduction_topk=args.prediction_vocab_reduction_topk,
+            topk_labels_per_source_token=args.topk_labels_per_source_token,
         )
         decoder = decoder_class(
             src_dict=src_dict,
@@ -100,9 +101,7 @@ class RNNWordPredictionModel(WordPredictionModel):
             dropout_out=args.decoder_dropout_out,
             residual_level=args.residual_level,
             averaging_encoder=args.averaging_encoder,
-            predictor=None
-            if args.prediction_vocab_reduction_topk is None
-            else predictor,
+            predictor=None if args.topk_labels_per_source_token is None else predictor,
         )
 
         return cls(task, encoder, decoder, predictor)
@@ -122,6 +121,6 @@ def base_architecture_wp(args):
     # default architecture
     rnn.base_architecture(args)
     args.predictor_hidden_dim = getattr(args, "predictor_hidden_dim", 512)
-    args.prediction_vocab_reduction_topk = getattr(
-        args, "prediction_vocab_reduction_topk", None
+    args.topk_labels_per_source_token = getattr(
+        args, "topk_labels_per_source_token", None
     )

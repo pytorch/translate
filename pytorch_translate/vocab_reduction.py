@@ -249,7 +249,7 @@ class VocabReduction(nn.Module):
             pred_output = self.predictor(encoder_output)
             # [batch, k]
             topk_indices = self.predictor.get_topk_predicted_tokens(
-                pred_output, log_probs=True
+                pred_output, src_tokens, log_probs=True
             )
             # flatten indices for entire batch [1, batch * k]
             topk_indices = topk_indices.view(-1)
