@@ -360,6 +360,13 @@ def train(args, extra_state, trainer, task, epoch_itr):
         prune_masks = create_prune_masks(args, trainer)
         apply_prune_masks(prune_masks, trainer)
 
+    # update parameters every N batches
+    if epoch_itr.epoch <= len(args.update_freq):
+        update_freq = args.update_freq[epoch_itr.epoch - 1]
+    else:
+        update_freq = args.update_freq[-1]
+    num_batches = len(epoch_itr)
+
     while lr > args.min_lr and extra_state["epoch"] <= max_epoch:
         """Train the model for one epoch."""
 
@@ -368,7 +375,12 @@ def train(args, extra_state, trainer, task, epoch_itr):
         )
 
         for i, sample in enumerate(progress, start=starting_offset):
-            log_output = trainer.train_step(sample)
+            if i < num_batches - 1 and (i + 1) % update_freq > 0:
+                # buffer updates according to --update-freq
+                trainer.train_step(sample, update_params=False)
+                continue
+            else:
+                log_output = trainer.train_step(sample, update_params=True)
 
             if do_prune:
                 apply_prune_masks(prune_masks, trainer)
