@@ -12,32 +12,51 @@ class WordPredictor(nn.Module):
         hidden_dim,
         output_dim,
         topk_labels_per_source_token=None,
+        use_self_attention=False,
     ):
         super().__init__()
         self.encoder_output_dim = encoder_output_dim
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
-
-        self.init_layer = nn.Linear(encoder_output_dim, encoder_output_dim)
-        self.attn_layer = nn.Linear(2 * encoder_output_dim, 1)
-        self.hidden_layer = nn.Linear(2 * encoder_output_dim, hidden_dim)
-        self.output_layer = nn.Linear(hidden_dim, output_dim)
-
         self.topk_labels_per_source_token = topk_labels_per_source_token
+        self.use_self_attention = use_self_attention
+
+        if self.use_self_attention:
+            self.init_layer = nn.Linear(encoder_output_dim, encoder_output_dim)
+            self.attn_layer = nn.Linear(2 * encoder_output_dim, 1)
+            self.hidden_layer = nn.Linear(2 * encoder_output_dim, hidden_dim)
+            self.output_layer = nn.Linear(hidden_dim, output_dim)
+        else:
+            self.hidden_layer = nn.Linear(encoder_output_dim, hidden_dim)
+            self.output_layer = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, encoder_output):
-        # encoder_hiddens: [timestamp, batch_size, dim]
+        # [source_length, batch_size, encoder_output_dim]
         encoder_hiddens, *_ = encoder_output
-        assert encoder_hiddens.dim() == 3  # [T, B, EH]
-        init_state = self._get_init_state(encoder_hiddens)  # [B, EH]
+        assert encoder_hiddens.dim()
 
-        attn_scores = self._attention(encoder_hiddens, init_state)  # [T, B, 1]
-        attned_state = (encoder_hiddens * attn_scores).sum(0)  # [B, EH]
+        if self.use_self_attention:
+            # [batch_size, hidden_dim]
+            init_state = self._get_init_state(encoder_hiddens)
+            # [source_length, batch_size, 1]
+            attn_scores = self._attention(encoder_hiddens, init_state)
+            # [batch_size, hidden_dim]
+            attned_state = (encoder_hiddens * attn_scores).sum(0)
 
-        pred_input = torch.cat([init_state, attned_state], 1)
-        pred_hidden = F.relu(self.hidden_layer(pred_input))
-        pred_logit = self.output_layer(pred_hidden)  # [batch, vocab]
-        return pred_logit
+            pred_input = torch.cat([init_state, attned_state], 1)
+            pred_hidden = F.relu(self.hidden_layer(pred_input))
+            # [batch_size, vocab_size]
+            logits = self.output_layer(pred_hidden)
+        else:
+            # [source_length, batch_size, hidden_dim]
+            hidden = F.relu(self.hidden_layer(encoder_hiddens))
+            # [batch_size, hidden_dim]
+            mean_hidden = torch.mean(hidden, 0)
+            max_hidden = torch.max(hidden, 0)[0]
+            # [batch_size, vocab_size]
+            logits = self.output_layer(mean_hidden + max_hidden)
+
+        return logits
 
     def _get_init_state(self, encoder_hiddens):
         x = torch.mean(encoder_hiddens, 0)
