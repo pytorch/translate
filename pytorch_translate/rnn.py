@@ -1357,6 +1357,7 @@ def base_architecture(args):
     )
     args.adaptive_softmax_cutoff = getattr(args, "adaptive_softmax_cutoff", None)
     args.language_model_only = getattr(args, "language_model_only", False)
+    args.encoder_context_embed = getattr(args, "encoder_context_embed", False)
 
 
 @register_model_architecture("rnn", "rnn_big_test")
