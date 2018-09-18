@@ -636,13 +636,13 @@ class BeamSearch(torch.jit.ScriptModule):
     @torch.jit.script_method
     def forward(
         self,
-        src_tokens,
-        src_lengths,
-        prev_token,
-        prev_scores,
-        attn_weights,
-        prev_hypos_indices,
-        num_steps,
+        src_tokens: torch.Tensor,
+        src_lengths: torch.Tensor,
+        prev_token: torch.Tensor,
+        prev_scores: torch.Tensor,
+        attn_weights: torch.Tensor,
+        prev_hypos_indices: torch.Tensor,
+        num_steps: int,
     ):
         enc_states = self.encoder_ens(src_tokens, src_lengths)
 
@@ -656,7 +656,7 @@ class BeamSearch(torch.jit.ScriptModule):
         all_prev_indices = prev_hypos_indices.unsqueeze(dim=0)
 
         prev_token, prev_scores, prev_hypos_indices, attn_weights, *states = self.decoder_ens_tile(
-            prev_token, prev_scores, 0, *enc_states
+            prev_token, prev_scores, _to_tensor(0), *enc_states  # noqa
         )
 
         all_tokens = torch.cat((all_tokens, prev_token.unsqueeze(dim=0)), dim=0)
@@ -673,7 +673,9 @@ class BeamSearch(torch.jit.ScriptModule):
                 prev_hypos_indices,
                 attn_weights,
                 *states,
-            ) = self.decoder_ens(prev_token, prev_scores, i + 1, *states)
+            ) = self.decoder_ens(
+                prev_token, prev_scores, _to_tensor(i + 1), *states  # noqa
+            )
 
             all_tokens = torch.cat((all_tokens, prev_token.unsqueeze(dim=0)), dim=0)
             all_scores = torch.cat((all_scores, prev_scores.unsqueeze(dim=0)), dim=0)
