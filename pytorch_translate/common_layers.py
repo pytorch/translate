@@ -12,6 +12,25 @@ from pytorch_translate import vocab_reduction
 from pytorch_translate.research.lexical_choice import lexical_translation
 
 
+class ContextEmbedding(nn.Module):
+    """
+    This class implements context-dependent word embeddings as described in
+    https://arxiv.org/pdf/1607.00578.pdf
+    """
+
+    def __init__(self, embed_dim):
+        super().__init__()
+        self.nonlinear = NonlinearLayer(
+            embed_dim, embed_dim, bias=True, activation_fn=nn.ReLU
+        )
+        self.linear = Linear(embed_dim, embed_dim, bias=True)
+        self.sigmoid = torch.nn.Sigmoid()
+
+    def forward(self, src):
+        c = torch.mean(self.nonlinear(src), 1, True)
+        return src * self.sigmoid(self.linear(c))
+
+
 class VariableLengthRecurrent(nn.Module):
     """
     This class acts as a generator of autograd for varying seq lengths with

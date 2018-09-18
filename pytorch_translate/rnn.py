@@ -23,6 +23,7 @@ from pytorch_translate import (
     word_dropout,
 )
 from pytorch_translate.common_layers import (
+    ContextEmbedding,
     DecoderWithOutputProjection,
     Embedding,
     Linear,
@@ -382,6 +383,15 @@ class RNNModel(FairseqModel):
             ),
         )
         parser.add_argument(
+            "--encoder-context-embed",
+            default=False,
+            help=(
+                "whether to use context-dependent source embeddings in the encoder "
+                "for word disambiguation"
+            ),
+            action="store_true",
+        )
+        parser.add_argument(
             "--att-weighted-activation-type",
             default="tanh",
             type=str,
@@ -425,6 +435,7 @@ class RNNModel(FairseqModel):
             word_dropout_params=args.word_dropout_params,
             pretrained_embed=args.encoder_pretrained_embed,
             left_pad=args.left_pad_source,
+            encoder_context_embed=args.encoder_context_embed,
         )
 
     @staticmethod
@@ -643,6 +654,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
         word_dropout_params=None,
         padding_value=0,
         left_pad=True,
+        encoder_context_embed=False,
     ):
         assert cell_type == "lstm", 'sequence-lstm requires cell_type="lstm"'
 
@@ -669,6 +681,10 @@ class LSTMSequenceEncoder(FairseqEncoder):
             dictionary=dictionary,
             pretrained_embed=pretrained_embed,
         )
+        if encoder_context_embed:
+            self.embed_tokens_context = ContextEmbedding(embed_dim=embed_dim)
+        self.encoder_context_embed = encoder_context_embed
+
         self.word_dim = embed_dim
 
         self.layers = nn.ModuleList([])
@@ -719,6 +735,8 @@ class LSTMSequenceEncoder(FairseqEncoder):
 
         # embed tokens
         x = self.embed_tokens(src_tokens)
+        if self.encoder_context_embed:
+            x = self.embed_tokens_context(x)
         # Track token embeddings
         self.tracker.track(x, "token_embeddings", retain_grad=self.track_gradients)
 
@@ -846,6 +864,7 @@ class RNNEncoder(FairseqEncoder):
         pretrained_embed=None,
         padding_value=0,
         left_pad=True,
+        encoder_context_embed=False,
     ):
         super().__init__(dictionary)
         self.dictionary = dictionary
@@ -871,6 +890,11 @@ class RNNEncoder(FairseqEncoder):
             dictionary=dictionary,
             pretrained_embed=pretrained_embed,
         )
+        if encoder_context_embed:
+            self.embed_tokens = ContextEmbedding(
+                embed_dim=self.embed_dim
+            ).encoder_embed_fn
+        self.encoder_context_embed = encoder_context_embed
         self.word_dim = embed_dim
 
         self.cell_type = cell_type
@@ -908,6 +932,8 @@ class RNNEncoder(FairseqEncoder):
 
         # embed tokens
         x = self.embed_tokens(src_tokens)
+        if self.encoder_context_embed:
+            x = self.embed_tokens_context(x)
         x = F.dropout(x, p=self.dropout_in, training=self.training)
 
         # B x T x C -> T x B x C

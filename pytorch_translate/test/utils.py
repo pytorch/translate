@@ -21,6 +21,7 @@ class ModelParamsDict:
             self.encoder_ffn_embed_dim = 16
             self.encoder_layers = 2
             self.encoder_attention_heads = 2
+            self.encoder_context_embed = False
             self.decoder_embed_dim = 10
             self.decoder_ffn_embed_dim = 16
             self.decoder_layers = 2
@@ -35,6 +36,7 @@ class ModelParamsDict:
             self.encoder_bidirectional = False
             self.encoder_dropout_in = 0
             self.encoder_dropout_out = 0
+            self.encoder_context_embed = False
             self.decoder_embed_dim = 10
             self.decoder_embed_path = None
             self.decoder_freeze_embed = False
