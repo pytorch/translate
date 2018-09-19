@@ -197,7 +197,7 @@ def _iter_first_best_bilingual(args, task, dataset_split, translations, align_di
         # Either retrieve the original sentences or regenerate them from tokens.
         if align_dict is not None:
             src_str = task.dataset(dataset_split).src.get_original_text(sample_id)
-            target_str = task.dataset(dataset_split).dst.get_original_text(sample_id)
+            target_str = task.dataset(dataset_split).tgt.get_original_text(sample_id)
         else:
             src_str = task.source_dictionary.string(src_tokens, args.remove_bpe)
             target_str = task.target_dictionary.string(
@@ -279,7 +279,7 @@ def _iter_first_best_multilingual(args, task, dataset_split, translations, align
         # Either retrieve the original sentences or regenerate them from tokens.
         if align_dict is not None:
             src_str = task.dataset(dataset_split).src.get_original_text(sample_id)
-            target_str = task.dataset(dataset_split).dst.get_original_text(sample_id)
+            target_str = task.dataset(dataset_split).tgt.get_original_text(sample_id)
         else:
             src_str = src_dict.string(src_tokens, args.remove_bpe)
             target_str = target_dict.string(
