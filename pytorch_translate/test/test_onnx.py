@@ -275,23 +275,6 @@ class TestONNX(unittest.TestCase):
             example_outputs=outs,
         )
 
-        torch.onnx._export_to_pretty_string(
-            bs,
-            (
-                src_tokens,
-                src_lengths,
-                prev_token,
-                prev_scores,
-                attn_weights,
-                prev_hypos_indices,
-                torch.LongTensor([20]),
-            ),
-            f,
-            export_params=True,
-            verbose=False,
-            example_outputs=outs,
-        )
-
         f.seek(0)
 
         onnx_model = onnx.load(f)
@@ -308,7 +291,6 @@ class TestONNX(unittest.TestCase):
             )
         )
 
-    @unittest.skip("Probably needs updated PyTorch")
     def test_full_beam_decoder(self):
         test_args = test_utils.ModelParamsDict(
             encoder_bidirectional=True, sequence_lstm=True
