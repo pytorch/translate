@@ -34,7 +34,9 @@ class HighwayLayer(nn.Module):
         # TODO: https://github.com/pytorch/pytorch/issues/10747 makes the
         # torch.FloatTensor() expression necessary. Once that gets fixed we
         # can just write 1 - gate_output
-        carry_part = torch.mul((torch.FloatTensor([1.0]) - gate_output), x)
+        carry_part = torch.mul(
+            (torch.FloatTensor([1.0], device=x.device) - gate_output), x
+        )
         return torch.add(transformation_part, carry_part)
 
 
