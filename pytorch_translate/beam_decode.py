@@ -99,6 +99,8 @@ class SequenceGenerator(torch.nn.Module):
         for sample in data_itr:
             if cuda:
                 s = utils.move_to_cuda(sample)
+            else:
+                s = sample
             input = s["net_input"]
             srclen = input["src_tokens"].size(1)
             if self.use_char_source:
@@ -608,8 +610,9 @@ class SequenceGenerator(torch.nn.Module):
                 # The corresponding model did not use vocab reduction if
                 # possible_translation_tokens is None.
                 mapped_probs = torch.zeros(
-                    (probs.size(0), possible_translation_tokens.size(0))
-                ).cuda()
+                    (probs.size(0), possible_translation_tokens.size(0)),
+                    device=probs.device,
+                )
 
                 mapped_probs[:, inv_ind] = probs
             if avg_probs is None:
