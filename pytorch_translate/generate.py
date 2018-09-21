@@ -119,13 +119,7 @@ def _generate_score(models, args, task, dataset_split, optimize=True):
     translation_samples = []
     with progress_bar.build_progress_bar(args, itr) as t:
         wps_meter = TimeMeter()
-        # Keep more detailed timing when invoked from benchmark
-        if "keep_detailed_timing" in args:
-            gen_timer = pytorch_translate_utils.BucketStopwatchMeter(
-                args.increment, args.max_length, args.samples_per_length
-            )
-        else:
-            gen_timer = StopwatchMeter()
+        gen_timer = StopwatchMeter()
         translations = translator.generate_batched_itr(
             t,
             maxlen_a=args.max_len_a,
