@@ -17,7 +17,7 @@ def LSTMCell(input_dim, hidden_dim, **kwargs):
 
 class MILSTMCellBackend(nn.RNNCell):
     def __init__(self, input_size, hidden_size, bias=True):
-        super(nn.RNNCell, self).__init__()
+        super(MILSTMCellBackend, self).__init__(input_size, hidden_size, bias=False)
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.bias = bias
