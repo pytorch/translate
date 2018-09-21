@@ -177,8 +177,8 @@ def validate_and_set_default_args(args):
         ]
 
 
-def setup_training(args):
-    """Parse args, load dataset, and load model trainer."""
+def setup_training_model(args):
+    """Parse args, load dataset, and build model with criterion."""
     if not torch.cuda.is_available():
         raise NotImplementedError("Training on CPU is not supported")
     torch.cuda.set_device(args.device_id)
@@ -205,21 +205,12 @@ def setup_training(args):
         f"| num. model params: \
         {sum(p.numel() for p in model.parameters())}"
     )
+    return task, model, criterion
 
-    # Build trainer
-    if args.fp16:
-        trainer = FP16Trainer(args, task, model, criterion)
-    else:
-        if torch.cuda.get_device_capability(0)[0] >= 7:
-            print("| NOTICE: your device may support faster training with --fp16")
-        trainer = Trainer(args, task, model, criterion)
-    print(f"| training on {args.distributed_world_size} GPUs")
-    print(
-        f"| max tokens per GPU = {args.max_tokens} and \
-        max sentences per GPU = {args.max_sentences}",
-        flush=True,
-    )
 
+def setup_training_state(args, trainer, task):
+    """Set up the directory for saving checkpoints.
+    Load pretrained model if specified."""
     os.makedirs(args.save_dir, exist_ok=True)
 
     # If --restore-file is already present under --save-dir, use that one
@@ -273,6 +264,21 @@ def setup_training(args):
                 dataset_split=args.valid_subset,
             )
     print(f"| extra_state: {extra_state}")
+    return extra_state
+
+
+def build_trainer(args, task, model, criterion, trainer_class, **kwargs):
+    """ Build trainer with provided trainer_class, and set up training state.
+    """
+    trainer = trainer_class(args, task, model, criterion, **kwargs)
+
+    print(f"| training on {args.distributed_world_size} GPUs")
+    print(
+        f"| max tokens per GPU = {args.max_tokens} and \
+        max sentences per GPU = {args.max_sentences}",
+        flush=True,
+    )
+    extra_state = setup_training_state(args, trainer, task)
 
     epoch_itr = data.EpochBatchIterator(
         dataset=task.dataset(args.train_subset),
@@ -289,6 +295,26 @@ def setup_training(args):
         epoch -= 1  # this will be incremented when we call epoch_itr.next_epoch_itr()
     epoch_itr.load_state_dict(
         {"epoch": epoch, "iterations_in_epoch": extra_state["batch_offset"]}
+    )
+    return trainer, extra_state, epoch_itr
+
+
+def setup_training(args):
+    """ Perform several steps:
+    - build model using provided criterion and task
+    - load data
+    - build trainer, and set up training state
+    """
+    task, model, criterion = setup_training_model(args)
+    if args.fp16:
+        trainer_class = FP16Trainer
+    else:
+        if torch.cuda.get_device_capability(0)[0] >= 7:
+            print("| NOTICE: your device may support faster training with --fp16")
+        trainer_class = Trainer
+
+    trainer, extra_state, epoch_itr = build_trainer(
+        args, task, model, criterion, trainer_class
     )
 
     return extra_state, trainer, task, epoch_itr
@@ -337,13 +363,14 @@ def single_process_main(args):
         trainer=trainer,
         task=task,
         epoch_itr=epoch_itr,
+        update_params=True,
     )
 
     for _ in train_iterator:
         pass
 
 
-def train(args, extra_state, trainer, task, epoch_itr):
+def train(args, extra_state, trainer, task, epoch_itr, **train_step_kwargs):
     # offset for current epoch (may be different from checkpoint offset)
     starting_offset = extra_state["batch_offset"]
 
@@ -377,10 +404,12 @@ def train(args, extra_state, trainer, task, epoch_itr):
         for i, sample in enumerate(progress, start=starting_offset):
             if i < num_batches - 1 and (i + 1) % update_freq > 0:
                 # buffer updates according to --update-freq
-                trainer.train_step(sample, update_params=False)
+                train_step_kwargs["update_params"] = False
+                trainer.train_step(sample, **train_step_kwargs)
                 continue
             else:
-                log_output = trainer.train_step(sample, update_params=True)
+                train_step_kwargs["update_params"] = True
+                log_output = trainer.train_step(sample, **train_step_kwargs)
 
             if do_prune:
                 apply_prune_masks(prune_masks, trainer)
