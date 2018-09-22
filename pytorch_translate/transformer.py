@@ -16,8 +16,20 @@ from fairseq.models import (
 )
 from fairseq.modules import AdaptiveSoftmax, SinusoidalPositionalEmbedding
 from pytorch_translate import vocab_reduction
-from pytorch_translate.common_layers import Embedding, VariableTracker
+from pytorch_translate.common_layers import VariableTracker
 from pytorch_translate.utils import torch_find
+
+
+def Embedding(num_embeddings, embedding_dim, padding_idx, freeze_embed=False):
+    """
+    Different weight initialization from common_layers.Embedding
+    """
+    m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
+    nn.init.normal_(m.weight, mean=0, std=embedding_dim ** -0.5)
+    nn.init.constant_(m.weight[padding_idx], 0)
+    if freeze_embed:
+        m.weight.requires_grad = False
+    return m
 
 
 @register_model("ptt_transformer")
@@ -434,7 +446,6 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
         # project back to size of vocabulary
         if self.share_input_output_embed:
-            # x = F.linear(x, self.embed_tokens.weight)
             output_weights = self.embed_tokens.weight
         else:
             output_weights = self.embed_out
