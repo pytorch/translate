@@ -40,7 +40,7 @@ class TestRNNModel(unittest.TestCase):
         encoder_embed_path, embed_weights = test_utils.create_pretrained_embed(
             src_dict, test_args.encoder_hidden_dim
         )
-        test_args.encoder_embed_path = encoder_embed_path
+        test_args.encoder_pretrained_embed = encoder_embed_path
         task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
         model = task.build_model(test_args)
         assert np.allclose(
