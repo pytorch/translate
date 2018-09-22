@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from fairseq.models import FairseqEncoder, register_model, register_model_architecture
 from pytorch_translate import char_encoder, rnn, word_dropout
+from pytorch_translate.common_layers import VariableTracker
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
@@ -490,7 +491,19 @@ class CharCNNEncoder(FairseqEncoder):
                 dictionary, word_dropout_params
             )
 
+        # Variable tracker
+        self.tracker = VariableTracker()
+        # Initialize adversarial mode
+        self.set_gradient_tracking_mode(False)
+
+    def set_gradient_tracking_mode(self, mode=True):
+        """ This allows AdversarialTrainer to turn on retrain_grad when
+        running adversarial example generation model."""
+        self.tracker.reset()
+        self.track_gradients = mode
+
     def forward(self, src_tokens, src_lengths, char_inds, word_lengths):
+        self.tracker.reset()
         # char_inds has shape (batch_size, max_words_per_sent, max_word_len)
         bsz, seqlen, maxchars = char_inds.size()
         # char_cnn_encoder takes input (max_word_length, total_words)
@@ -507,6 +520,7 @@ class CharCNNEncoder(FairseqEncoder):
             # (seqlen, bsz, total_word_embed_dim)
             x = torch.cat([x, embedded_tokens], dim=2)
 
+        self.tracker.track(x, "token_embeddings", retain_grad=self.track_gradients)
         if self.dropout_in != 0:
             x = F.dropout(x, p=self.dropout_in, training=self.training)
         embedded_words = x
