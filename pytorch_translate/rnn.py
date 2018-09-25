@@ -716,6 +716,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
 
         # Initialize adversarial mode
         self.set_gradient_tracking_mode(False)
+        self.set_embed_noising_mode(False)
 
     def forward(self, src_tokens, src_lengths):
         if self.left_pad:
@@ -737,7 +738,11 @@ class LSTMSequenceEncoder(FairseqEncoder):
         x = self.embed_tokens(src_tokens)
         if self.encoder_context_embed:
             x = self.embed_tokens_context(x)
-        # Track token embeddings
+
+        # Apply feature level noising is specified
+        if self.embed_noising_mode and self.embed_noising_layer is not None:
+            x = self.embed_noising_layer(x)
+        # Track token embeddings for generation white-box adversarial example
         self.tracker.track(x, "token_embeddings", retain_grad=self.track_gradients)
 
         x = F.dropout(x, p=self.dropout_in, training=self.training)
@@ -819,6 +824,13 @@ class LSTMSequenceEncoder(FairseqEncoder):
     def set_gradient_tracking_mode(self, mode=True):
         self.tracker.reset()
         self.track_gradients = mode
+
+    def set_embed_noising_mode(self, mode=True):
+        """This allows adversarial trainer to turn on and off embedding noising
+        layers. In regular training, this mode is off, and it is not included
+        in forward pass.
+        """
+        self.embed_noising_mode = mode
 
 
 class DummyEncoder(FairseqEncoder):
