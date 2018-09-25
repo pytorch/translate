@@ -45,7 +45,7 @@ BeamSearchOutput BatchedBeamSearch::beamSearch(
 
   // Create tensor of numberizedInput
   auto inputBlob = caffe2::make_unique<caffe2::Blob>();
-  caffe2::TensorCPU* inputTensor = inputBlob->GetMutableTensor(caffe2::CPU);
+  caffe2::TensorCPU* inputTensor = BlobGetMutableTensor(inputBlob.get(), caffe2::CPU);
   inputTensor->Resize(numberizedInput.size(), 1);
   auto* inputPointer = inputTensor->mutable_data<long>();
 
@@ -64,7 +64,7 @@ BeamSearchOutput BatchedBeamSearch::beamSearch(
   // Create tensor encoderLen
   auto encoderLenBlob = caffe2::make_unique<caffe2::Blob>();
   caffe2::TensorCPU* encoderLenTensor =
-      encoderLenBlob->GetMutableTensor(caffe2::CPU);
+      BlobGetMutableTensor(encoderLenBlob.get(), caffe2::CPU);
   encoderLenTensor->Resize(1);
   auto* encoderLenPointer = encoderLenTensor->mutable_data<int>();
   encoderLenPointer[0] = numberizedInput.size();
@@ -152,7 +152,7 @@ TensorMap BatchedBeamSearch::prepareInitialNextInputStepMap(
 
   auto initialTimestepBlob = caffe2::make_unique<caffe2::Blob>();
   auto* initialTimestepTensor =
-      initialTimestepBlob->GetMutableTensor(caffe2::CPU);
+      BlobGetMutableTensor(initialTimestepBlob.get(), caffe2::CPU);
   auto timestepDeleter = initialTimestepBlob->Release();
   if (timestepDeleter != nullptr) {
     (*trackRawPointers)[initialTimestepTensor] = timestepDeleter;
@@ -162,7 +162,7 @@ TensorMap BatchedBeamSearch::prepareInitialNextInputStepMap(
 
   auto initialPrevtokenBlob = caffe2::make_unique<caffe2::Blob>();
   auto* initialPrevtokenTensor =
-      initialPrevtokenBlob->GetMutableTensor(caffe2::CPU);
+      BlobGetMutableTensor(initialPrevtokenBlob.get(), caffe2::CPU);
   auto prevtokenDeleter = initialPrevtokenBlob->Release();
   if (prevtokenDeleter != nullptr) {
     (*trackRawPointers)[initialPrevtokenTensor] = prevtokenDeleter;
@@ -172,7 +172,7 @@ TensorMap BatchedBeamSearch::prepareInitialNextInputStepMap(
 
   auto initialPrevScoresBlob = caffe2::make_unique<caffe2::Blob>();
   auto* initialPrevScoresTensor =
-      initialPrevScoresBlob->GetMutableTensor(caffe2::CPU);
+      BlobGetMutableTensor(initialPrevScoresBlob.get(), caffe2::CPU);
   auto prevScoresDeleter = initialPrevScoresBlob->Release();
   if (prevScoresDeleter != nullptr) {
     (*trackRawPointers)[initialPrevScoresTensor] = prevScoresDeleter;
@@ -211,7 +211,7 @@ TensorMap BatchedBeamSearch::prepareNextInputStepMap(
 
         auto tiledEncoderOutputsBlob = caffe2::make_unique<caffe2::Blob>();
         caffe2::TensorCPU* tiledEncoderOutputTensor =
-            tiledEncoderOutputsBlob->GetMutableTensor(caffe2::CPU);
+            BlobGetMutableTensor(tiledEncoderOutputsBlob.get(), caffe2::CPU);
         auto sourceLength = untiledTensor->dims()[0];
         auto hiddenSize = untiledTensor->dims()[2];
         tiledEncoderOutputTensor->Resize(sourceLength, beamSize_, hiddenSize);
@@ -255,7 +255,7 @@ TensorMap BatchedBeamSearch::prepareNextInputStepMap(
   }
 
   auto timestepBlob = caffe2::make_unique<caffe2::Blob>();
-  auto* timestepTensor = timestepBlob->GetMutableTensor(caffe2::CPU);
+  auto* timestepTensor = BlobGetMutableTensor(timestepBlob.get(), caffe2::CPU);
   auto timestepDeleter = timestepBlob->Release();
   if (timestepDeleter != nullptr) {
     (*trackRawPointers)[timestepTensor] = timestepDeleter;
