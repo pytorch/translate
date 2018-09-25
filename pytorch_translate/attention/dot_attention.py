@@ -41,7 +41,9 @@ class DotAttention(BaseAttention):
 
         # Sum weighted sources
         attn_weighted_context = (
-            source_hids * normalized_masked_attn_scores.unsqueeze(2)
-        ).sum(1)
+            (source_hids * normalized_masked_attn_scores.unsqueeze(2))
+            .contiguous()
+            .sum(1)
+        )
 
         return attn_weighted_context, normalized_masked_attn_scores.t()
