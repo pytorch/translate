@@ -117,7 +117,7 @@ def load_existing_checkpoint(
                 extra_state["batch_offset"] = 0
 
     else:
-        dummy_state = trainer.load_checkpoint(checkpoint_path, load_optim=False)
+        dummy_state = trainer.load_checkpoint(checkpoint_path, reset_optim=True)
         if dummy_state is None:
             loaded = False
             print(f"| Failed to load checkpoint weights from {checkpoint_path}.")
@@ -277,7 +277,7 @@ def setup_training(args):
             )
     print(f"| extra_state: {extra_state}")
 
-    epoch_itr = data.EpochBatchIterator(
+    epoch_itr = task.get_batch_iterator(
         dataset=task.dataset(args.train_subset),
         max_tokens=args.max_tokens,
         max_sentences=args.max_sentences_valid,
@@ -634,7 +634,7 @@ def validate(args, trainer, task, subset, extra_state):
     epoch = extra_state["epoch"]
 
     # Initialize dataloader
-    itr = data.EpochBatchIterator(
+    itr = task.get_batch_iterator(
         dataset=task.dataset(subset),
         max_tokens=args.max_tokens,
         max_sentences=args.max_sentences_valid,

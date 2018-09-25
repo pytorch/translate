@@ -74,6 +74,7 @@ class ModelParamsDict:
         self.distributed_world_size = 1
         self.seed = 1
         self.left_pad_source = "True"
+        self.fp16 = False
         # Modified params
         for param, value in kwargs.items():
             assert hasattr(

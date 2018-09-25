@@ -191,7 +191,7 @@ def create_iterator(args, trainer, task, adv_split):
         if meter is not None:
             meter.reset()
 
-    return data.EpochBatchIterator(
+    return task.get_batch_iterator(
         dataset=task.dataset(adv_split),
         max_tokens=args.max_tokens,
         max_sentences=args.max_sentences,

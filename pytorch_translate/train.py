@@ -24,7 +24,6 @@ from fairseq import (
     tasks,
     utils,
 )
-from fairseq.fp16_trainer import FP16Trainer
 from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
 from pytorch_translate import sequence_criterions  # noqa
@@ -129,7 +128,7 @@ def load_existing_checkpoint(
                 extra_state["batch_offset"] = 0
 
     else:
-        dummy_state = trainer.load_checkpoint(checkpoint_path, load_optim=False)
+        dummy_state = trainer.load_checkpoint(checkpoint_path, reset_optimizer=True)
         if dummy_state is None:
             loaded = False
             print(f"| Failed to load checkpoint weights from {checkpoint_path}.")
@@ -270,7 +269,16 @@ def setup_training_state(args, trainer, task):
 def build_trainer(args, task, model, criterion, trainer_class, **kwargs):
     """ Build trainer with provided trainer_class, and set up training state.
     """
-    trainer = trainer_class(args, task, model, criterion, **kwargs)
+    # Make a dummy batch to (i) warm the caching allocator and (ii) as a
+    # placeholder DistributedDataParallel when there's an uneven number of
+    # batches per worker.
+    max_positions = utils.resolve_max_positions(
+        task.max_positions(), model.max_positions()
+    )
+    dummy_batch = task.dataset("train").get_dummy_batch(args.max_tokens, max_positions)
+
+    # Build trainer
+    trainer = trainer_class(args, task, model, criterion, dummy_batch, **kwargs)
 
     print(f"| training on {args.distributed_world_size} GPUs")
     print(
@@ -280,12 +288,13 @@ def build_trainer(args, task, model, criterion, trainer_class, **kwargs):
     )
     extra_state = setup_training_state(args, trainer, task)
 
-    epoch_itr = data.EpochBatchIterator(
+    epoch_itr = task.get_batch_iterator(
         dataset=task.dataset(args.train_subset),
         max_tokens=args.max_tokens,
         max_sentences=args.max_sentences,
-        max_positions=trainer.get_model().max_positions(),
+        max_positions=max_positions,
         ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
+        required_batch_size_multiple=8,
         seed=args.seed,
         num_shards=args.distributed_world_size,
         shard_id=args.distributed_rank,
@@ -306,12 +315,7 @@ def setup_training(args):
     - build trainer, and set up training state
     """
     task, model, criterion = setup_training_model(args)
-    if args.fp16:
-        trainer_class = FP16Trainer
-    else:
-        if torch.cuda.get_device_capability(0)[0] >= 7:
-            print("| NOTICE: your device may support faster training with --fp16")
-        trainer_class = Trainer
+    trainer_class = Trainer
 
     trainer, extra_state, epoch_itr = build_trainer(
         args, task, model, criterion, trainer_class
@@ -363,7 +367,6 @@ def single_process_main(args):
         trainer=trainer,
         task=task,
         epoch_itr=epoch_itr,
-        update_params=True,
     )
 
     for _ in train_iterator:
@@ -387,13 +390,6 @@ def train(args, extra_state, trainer, task, epoch_itr, **train_step_kwargs):
         prune_masks = create_prune_masks(args, trainer)
         apply_prune_masks(prune_masks, trainer)
 
-    # update parameters every N batches
-    if epoch_itr.epoch <= len(args.update_freq):
-        update_freq = args.update_freq[epoch_itr.epoch - 1]
-    else:
-        update_freq = args.update_freq[-1]
-    num_batches = len(epoch_itr)
-
     while lr > args.min_lr and extra_state["epoch"] <= max_epoch:
         """Train the model for one epoch."""
 
@@ -401,15 +397,12 @@ def train(args, extra_state, trainer, task, epoch_itr, **train_step_kwargs):
             args=args, epoch_itr=epoch_itr, trainer=trainer
         )
 
-        for i, sample in enumerate(progress, start=starting_offset):
-            if i < num_batches - 1 and (i + 1) % update_freq > 0:
-                # buffer updates according to --update-freq
-                train_step_kwargs["update_params"] = False
-                trainer.train_step(sample, **train_step_kwargs)
+        for i, samples in enumerate(progress, start=starting_offset):
+            log_output = trainer.train_step(samples, **train_step_kwargs)
+            if log_output is None:
+                # This indicates that the batch was skipped, typically
+                # because of OOM or FP16 overflow.
                 continue
-            else:
-                train_step_kwargs["update_params"] = True
-                log_output = trainer.train_step(sample, **train_step_kwargs)
 
             if do_prune:
                 apply_prune_masks(prune_masks, trainer)
@@ -554,14 +547,30 @@ def get_perplexity(loss):
 
 def setup_epoch(args, epoch_itr, trainer):
     """Sets up data and progress meters for one epoch."""
+    # Update parameters every N batches
+    if epoch_itr.epoch <= len(args.update_freq):
+        update_freq = args.update_freq[epoch_itr.epoch - 1]
+    else:
+        update_freq = args.update_freq[-1]
+
     # Initialize dataloader, starting at batch_offset
     itr = epoch_itr.next_epoch_itr()
+    itr = data.iterators.GroupedIterator(itr, update_freq)
     progress = progress_bar.build_progress_bar(
         args, itr, epoch_itr.epoch, no_progress_bar="simple"
     )
 
     # reset training meters
-    for k in ["train_loss", "train_nll_loss", "wps", "ups", "wpb", "bsz", "clip"]:
+    for k in [
+        "train_loss",
+        "train_nll_loss",
+        "wps",
+        "ups",
+        "wpb",
+        "bsz",
+        "gnorm",
+        "clip",
+    ]:
         meter = trainer.get_meter(k)
         if meter is not None:
             meter.reset()
@@ -573,7 +582,7 @@ def setup_epoch(args, epoch_itr, trainer):
 def log_mid_epoch_stats(trainer, progress, extra_meters, log_output):
     stats = get_training_stats(trainer)
     for k, v in log_output.items():
-        if k in ["loss", "nll_loss"]:
+        if k in ["loss", "nll_loss", "ntokens", "nsentences", "sample_size"]:
             continue  # these are already logged above
         if "loss" in k:
             extra_meters[k].update(v, log_output["sample_size"])
@@ -610,6 +619,10 @@ def get_training_stats(trainer):
     stats["gnorm"] = f"{trainer.get_meter('gnorm').avg:.3f}"
     stats["clip"] = f"{trainer.get_meter('clip').avg:.0%}"
     stats["oom"] = trainer.get_meter("oom").avg
+    if trainer.get_meter("loss_scale") is not None:
+        stats["loss_scale"] = f"{trainer.get_meter('loss_scale').avg:.3f}"
+    stats["wall"] = round(trainer.get_meter("wall").elapsed_time)
+    stats["train_wall"] = round(trainer.get_meter("train_wall").sum)
     return stats
 
 
@@ -670,12 +683,15 @@ def validate(args, trainer, task, subset, extra_state):
     epoch = extra_state["epoch"]
 
     # Initialize dataloader
-    itr = data.EpochBatchIterator(
+    itr = task.get_batch_iterator(
         dataset=task.dataset(subset),
         max_tokens=args.max_tokens,
         max_sentences=args.max_sentences_valid,
-        max_positions=trainer.get_model().max_positions(),
+        max_positions=utils.resolve_max_positions(
+            task.max_positions(), trainer.get_model().max_positions()
+        ),
         ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
+        required_batch_size_multiple=8,
         seed=args.seed,
         num_shards=args.distributed_world_size,
         shard_id=args.distributed_rank,
@@ -697,7 +713,7 @@ def validate(args, trainer, task, subset, extra_state):
         # log mid-validation stats
         stats = get_valid_stats(trainer)
         for k, v in log_output.items():
-            if k in ["loss", "nll_loss"]:
+            if k in ["loss", "nll_loss", "ntokens", "nsentences", "sample_size"]:
                 continue
             if "loss" in k:
                 extra_meters[k].update(v, log_output["sample_size"])

@@ -141,10 +141,14 @@ class BaseSequenceLossCriterion(FairseqCriterion):
     def aggregate_logging_outputs(logging_outputs):
         """Aggregate logging outputs from data parallel training."""
         sample_size = sum(log.get("sample_size", 0) for log in logging_outputs)
+        ntokens = sum(log.get("ntokens", 0) for log in logging_outputs)
+        nsentences = sum(log.get("nsentences", 0) for log in logging_outputs)
         return {
             "loss": sum(log.get("loss", 0) for log in logging_outputs)
             / sample_size
             / math.log(2),
+            "ntokens": ntokens,
+            "nsentences": nsentences,
             "sample_size": sample_size,
         }
 
@@ -172,6 +176,7 @@ class SequenceNegativeLoglikelihoodCriterion(BaseSequenceLossCriterion):
         logging_output = {
             "loss": utils.item(loss.data) if reduce else loss.data,
             "ntokens": sample["ntokens"],
+            "nsentences": sample["target"].size(0),
             "sample_size": sample_size,
         }
         return loss, sample_size, logging_output
@@ -202,6 +207,7 @@ class SequenceRiskCriterion(BaseSequenceLossCriterion):
         logging_output = {
             "loss": utils.item(loss.data) if reduce else loss.data,
             "ntokens": sample["ntokens"],
+            "nsentences": sample["target"].size(0),
             "sample_size": sample_size,
         }
         return loss, sample_size, logging_output

@@ -62,7 +62,7 @@ class WeightedLanguagePairDataset(data.language_pair_dataset.LanguagePairDataset
         if len(samples) == 0:
             return {}
         unweighted_data = super().collater(samples)
-        original_weights = torch.FloatTensor([s["weight"] for s in samples])
+        original_weights = torch.FloatTensor([s.get("weight", 1.0) for s in samples])
         # sort by descending source length
         src_lengths = torch.LongTensor([s["source"].numel() for s in samples])
         src_lengths, sort_order = src_lengths.sort(descending=True)

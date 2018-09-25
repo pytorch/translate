@@ -65,6 +65,7 @@ class WordPredictionCriterion(LabelSmoothedCrossEntropyCriterion):
             "translation_loss": translation_loss.data,
             "word_prediction_loss": word_prediction_loss.data,
             "ntokens": sample["ntokens"],
+            "nsentences": sample["target"].size(0),
             "sample_size": sample_size,
         }
 
@@ -84,8 +85,13 @@ class WordPredictionCriterion(LabelSmoothedCrossEntropyCriterion):
     def aggregate_logging_outputs(logging_outputs):
         """Aggregate logging outputs from data parallel training."""
         ntokens = sum(log.get("ntokens", 0) for log in logging_outputs)
+        nsentences = sum(log.get("nsentences", 0) for log in logging_outputs)
         sample_size = sum(log.get("sample_size", 0) for log in logging_outputs)
-        agg_output = {"sample_size": sample_size}
+        agg_output = {
+            "ntokens": ntokens,
+            "nsentences": nsentences,
+            "sample_size": sample_size,
+        }
 
         for loss in ["translation_loss", "word_prediction_loss"]:
             loss_sum = sum(log.get(loss, 0) for log in logging_outputs)

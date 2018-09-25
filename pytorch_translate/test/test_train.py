@@ -17,8 +17,9 @@ class TestRNNModel(unittest.TestCase):
         task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
         model = task.build_model(test_args)
         criterion = task.build_criterion(test_args)
-        trainer = Trainer(test_args, task, model, criterion)
-        logging_dict = trainer.train_step(next(samples))
+        sample = next(samples)
+        trainer = Trainer(test_args, task, model, criterion, dummy_batch=sample)
+        logging_dict = trainer.train_step([sample])
         return trainer, logging_dict
 
     @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
