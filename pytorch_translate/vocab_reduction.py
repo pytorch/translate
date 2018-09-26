@@ -198,14 +198,22 @@ def get_translation_candidates(
 
 
 class VocabReduction(nn.Module):
-    def __init__(self, src_dict, dst_dict, vocab_reduction_params, predictor=None):
+    def __init__(
+        self,
+        src_dict,
+        dst_dict,
+        vocab_reduction_params,
+        predictor=None,
+        fp16: bool = False,
+    ):
         super().__init__()
         self.src_dict = src_dict
         self.dst_dict = dst_dict
         self.vocab_reduction_params = vocab_reduction_params
-
         self.predictor = predictor
+        self.fp16 = fp16
         self.translation_candidates = None
+
         if (
             self.vocab_reduction_params is not None
             and self.vocab_reduction_params["max_translation_candidates_per_word"] > 0
@@ -223,7 +231,13 @@ class VocabReduction(nn.Module):
 
     # encoder_output is default None for backwards compatibility
     def forward(self, src_tokens, encoder_output=None, decoder_input_tokens=None):
-        vocab_list = []
+        assert self.dst_dict.pad() == 0, (
+            f"VocabReduction only works correctly when the padding ID is 0 "
+            "(to ensure its position in possible_translation_tokens is also 0), "
+            f"instead of {self.dst_dict.pad()}."
+        )
+        vocab_list = [src_tokens.new_tensor([self.dst_dict.pad()]).cpu()]
+
         if decoder_input_tokens is not None:
             flat_decoder_input_tokens = decoder_input_tokens.view(-1)
             # The tensors should be on CPU since unique is currently CPU-only.
@@ -258,8 +272,8 @@ class VocabReduction(nn.Module):
         all_translation_tokens = torch.cat(vocab_list, dim=0)
         possible_translation_tokens = torch.unique(
             all_translation_tokens,
-            # Not sorting the return values since sorting takes ~6.25x as long.
-            sorted=False,
+            # Sorting helps ensure that the padding ID (0) remains in position 0.
+            sorted=True,
             # The decoder_input_tokens used here are very close to the targets
             # tokens that we also need to map to the reduced vocab space later
             # on, except that decoder_input_tokens have <eos> prepended, while
@@ -268,5 +282,18 @@ class VocabReduction(nn.Module):
             # that torch.unique can return.
             return_inverse=False,
         ).type_as(src_tokens)
+
+        # Pad to a multiple of 8 to ensure training with fp16 will activate
+        # NVIDIA Tensor Cores.
+        len_mod_eight = possible_translation_tokens.shape[0] % 8
+        if self.training and self.fp16 and len_mod_eight != 0:
+            possible_translation_tokens = torch.cat(
+                [
+                    possible_translation_tokens,
+                    possible_translation_tokens.new_tensor(
+                        [self.dst_dict.pad()] * (8 - len_mod_eight)
+                    ),
+                ]
+            )
 
         return possible_translation_tokens
