@@ -621,9 +621,15 @@ class RNNModel(FairseqModel):
         targets = sample["target"].view(-1)
         possible_translation_tokens = net_output[-1]
         if possible_translation_tokens is not None:
+            # pad_mask is used to ensure padding IDs remain the same regardless
+            # of where torch_find() finds it in possible_translation_tokens.
+            # This is important since FairseqCriterion has special logic to
+            # ignore padding IDs when calculating loss.
+            pad_mask = targets == self.decoder.padding_idx
             targets = torch_find(
                 possible_translation_tokens, targets, len(self.task.target_dictionary)
             )
+            targets[pad_mask] = self.decoder.padding_idx
         return targets
 
 
@@ -1077,11 +1083,11 @@ class RNNDecoder(DecoderWithOutputProjection):
         self.attention_heads = attention_heads
         self.first_layer_attention = first_layer_attention
         num_embeddings = len(dst_dict)
-        padding_idx = dst_dict.pad()
+        self.padding_idx = dst_dict.pad()
         self.embed_tokens = Embedding(
             num_embeddings=num_embeddings,
             embedding_dim=embed_dim,
-            padding_idx=padding_idx,
+            padding_idx=self.padding_idx,
             freeze_embed=freeze_embed,
         )
         if self.tie_embeddings:
