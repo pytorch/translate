@@ -504,6 +504,7 @@ class RNNModel(FairseqModel):
                 att_weighted_src_embeds=args.att_weighted_src_embeds,
                 src_embed_dim=args.encoder_embed_dim,
                 att_weighted_activation_type=args.att_weighted_activation_type,
+                fp16=args.fp16,
             )
 
         # Being able to use adaptive softmax for RNN decoder
@@ -621,9 +622,15 @@ class RNNModel(FairseqModel):
         targets = sample["target"].view(-1)
         possible_translation_tokens = net_output[-1]
         if possible_translation_tokens is not None:
+            # pad_mask is used to ensure padding IDs remain the same regardless
+            # of where torch_find() finds it in possible_translation_tokens.
+            # This is important since FairseqCriterion has special logic to
+            # ignore padding IDs when calculating loss.
+            pad_mask = targets == self.decoder.padding_idx
             targets = torch_find(
                 possible_translation_tokens, targets, len(self.task.target_dictionary)
             )
+            targets[pad_mask] = self.decoder.padding_idx
         return targets
 
 
@@ -1051,6 +1058,7 @@ class RNNDecoder(DecoderWithOutputProjection):
         src_embed_dim=512,
         att_weighted_activation_type="tanh",
         predictor=None,
+        fp16: bool = False,
     ):
         super().__init__(
             src_dict,
@@ -1063,6 +1071,7 @@ class RNNDecoder(DecoderWithOutputProjection):
             src_embed_dim=src_embed_dim,
             att_weighted_activation_type=att_weighted_activation_type,
             predictor=predictor,
+            fp16=fp16,
         )
         encoder_hidden_dim = max(1, encoder_hidden_dim)
         self.encoder_hidden_dim = encoder_hidden_dim
@@ -1077,11 +1086,11 @@ class RNNDecoder(DecoderWithOutputProjection):
         self.attention_heads = attention_heads
         self.first_layer_attention = first_layer_attention
         num_embeddings = len(dst_dict)
-        padding_idx = dst_dict.pad()
+        self.padding_idx = dst_dict.pad()
         self.embed_tokens = Embedding(
             num_embeddings=num_embeddings,
             embedding_dim=embed_dim,
-            padding_idx=padding_idx,
+            padding_idx=self.padding_idx,
             freeze_embed=freeze_embed,
         )
         if self.tie_embeddings:

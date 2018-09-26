@@ -34,4 +34,5 @@ def masked_softmax(scores, src_lengths, src_length_masking=True):
         # Fill pad positions with -inf
         scores = scores.masked_fill(src_mask == 0, -np.inf)
 
-    return F.softmax(scores, dim=-1)
+    # Cast to float and then back again to prevent loss explosion under fp16.
+    return F.softmax(scores.float(), dim=-1).type_as(scores)
