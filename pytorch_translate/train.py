@@ -398,7 +398,15 @@ def train(args, extra_state, trainer, task, epoch_itr, **train_step_kwargs):
         )
 
         for i, samples in enumerate(progress, start=starting_offset):
-            log_output = trainer.train_step(samples, **train_step_kwargs)
+            try:
+                log_output = trainer.train_step(samples, **train_step_kwargs)
+            # Fairseq's fp16_trainer raises this uncommon error to indicate
+            # that we should stop training.
+            except FloatingPointError as e:
+                print(f"Stopping training due to: {e}.")
+                stop_training_mid_epoch = True
+                break
+
             if log_output is None:
                 # This indicates that the batch was skipped, typically
                 # because of OOM or FP16 overflow.
