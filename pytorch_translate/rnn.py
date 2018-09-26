@@ -504,6 +504,7 @@ class RNNModel(FairseqModel):
                 att_weighted_src_embeds=args.att_weighted_src_embeds,
                 src_embed_dim=args.encoder_embed_dim,
                 att_weighted_activation_type=args.att_weighted_activation_type,
+                fp16=args.fp16,
             )
 
         # Being able to use adaptive softmax for RNN decoder
@@ -1057,6 +1058,7 @@ class RNNDecoder(DecoderWithOutputProjection):
         src_embed_dim=512,
         att_weighted_activation_type="tanh",
         predictor=None,
+        fp16: bool = False,
     ):
         super().__init__(
             src_dict,
@@ -1069,6 +1071,7 @@ class RNNDecoder(DecoderWithOutputProjection):
             src_embed_dim=src_embed_dim,
             att_weighted_activation_type=att_weighted_activation_type,
             predictor=predictor,
+            fp16=fp16,
         )
         encoder_hidden_dim = max(1, encoder_hidden_dim)
         self.encoder_hidden_dim = encoder_hidden_dim
