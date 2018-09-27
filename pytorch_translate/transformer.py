@@ -436,7 +436,15 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 state_outputs.extend(attn_state)  # unchanged
         else:
             for layer in self.layers:
-                x, attn = layer(x, encoder_x, encoder_padding_mask, incremental_state)
+                x, attn = layer(
+                    x,
+                    encoder_x,
+                    encoder_padding_mask,
+                    incremental_state,
+                    self_attn_mask=self.buffered_future_mask(x)
+                    if incremental_state is None
+                    else None,
+                )
 
         # T x B x C -> B x T x C
         x = x.transpose(0, 1)
@@ -473,6 +481,22 @@ class TransformerDecoder(FairseqIncrementalDecoder):
     def max_positions(self):
         """Maximum output length supported by the decoder."""
         return self.embed_positions.max_positions()
+
+    def buffered_future_mask(self, tensor):
+        dim = tensor.size(0)
+        if (
+            not hasattr(self, "_future_mask")
+            or self._future_mask is None
+            or self._future_mask.device != tensor.device
+        ):
+            self._future_mask = torch.triu(
+                utils.fill_with_neg_inf(tensor.new(dim, dim)), 1
+            )
+        if self._future_mask.size(0) < dim:
+            self._future_mask = torch.triu(
+                utils.fill_with_neg_inf(self._future_mask.resize_(dim, dim)), 1
+            )
+        return self._future_mask[:dim, :dim]
 
     def upgrade_state_dict(self, state_dict):
         if isinstance(self.embed_positions, SinusoidalPositionalEmbedding):
