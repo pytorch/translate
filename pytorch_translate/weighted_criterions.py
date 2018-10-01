@@ -3,7 +3,7 @@
 from fairseq import utils
 from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq.criterions.label_smoothed_cross_entropy import (
-    LabelSmoothedCrossEntropyCriterion
+    LabelSmoothedCrossEntropyCriterion,
 )
 
 
@@ -18,7 +18,7 @@ class WeightedLabelSmoothedCrossEntropyCriterion(FairseqCriterion):
         """Add criterion-specific arguments to the parser."""
         parser.add_argument(
             "--label-smoothing",
-            default=0.,
+            default=0.0,
             type=float,
             metavar="D",
             help="epsilon for label smoothing, 0 means no label smoothing",
@@ -40,7 +40,7 @@ class WeightedLabelSmoothedCrossEntropyCriterion(FairseqCriterion):
             nll_loss = nll_loss.sum()
             smooth_loss = smooth_loss.sum()
         eps_i = self.eps / lprobs.size(-1)
-        loss = (1. - self.eps) * nll_loss + eps_i * smooth_loss
+        loss = (1.0 - self.eps) * nll_loss + eps_i * smooth_loss
 
         sample_size = (
             sample["target"].size(0) if self.args.sentence_avg else sample["ntokens"]

@@ -564,8 +564,8 @@ def base_architecture(args):
         args, "share_decoder_input_output_embed", False
     )
     args.share_all_embeddings = getattr(args, "share_all_embeddings", False)
-    args.attention_dropout = getattr(args, "attention_dropout", 0.)
-    args.relu_dropout = getattr(args, "relu_dropout", 0.)
+    args.attention_dropout = getattr(args, "attention_dropout", 0.0)
+    args.relu_dropout = getattr(args, "relu_dropout", 0.0)
     args.dropout = getattr(args, "dropout", 0.1)
     args.adaptive_softmax_cutoff = getattr(args, "adaptive_softmax_cutoff", None)
     vocab_reduction.set_arg_defaults(args)

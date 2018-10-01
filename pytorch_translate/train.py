@@ -40,7 +40,7 @@ from pytorch_translate import (
     tasks as pytorch_translate_tasks,
 )
 from pytorch_translate.research.knowledge_distillation import (  # noqa
-    knowledge_distillation_loss
+    knowledge_distillation_loss,
 )
 from pytorch_translate.utils import ManagedCheckpoints
 from pytorch_translate.word_prediction import word_prediction_criterion  # noqa

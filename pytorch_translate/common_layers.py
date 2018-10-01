@@ -172,7 +172,7 @@ def Embedding(num_embeddings, embedding_dim, padding_idx, freeze_embed):
 
     m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
     nn.init.uniform_(m.weight, -0.1, 0.1)
-    nn.init.constant_(m.weight[padding_idx], 0.)
+    nn.init.constant_(m.weight[padding_idx], 0.0)
     if freeze_embed:
         m.weight.requires_grad = False
     return m

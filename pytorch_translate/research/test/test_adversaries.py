@@ -13,7 +13,7 @@ from pytorch_translate.tasks import PytorchTranslateTask
 
 
 # For determinism
-torch.manual_seed(11051993)
+torch.manual_seed(11_051_993)
 
 
 class ToyEncoder(NamedTuple):
