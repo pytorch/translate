@@ -13,6 +13,8 @@ from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import torch
+from adversarial_training.robust_encoder import adversarial_tasks  # noqa
+from adversarial_training.robust_encoder import adversarial_options, adversarial_trainer
 from fairseq import (
     criterions,
     data,
@@ -72,6 +74,8 @@ def get_parser_with_args():
     # Adds args related to input data files (preprocessing, numberizing, and
     # binarizing text files; creating vocab files)
     pytorch_translate_options.add_preprocessing_args(parser)
+    # Add args related to the adversarial attack
+    adversarial_options.add_adversarial_args(parser, train=True)
     return parser
 
 
@@ -266,7 +270,7 @@ def setup_training_state(args, trainer, task):
     return extra_state
 
 
-def build_trainer(args, task, model, criterion, trainer_class, **kwargs):
+def build_trainer(args, task, model, criterion, trainer_class):
     """ Build trainer with provided trainer_class, and set up training state.
     """
     # Make a dummy batch to (i) warm the caching allocator and (ii) as a
@@ -278,7 +282,7 @@ def build_trainer(args, task, model, criterion, trainer_class, **kwargs):
     dummy_batch = task.dataset("train").get_dummy_batch(args.max_tokens, max_positions)
 
     # Build trainer
-    trainer = trainer_class(args, task, model, criterion, dummy_batch, **kwargs)
+    trainer = trainer_class(args, task, model, criterion, dummy_batch)
 
     print(f"| training on {args.distributed_world_size} GPUs")
     print(
@@ -315,7 +319,10 @@ def setup_training(args):
     - build trainer, and set up training state
     """
     task, model, criterion = setup_training_model(args)
-    trainer_class = Trainer
+    if args.adversary:
+        trainer_class = adversarial_trainer.AdversarialTrainer
+    else:
+        trainer_class = Trainer
 
     trainer, extra_state, epoch_itr = build_trainer(
         args, task, model, criterion, trainer_class
@@ -1021,6 +1028,7 @@ def main(args, single_process_train):
 
 if __name__ == "__main__":
     parser = get_parser_with_args()
+    adversarial_options.parse_adversary_args(parser)
     args = options.parse_args_and_arch(parser)
     validate_and_set_default_args(args)
     pytorch_translate_options.print_args(args)
