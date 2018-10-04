@@ -172,6 +172,12 @@ class TransformerModel(FairseqModel):
             help="comma separated list of adaptive softmax cutoff points. "
             "Must be used with adaptive_loss criterion",
         )
+        parser.add_argument(
+            "--all-layer-position-embed",
+            default=False,
+            action="store_true",
+            help="Add position embedding to each layer input",
+        )
 
         # Args for vocab reduction
         vocab_reduction.add_args(parser)
@@ -267,6 +273,7 @@ class TransformerEncoder(FairseqEncoder):
             left_pad=left_pad,
             learned=args.encoder_learned_pos,
         )
+        self.all_layer_position_embed = args.all_layer_position_embed
 
         self.layers = nn.ModuleList([])
         self.layers.extend(
@@ -291,7 +298,11 @@ class TransformerEncoder(FairseqEncoder):
         self.tracker.track(x, "token_embeddings", retain_grad=self.track_gradients)
         # Add position embeddings and dropout
         x = self.embed_scale * x
-        x += self.embed_positions(src_tokens)
+        positions = self.embed_positions(src_tokens)
+        if not self.all_layer_position_embed:
+            x += positions
+        else:
+            positions = positions.transpose(0, 1)
         x = F.dropout(x, p=self.dropout, training=self.training)
 
         # B x T x C -> T x B x C
@@ -304,6 +315,8 @@ class TransformerEncoder(FairseqEncoder):
 
         # encoder layers
         for layer in self.layers:
+            if self.all_layer_position_embed:
+                x += positions
             x = layer(x, encoder_padding_mask)
 
         return x, src_tokens, encoder_padding_mask
@@ -354,6 +367,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
             left_pad=left_pad,
             learned=args.decoder_learned_pos,
         )
+        self.all_layer_position_embed = args.all_layer_position_embed
 
         self.layers = nn.ModuleList([])
         self.layers.extend(
@@ -411,16 +425,21 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
         # embed tokens and positions
         x = self.embed_scale * self.embed_tokens(prev_output_tokens)
-        x += positions
+        if not self.all_layer_position_embed:
+            x += positions
+        else:
+            positions = positions.transpose(0, 1)
         x = F.dropout(x, p=self.dropout, training=self.training)
 
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
 
         # decoder layers
-        if self.onnx_trace:
-            state_outputs = []
-            for i, layer in enumerate(self.layers):
+        state_outputs = []  # onnx_trace only
+        for i, layer in enumerate(self.layers):
+            if self.all_layer_position_embed:
+                x += positions
+            if self.onnx_trace:
                 # (prev_key, prev_value)
                 self_attn_input = incremental_state[4 * i : 4 * i + 2]
                 attn_state = incremental_state[4 * i + 2 : 4 * i + 4]
@@ -434,8 +453,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 )
                 state_outputs.extend(self_attn_out)
                 state_outputs.extend(attn_state)  # unchanged
-        else:
-            for layer in self.layers:
+            else:
                 x, attn = layer(
                     x,
                     encoder_x,
@@ -568,4 +586,5 @@ def base_architecture(args):
     args.relu_dropout = getattr(args, "relu_dropout", 0.0)
     args.dropout = getattr(args, "dropout", 0.1)
     args.adaptive_softmax_cutoff = getattr(args, "adaptive_softmax_cutoff", None)
+    args.all_layer_position_embed = getattr(args, "all_layer_position_embed", False)
     vocab_reduction.set_arg_defaults(args)
