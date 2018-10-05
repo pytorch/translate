@@ -416,7 +416,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 attn_weights_per_model.append(attn_scores)
 
                 state_outputs.extend(attention_states)
-                beam_axis_per_state.extend([1 for _ in attention_states])
+                beam_axis_per_state.extend([0 for _ in attention_states])
             else:
                 raise RuntimeError(f"Not a supported model: {type(model)}")
 

@@ -538,12 +538,15 @@ class TransformerDecoder(FairseqIncrementalDecoder):
             for _ in range(2):
                 dummy_state_shape = torch.cat(
                     [
-                        torch.LongTensor([0]),
                         batch_size.view(1),
-                        torch.LongTensor([layer.embed_dim]),
+                        torch.LongTensor([layer.self_attn.num_heads]),
+                        torch.LongTensor([0]),
+                        torch.LongTensor([layer.self_attn.head_dim]),
                     ]
                 )
-                dummy_state = torch.zeros([0, 1, layer.embed_dim])
+                dummy_state = torch.zeros(
+                    [1, layer.self_attn.num_heads, 0, layer.self_attn.head_dim]
+                )
                 reshaped_dummy_state = torch.onnx.operators.reshape_from_tensor_shape(
                     dummy_state, dummy_state_shape
                 )
@@ -553,6 +556,23 @@ class TransformerDecoder(FairseqIncrementalDecoder):
             # output and remain the same throughout decoding
             key = layer.encoder_attn.in_proj_k(encoder_x)
             value = layer.encoder_attn.in_proj_v(encoder_x)
+
+            # (key, value) kept in shape (bsz, num_heads, seq_len, head_dim)
+            # to avoid repeated transpose operations
+            seq_len, batch_size_int, _ = encoder_x.shape
+            num_heads = layer.encoder_attn.num_heads
+            head_dim = layer.encoder_attn.head_dim
+            key = (
+                key.view(seq_len, batch_size_int * num_heads, head_dim)
+                .transpose(0, 1)
+                .view(batch_size_int, num_heads, seq_len, head_dim)
+            )
+            value = (
+                value.view(seq_len, batch_size_int * num_heads, head_dim)
+                .transpose(0, 1)
+                .view(batch_size_int, num_heads, seq_len, head_dim)
+            )
+
             states.extend([key, value])
 
         return states
