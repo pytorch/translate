@@ -43,6 +43,7 @@ class ModelParamsDict:
             self.decoder_hidden_dim = 10
             self.decoder_out_embed_dim = 5
             self.decoder_out_embed_path = None
+            self.out_embed_norm = None
             self.decoder_layers = 2
             self.dropout = 0
             self.decoder_dropout_in = 0

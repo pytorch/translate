@@ -167,6 +167,12 @@ class RNNModel(FairseqModel):
             help="path to pre-trained decoder output embedding",
         )
         parser.add_argument(
+            "--out-embed-norm",
+            default=None,
+            type=float,
+            help="norm for output projection weights",
+        )
+        parser.add_argument(
             "--decoder-tie-embeddings",
             default=False,
             action="store_true",
@@ -500,6 +506,7 @@ class RNNModel(FairseqModel):
                 project_output=project_output,
                 pretrained_embed=args.decoder_pretrained_embed,
                 projection_pretrained_embed=args.decoder_out_pretrained_embed,
+                out_embed_norm=args.out_embed_norm,
                 tie_embeddings=args.decoder_tie_embeddings,
                 att_weighted_src_embeds=args.att_weighted_src_embeds,
                 src_embed_dim=args.encoder_embed_dim,
@@ -1051,6 +1058,7 @@ class RNNDecoder(DecoderWithOutputProjection):
         residual_level=None,
         averaging_encoder=False,
         project_output=True,
+        out_embed_norm=None,
         tie_embeddings=False,
         pretrained_embed=None,
         projection_pretrained_embed=None,
@@ -1067,6 +1075,7 @@ class RNNDecoder(DecoderWithOutputProjection):
             out_embed_dim,
             project_output=project_output,
             pretrained_embed=projection_pretrained_embed,
+            out_embed_norm=out_embed_norm,
             att_weighted_src_embeds=att_weighted_src_embeds,
             src_embed_dim=src_embed_dim,
             att_weighted_activation_type=att_weighted_activation_type,
@@ -1372,6 +1381,7 @@ def base_architecture(args):
     args.decoder_out_pretrained_embed = getattr(
         args, "decoder_out_pretrained_embed", None
     )
+    args.out_embed_norm = getattr(args, "out_embed_dim", None)
     args.att_weighted_src_embeds = getattr(args, "att_weighted_source_embeds", False)
     args.att_weighted_activation_type = getattr(
         args, "att_weighted_activation_type", "tanh"

@@ -5,6 +5,7 @@ import abc
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from fairseq import utils
 from fairseq.models import FairseqIncrementalDecoder
 from pytorch_translate import rnn_cell  # noqa
@@ -211,6 +212,7 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
         out_embed_dim=512,
         project_output=True,
         pretrained_embed=None,
+        out_embed_norm=None,
         att_weighted_src_embeds=False,
         src_embed_dim=512,
         att_weighted_activation_type="tanh",
@@ -222,6 +224,7 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
         if project_output:
             self.num_embeddings = len(dst_dict)
             self.out_embed_dim = out_embed_dim
+            self.out_embed_norm = out_embed_norm
             self.att_weighted_src_embeds = att_weighted_src_embeds
             self.src_embed_dim = src_embed_dim
             self.vocab_reduction_module = None
@@ -314,6 +317,13 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
         batch_time_hidden = torch.onnx.operators.shape_as_tensor(x)
         x_flat_shape = torch.cat((torch.LongTensor([-1]), batch_time_hidden[2].view(1)))
         x_flat = torch.onnx.operators.reshape_from_tensor_shape(x, x_flat_shape)
+
+        if self.out_embed_norm is not None:
+            # fix the norm of both output word embeddings and context vector
+            output_projection_w = self.out_embed_norm * F.normalize(
+                output_projection_w, p=2, dim=1
+            )
+            x_flat = self.out_embed_norm * F.normalize(x_flat, p=2, dim=1)
 
         projection_flat = torch.matmul(output_projection_w, x_flat.t()).t()
         logits_shape = torch.cat((batch_time_hidden[:2], torch.LongTensor([-1])))
