@@ -74,7 +74,10 @@ class ManagedCheckpoints:
         ):
             # We reach the max number of checkpoints we keep around.
             # Delete the oldest one.
-            os.remove(self.kept_checkpoints.popleft())
+            try:
+                os.remove(self.kept_checkpoints.popleft())
+            except FileNotFoundError:
+                pass
         # Save the new checkpoint.
         self.kept_checkpoints.append(checkpoint_filename)
 
