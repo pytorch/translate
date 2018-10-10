@@ -319,24 +319,36 @@ def add_preprocessing_args(parser):
 def validate_preprocessing_args(args):
     if not (
         (
-            args.train_source_text_file
-            or args.train_source_binary_path
-            or args.multiling_train_source_text_file
+            hasattr(args, "train_source_text_file")
+            and args.train_source_text_file
+            or hasattr(args, "train_source_binary_path")
+            and args.train_source_binary_path
+            or hasattr(args, "multiling_train_source_text_file")
+            and args.multiling_train_source_text_file
         )
         and (
-            args.train_target_text_file
-            or args.train_target_binary_path
-            or args.multiling_train_target_text_file
+            hasattr(args, "train_target_text_file")
+            and args.train_target_text_file
+            or hasattr(args, "train_target_binary_path")
+            and args.train_target_binary_path
+            or hasattr(args, "multiling_train_target_text_file")
+            and args.multiling_train_target_text_file
         )
         and (
-            args.eval_source_text_file
-            or args.eval_source_binary_path
-            or args.multiling_eval_source_text_file
+            hasattr(args, "eval_source_text_file")
+            and args.eval_source_text_file
+            or hasattr(args, "eval_source_binary_path")
+            and args.eval_source_binary_path
+            or hasattr(args, "multiling_eval_source_text_file")
+            and args.multiling_eval_source_text_file
         )
         and (
-            args.eval_target_text_file
-            or args.eval_target_binary_path
-            or args.multiling_eval_target_text_file
+            hasattr(args, "eval_target_text_file")
+            and args.eval_target_text_file
+            or hasattr(args, "eval_target_binary_path")
+            and args.eval_target_binary_path
+            or hasattr(args, "multiling_eval_target_text_file")
+            and args.multiling_eval_target_text_file
         )
     ):
         raise ValueError(
