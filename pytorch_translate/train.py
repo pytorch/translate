@@ -53,8 +53,8 @@ from pytorch_translate import rnn  # noqa; noqa
 from pytorch_translate import char_source_model  # noqa; noqa
 
 
-def get_parser_with_args():
-    parser = options.get_parser("Trainer", default_task="pytorch_translate")
+def get_parser_with_args(default_task="pytorch_translate"):
+    parser = options.get_parser("Trainer", default_task=default_task)
     pytorch_translate_options.add_verbosity_args(parser, train=True)
     pytorch_translate_options.add_dataset_args(parser, train=True, gen=True)
     options.add_distributed_training_args(parser)
