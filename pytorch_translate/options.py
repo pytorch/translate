@@ -377,6 +377,38 @@ def validate_preprocessing_args(args):
                 f"for it to be written to."
             )
 
+    if args.task == "pytorch_translate_semisupervised" and not (
+        (
+            hasattr(args, "train_mono_source_binary_path")
+            and args.train_mono_source_binary_path
+        )
+        or (
+            hasattr(args, "train_mono_target_binary_path")
+            and args.train_mono_target_binary_path
+        )
+        or (
+            hasattr(args, "train_mono_source_text_file")
+            and args.train_mono_source_text_file
+        )
+        or (
+            hasattr(args, "train_mono_target_text_file")
+            and args.train_mono_target_text_file
+        )
+    ):
+        raise ValueError(
+            "For semisupervised training, at least one of --*_text_file or "
+            "--*_binary_path flags must be specified for at least one of "
+            "--train_mono_{source, target}_*"
+        )
+
+        for file_type in ("train_mono_source_text_file", "train_mono_target_text_file"):
+            file_path = getattr(args, file_type)
+            if file_path and not os.path.isfile(file_path):
+                raise ValueError(
+                    f"Please specify an existing text file for --{file_type}="
+                    f"{file_path}"
+                )
+
 
 def expand_optimization_args(group):
     """Expands the optimization related arguments with pytorch_translate

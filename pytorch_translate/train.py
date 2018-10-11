@@ -32,6 +32,7 @@ from pytorch_translate import weighted_criterions  # noqa
 from pytorch_translate import (
     average_checkpoints,
     constants,
+    data as pytorch_translate_data,
     dictionary as pytorch_translate_dictionary,
     generate,
     multi_model,
@@ -191,6 +192,19 @@ def setup_training_model(args):
         args.train_target_binary_path,
         weights_file=getattr(args, "train_weights_path", None),
     )
+    if args.task == "pytorch_translate_semisupervised":
+        task.load_monolingual_dataset(
+            split=args.train_subset
+            + constants.MONOLINGUAL_DATA_IDENTIFIER
+            + args.source_lang,
+            bin_path=args.train_mono_source_binary_path,
+        )
+        task.load_monolingual_dataset(
+            split=args.train_subset
+            + constants.MONOLINGUAL_DATA_IDENTIFIER
+            + args.target_lang,
+            bin_path=args.train_mono_target_binary_path,
+        )
     task.load_dataset(
         args.valid_subset, args.eval_source_binary_path, args.eval_target_binary_path
     )
