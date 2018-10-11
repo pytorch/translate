@@ -387,3 +387,60 @@ class PytorchTranslateMultilingualTask(PytorchTranslateTask):
 
     def get_decoder_lang_code(self, lang_id):
         return self.decoder_langs[lang_id]
+
+
+@register_task("pytorch_translate_semi_supervised")
+class PytorchTranslateSemiSupervised(PytorchTranslateTask):
+    @staticmethod
+    def add_args(parser):
+        super.add_args(parser)
+
+        """Add semi-supervised arguments to the parser."""
+        parser.add_argument(
+            "--train-mono-source-binary-path",
+            default="",
+            help="Path for the binary file containing monolingual source "
+            "training examples.",
+        )
+        parser.add_argument(
+            "--train-mono-target-binary-path",
+            default="",
+            help="Path for the binary file containing monolingual target "
+            "training examples.",
+        )
+        parser.add_argument(
+            "--train-mono-target-binary-path",
+            default="",
+            help="Path for the binary file containing monolingual target "
+            "training examples.",
+        )
+        parser.add_argument(
+            "--add-monolingual-data-to-build-vocab",
+            action="store_true",
+            help="If True, use monolingual data (in addition to parallel data) "
+            "to build vocabs.",
+        )
+
+    def load_monolingual_dataset(self, split, bin_path, is_source=False):
+        if self.args.log_verbose:
+            print("Starting to load binarized monolingual data file.", flush=True)
+
+        if not os.path.exists(bin_path):
+            raise ValueError(f"{bin_path} for {split} not found!")
+
+        if self.char_source_dict is not None and is_source:
+            self.datasets[
+                split
+            ] = char_data.InMemoryNumpyWordCharDataset.create_from_file(path=bin_path)
+
+        else:
+            self.datasets[
+                split
+            ] = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
+                path=bin_path
+            )
+
+        if self.args.log_verbose:
+            print("Finished loading dataset", flush=True)
+
+        print(f"| {split} {len(self.datasets[split])} examples")
