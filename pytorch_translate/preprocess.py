@@ -64,6 +64,11 @@ def validate_args(args):
 
 
 def maybe_generate_temp_file_path(output_path=None):
+    """
+    This function generates a temp file path if output_path is empty or None.
+    This is useful to do before calling any preprocessing function that has a
+    precondition that data path arguments are set to valid filepaths.
+    """
     if not output_path:
         fd, output_path = tempfile.mkstemp()
         # We only need a unique file name since the helper functions
@@ -172,12 +177,114 @@ def preprocess_corpora(args):
     if pytorch_translate_data.is_multilingual(args):
         preprocess_corpora_multilingual(args)
     else:
-        preprocess_corpora_bilingual(args)
+
+        # Vocabs are built before preprocessing because we might need to use
+        # both monolingual and bilingual corpora sources to build the vocab
+        # (in the case of semisupervised training)
+        source_dict, char_source_dict, target_dict = build_vocabs(args=args)
+
+        preprocess_bilingual_corpora(
+            args=args,
+            source_dict=source_dict,
+            char_source_dict=char_source_dict,
+            target_dict=target_dict,
+        )
+        # Binarize additional monolingual corpora for the semisupervised translation
+        # task
+        if args.task == "pytorch_translate_semisupervised":
+            args.train_mono_source_binary_path = maybe_generate_temp_file_path(
+                output_path=args.train_mono_source_binary_path
+                if hasattr(args, "train_mono_source_binary_path")
+                else None
+            )
+            args.train_mono_target_binary_path = maybe_generate_temp_file_path(
+                output_path=args.train_mono_target_binary_path
+                if hasattr(args, "train_mono_target_binary_path")
+                else None
+            )
+            preprocess_monolingual_corpora(
+                args,
+                source_dict=source_dict,
+                char_source_dict=char_source_dict,
+                target_dict=target_dict,
+            )
 
 
-def preprocess_corpora_bilingual(args):
+def preprocess_monolingual_corpora(
+    args: argparse.Namespace,
+    source_dict: Dictionary,
+    char_source_dict: Dictionary,
+    target_dict: Dictionary,
+):
+    """
+    Preprocess source and target monolingual datasets
+    Prerequisite: Vocabs are already built (see build_vocabs)
+    """
+    use_char_source = char_source_dict is not None
+    if (
+        hasattr(args, "train_mono_source_text_file")
+        and args.train_mono_source_text_file
+    ):
+        args.train_mono_source_binary_path = binarize_text_file(
+            text_file=args.train_mono_source_text_file,
+            dictionary=source_dict,
+            output_path=args.train_mono_source_binary_path,
+            append_eos=args.append_eos_to_source,
+            reverse_order=args.reverse_source,
+            use_char_data=use_char_source,
+            char_dictionary=char_source_dict,
+        )
+
+    # For target sentences, we always append EOS tokens, and never reverse
+    # their order.
+    if (
+        hasattr(args, "train_mono_target_text_file")
+        and args.train_mono_target_text_file
+    ):
+        args.train_mono_target_binary_path = binarize_text_file(
+            text_file=args.train_mono_target_text_file,
+            dictionary=target_dict,
+            output_path=args.train_mono_target_binary_path,
+            # We always append EOS to the target sentence since we still want
+            # the model to output an indication the sentence has finished, even
+            # if we don't append the EOS symbol to the source sentence
+            # (to prevent the model from misaligning UNKs or other words
+            # to the frequently occurring EOS).
+            append_eos=True,
+            # We don't reverse the order of the target sentence, since
+            # even if the source sentence is fed to the model backwards,
+            # we still want the model to start outputting from the first word.
+            reverse_order=False,
+        )
+
+
+def build_vocabs(args: argparse.Namespace):
+    """
+    Builds vocabs or loads them from existing vocab files. If args.task
+    is pytorch_translate_semisupervised, we use the monolingual corpora in
+    addition to the parallel corpora for building source and target vocabs.
+    """
+    source_files = [args.train_source_text_file]
+    target_files = [args.train_target_text_file]
+
+    if (
+        args.task == "pytorch_translate_semisupervised"
+        and hasattr(args, "add_monolingual_data_for_vocab_building")
+        and args.add_monolingual_data_to_build_vocab
+    ):
+        if (
+            hasattr(args, "train_mono_source_text_file")
+            and args.train_mono_source_text_file
+        ):
+            source_files.append(args.train_mono_source_text_file)
+        if (
+            hasattr(args, "train_mono_target_text_file")
+            and args.train_mono_target_text_file
+        ):
+            target_files.append(args.train_mono_target_text_file)
+
     source_dict = Dictionary.build_vocab_file_if_nonexistent(
-        corpus_files=[args.train_source_text_file],
+        corpus_files=source_files,
         vocab_file=args.source_vocab_file,
         max_vocab_size=args.source_max_vocab_size,
         tokens_with_penalty=None,
@@ -188,12 +295,33 @@ def preprocess_corpora_bilingual(args):
     char_source_dict = None
     if use_char_source:
         char_source_dict = Dictionary.build_vocab_file_if_nonexistent(
-            corpus_files=[args.train_source_text_file],
+            corpus_files=source_files,
             vocab_file=args.char_source_vocab_file,
             max_vocab_size=args.char_source_max_vocab_size,
             tokens_with_penalty=None,
             is_char_vocab=True,
         )
+
+    target_dict = Dictionary.build_vocab_file_if_nonexistent(
+        corpus_files=target_files,
+        vocab_file=args.target_vocab_file,
+        max_vocab_size=args.target_max_vocab_size,
+        tokens_with_penalty=args.penalized_target_tokens_file,
+    )
+    return source_dict, char_source_dict, target_dict
+
+
+def preprocess_bilingual_corpora(
+    args: argparse.Namespace,
+    source_dict: Dictionary,
+    char_source_dict: Dictionary,
+    target_dict: Dictionary,
+):
+    """
+    Preprocess source and target parallel datasets
+    Prerequisite: Vocabs are already built (see build_vocabs)
+    """
+    use_char_source = args.char_source_vocab_file != ""
     if args.train_source_text_file:
         args.train_source_binary_path = binarize_text_file(
             text_file=args.train_source_text_file,
@@ -215,12 +343,6 @@ def preprocess_corpora_bilingual(args):
             char_dictionary=char_source_dict,
         )
 
-    target_dict = Dictionary.build_vocab_file_if_nonexistent(
-        corpus_files=[args.train_target_text_file],
-        vocab_file=args.target_vocab_file,
-        max_vocab_size=args.target_max_vocab_size,
-        tokens_with_penalty=args.penalized_target_tokens_file,
-    )
     # For target sentences, we always append EOS tokens, and never reverse
     # their order.
     if args.train_target_text_file:
