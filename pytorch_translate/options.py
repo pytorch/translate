@@ -23,7 +23,7 @@ def add_dataset_args(parser, train=False, gen=False):
     )
     group.add_argument(
         "--max-tokens",
-        default=6000,
+        default=5000,
         type=int,
         metavar="N",
         help="maximum number of tokens in a batch",
