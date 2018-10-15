@@ -194,6 +194,10 @@ class TestONNX(unittest.TestCase):
             np.testing.assert_allclose(
                 caffe2_out_value, pytorch_out_value, rtol=1e-4, atol=1e-6
             )
+        decoder_step_ensemble.save_to_db(
+            output_path=os.path.join(tmp_dir, "decoder.predictor_export"),
+            encoder_ensemble_outputs=pytorch_encoder_outputs,
+        )
 
     def test_batched_beam_decoder_default(self):
         test_args = test_utils.ModelParamsDict(
