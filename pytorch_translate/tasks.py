@@ -393,19 +393,13 @@ class PytorchTranslateMultilingualTask(PytorchTranslateTask):
 class PytorchTranslateSemiSupervised(PytorchTranslateTask):
     @staticmethod
     def add_args(parser):
-        super.add_args(parser)
+        PytorchTranslateTask.add_args(parser)
 
         """Add semi-supervised arguments to the parser."""
         parser.add_argument(
             "--train-mono-source-binary-path",
             default="",
             help="Path for the binary file containing monolingual source "
-            "training examples.",
-        )
-        parser.add_argument(
-            "--train-mono-target-binary-path",
-            default="",
-            help="Path for the binary file containing monolingual target "
             "training examples.",
         )
         parser.add_argument(
