@@ -3,13 +3,12 @@
 import argparse
 import collections
 import math
-import multiprocessing
+import multiprocessing.queues as mp_queues
 import os
 import random
 import shutil
-import signal
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as np
 import torch
@@ -39,6 +38,7 @@ from pytorch_translate import (
     options as pytorch_translate_options,
     preprocess,
     tasks as pytorch_translate_tasks,
+    utils as pytorch_translate_utils,
 )
 from pytorch_translate.research.knowledge_distillation import (  # noqa
     knowledge_distillation_loss,
@@ -81,11 +81,25 @@ def default_extra_state(args) -> Dict[str, Any]:
         "epoch": 1,
         "batch_offset": 0,
         "start_time": time.time(),
-        "val_loss": None,
+        # We have both checkpoint_lowest_loss and tune_eval.lowest_loss since we
+        # may have seen a lower loss during validation and updated
+        # tune_eval.lowest_loss, but may not have written a new checkpoint with
+        # that loss yet.
         "checkpoint_lowest_loss": None,
-        "validate": {"lowest_loss": None, "num_since_best": None},
-        "last_bleu_eval": 0,
-        "evaluate_bleu": {"best": None, "best_epoch": None, "num_since_best": None},
+        "tune_eval": {
+            "loss": None,
+            "perplexity": None,
+            "lowest_loss": None,
+            "num_since_best": 0,
+        },
+        # "last_eval_bleu": 0,
+        "tune_bleu": {
+            "current": None,
+            "best": None,
+            "best_epoch": None,
+            "num_since_best": 0,
+            "last_eval_step": 0,
+        },
         "last_checkpoints": ManagedCheckpoints(
             max(args.generate_bleu_eval_avg_checkpoints, args.max_checkpoints_kept),
             # Don't auto_clear checkpoints for no_epoch_checkpoints, because
@@ -95,6 +109,19 @@ def default_extra_state(args) -> Dict[str, Any]:
             ),
         ),
     }
+
+
+def clear_per_step_extra_state(extra_state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Clear values in extra_state that are technically only true for a specific
+    step (ex: the eval tune loss calculated after 5 train steps is no longer
+    accurate after 7 train steps, but might not get updated since we might not
+    be doing eval after every step).
+    """
+    extra_state["tune_eval"]["loss"] = None
+    extra_state["tune_eval"]["perplexity"] = None
+    extra_state["tune_bleu"]["current"] = None
+    return extra_state
 
 
 def load_existing_checkpoint(
@@ -144,6 +171,20 @@ def validate_and_set_default_args(args):
     # Prevents generate from printing individual translated sentences when
     # calculating BLEU score.
     args.quiet = True
+
+    if args.distributed_world_size < torch.cuda.device_count():
+        raise ValueError(
+            f"--distributed-world-size={args.distributed_world_size} "
+            f"must be >= the number of GPUs: {torch.cuda.device_count()}."
+        )
+    # Set default init method for multi-GPU training if the user didn't specify
+    # them.
+    if args.distributed_world_size > 1:
+        args.distributed_init_method = (
+            f"tcp://localhost:{random.randint(10000, 20000)}"
+            if not args.distributed_init_method
+            else args.distributed_init_method
+        )
 
     if not args.source_vocab_file:
         args.source_vocab_file = pytorch_translate_dictionary.default_dictionary_path(
@@ -294,7 +335,10 @@ def build_trainer(args, task, model, criterion, trainer_class):
     # Build trainer
     trainer = trainer_class(args, task, model, criterion, dummy_batch)
 
-    print(f"| training on {args.distributed_world_size} GPUs")
+    print(
+        f"| training on {args.distributed_world_size} total GPUs "
+        f"({torch.cuda.device_count()} GPUs locally on this machine)."
+    )
     print(
         f"| max tokens per GPU = {args.max_tokens} and \
         max sentences per GPU = {args.max_sentences}",
@@ -328,10 +372,11 @@ def setup_training(args):
     - load data
     - build trainer, and set up training state
     """
+    pytorch_translate_options.print_args(args)
     task, model, criterion = setup_training_model(args)
 
     trainer, extra_state, epoch_itr = build_trainer(
-        args, task, model, criterion, trainer_class=Trainer
+        args=args, task=task, model=model, criterion=criterion, trainer_class=Trainer
     )
 
     return extra_state, trainer, task, epoch_itr
@@ -370,23 +415,15 @@ def apply_prune_masks(prune_masks, trainer):
             params.data[prune_masks[name]] = 0.0
 
 
-def single_process_main(args):
-    """Train the model for multiple epochs."""
-    extra_state, trainer, task, epoch_itr = setup_training(args)
-
-    train_iterator = train(
-        args=args,
-        extra_state=extra_state,
-        trainer=trainer,
-        task=task,
-        epoch_itr=epoch_itr,
-    )
-
-    for _ in train_iterator:
-        pass
-
-
-def train(args, extra_state, trainer, task, epoch_itr, **train_step_kwargs):
+def train(
+    args,
+    extra_state: Dict[str, Any],
+    trainer,
+    task,
+    epoch_itr,
+    output_queue: Optional[mp_queues.Queue] = None,
+    **train_step_kwargs,
+):
     # offset for current epoch (may be different from checkpoint offset)
     starting_offset = extra_state["batch_offset"]
 
@@ -411,6 +448,7 @@ def train(args, extra_state, trainer, task, epoch_itr, **train_step_kwargs):
         )
 
         for i, samples in enumerate(progress, start=starting_offset):
+            clear_per_step_extra_state(extra_state)
             try:
                 log_output = trainer.train_step(samples, **train_step_kwargs)
             # Fairseq's fp16_trainer raises this uncommon error to indicate
@@ -440,7 +478,7 @@ def train(args, extra_state, trainer, task, epoch_itr, **train_step_kwargs):
                 trainer.get_meter("wps").reset()
 
             num_updates = trainer.get_num_updates()
-            do_validate = (
+            do_eval_tune_loss = (
                 args.subepoch_validate_interval > 0
                 and num_updates % args.subepoch_validate_interval == 0
             )
@@ -453,39 +491,46 @@ def train(args, extra_state, trainer, task, epoch_itr, **train_step_kwargs):
                 # We can only do BLEU eval when we have a new checkpoint to load.
                 do_save
                 and args.generate_bleu_eval_interval > 0
-                and num_updates - extra_state["last_bleu_eval"]
+                and num_updates - extra_state["tune_bleu"]["last_eval_step"]
                 >= args.generate_bleu_eval_interval
             )
             if do_eval_bleu:
-                extra_state["last_bleu_eval"] = num_updates
+                extra_state["tune_bleu"]["last_eval_step"] = num_updates
 
             extra_state["batch_offset"] = i + 1
-
-            (
-                _,
-                val_ppl,
-                val_bleu,
-                stop_training_mid_epoch,
-                translation_samples,
-                lr,
-            ) = validate_save_and_evaluate_bleu(
+            (extra_state, stop_training_mid_epoch, translation_samples) = save_and_eval(
                 args=args,
                 trainer=trainer,
                 task=task,
                 extra_state=extra_state,
-                do_validate=do_validate,
+                do_eval_tune_loss=do_eval_tune_loss,
                 do_save=do_save,
                 do_eval_bleu=do_eval_bleu,
             )
-            yield (
-                trainer.get_num_updates(),
-                {
-                    "train_ppl": train_stats["ppl"],
-                    "tune_ppl": val_ppl,
-                    "tune_bleu": val_bleu,
-                    "translation_samples": translation_samples,
-                },
-            )
+
+            if distributed_utils.is_master(args) and output_queue is not None:
+                output_queue.put_nowait(
+                    (
+                        trainer.get_num_updates(),
+                        {
+                            "train_ppl": train_stats["ppl"],
+                            "tune_ppl": extra_state["tune_eval"]["perplexity"],
+                            "tune_bleu": extra_state["tune_bleu"]["current"],
+                            "translation_samples": translation_samples,
+                        },
+                    )
+                )
+
+            if (
+                do_eval_bleu
+                and args.shrink_lr_no_best_bleu_eval > 0
+                and extra_state["tune_bleu"]["num_since_best"]
+                > args.shrink_lr_no_best_bleu_eval
+            ):
+                current_lr = trainer.optimizer.get_lr()
+                trainer.optimizer.set_lr(current_lr * args.lr_shrink)
+                lr = trainer.optimizer.get_lr()
+                print(f"Decayed lr from {current_lr} to {lr}.")
 
             stop_training_mid_epoch = (
                 stop_training_mid_epoch
@@ -506,35 +551,35 @@ def train(args, extra_state, trainer, task, epoch_itr, **train_step_kwargs):
             # batch_offset being None denotes the end of an epoch.
             extra_state["batch_offset"] = None
             (
-                val_loss,
-                val_ppl,
-                val_bleu,
+                extra_state,
                 stop_training_end_of_epoch,
                 translation_samples,
-                lr,
-            ) = validate_save_and_evaluate_bleu(
+            ) = save_and_eval(
                 args=args,
                 trainer=trainer,
                 task=task,
                 extra_state=extra_state,
-                do_validate=True,
+                do_eval_tune_loss=True,
                 do_save=not args.no_save and not args.no_end_of_epoch_checkpoints,
                 do_eval_bleu=args.generate_bleu_eval_per_epoch,
             )
-            extra_state["val_loss"] = val_loss
-            yield (
-                trainer.get_num_updates(),
-                {
-                    "train_ppl": train_stats["ppl"],
-                    "tune_ppl": val_ppl,
-                    "tune_bleu": val_bleu,
-                    "translation_samples": translation_samples,
-                },
-            )
+            if distributed_utils.is_master(args) and output_queue is not None:
+                output_queue.put_nowait(
+                    (
+                        trainer.get_num_updates(),
+                        {
+                            "train_ppl": train_stats["ppl"],
+                            "tune_ppl": extra_state["tune_eval"]["perplexity"],
+                            "tune_bleu": extra_state["tune_bleu"]["current"],
+                            "translation_samples": translation_samples,
+                        },
+                    )
+                )
+
         if stop_training_mid_epoch or stop_training_end_of_epoch:
             break
 
-        lr = trainer.lr_step(extra_state["epoch"], val_loss)
+        lr = trainer.lr_step(extra_state["epoch"], extra_state["tune_eval"]["loss"])
         extra_state["epoch"] += 1
         extra_state["batch_offset"] = 0
         starting_offset = 0
@@ -542,9 +587,13 @@ def train(args, extra_state, trainer, task, epoch_itr, **train_step_kwargs):
     train_meter.stop()
     print(f"| done training in {train_meter.sum:.1f} seconds")
     print(
-        f"| Best BLEU score of {extra_state['evaluate_bleu']['best']} was from "
-        f"epoch {extra_state['evaluate_bleu']['best_epoch']}"
+        f"| Best BLEU score of {extra_state['tune_bleu']['best']} was from "
+        f"epoch {extra_state['tune_bleu']['best_epoch']}"
     )
+    # Put None in the queue to indicate to the consumer that training
+    # has finished.
+    if distributed_utils.is_master(args) and output_queue is not None:
+        output_queue.put_nowait(None)
 
 
 def is_training_over_time_limit(start_time: float, stop_time: float):
@@ -650,7 +699,7 @@ def get_training_stats(trainer):
 def save_checkpoint(trainer, args, extra_state):
     epoch = extra_state["epoch"]
     batch_offset = extra_state["batch_offset"]
-    val_loss = extra_state["val_loss"]
+    tune_loss = extra_state["tune_eval"]["loss"]
 
     if args.log_verbose:
         print(
@@ -666,13 +715,13 @@ def save_checkpoint(trainer, args, extra_state):
             trainer.save_checkpoint(epoch_filename, extra_state)
             extra_state["last_checkpoints"].append(epoch_filename)
 
-        assert val_loss is not None
+        assert tune_loss is not None
 
         if (
             extra_state["checkpoint_lowest_loss"] is None
-            or val_loss < extra_state["checkpoint_lowest_loss"]
+            or tune_loss < extra_state["checkpoint_lowest_loss"]
         ):
-            extra_state["checkpoint_lowest_loss"] = val_loss
+            extra_state["checkpoint_lowest_loss"] = tune_loss
             best_filename = os.path.join(args.save_dir, "checkpoint_best.pt")
             trainer.save_checkpoint(best_filename, extra_state)
 
@@ -697,12 +746,11 @@ def save_checkpoint(trainer, args, extra_state):
             f"offset {batch_offset}.",
             flush=True,
         )
+    return extra_state
 
 
-def validate(args, trainer, task, subset, extra_state):
+def eval_tune_loss(args, trainer, task, subset, extra_state):
     """Evaluate the model on the validation set and return the average loss."""
-    epoch = extra_state["epoch"]
-
     # Initialize dataloader
     itr = task.get_batch_iterator(
         dataset=task.dataset(subset),
@@ -718,7 +766,11 @@ def validate(args, trainer, task, subset, extra_state):
         shard_id=args.distributed_rank,
     ).next_epoch_itr(shuffle=False)
     progress = progress_bar.build_progress_bar(
-        args, itr, epoch, prefix=f"valid on '{subset}' subset", no_progress_bar="simple"
+        args=args,
+        iterator=itr,
+        epoch=extra_state["epoch"],
+        prefix=f"valid on '{subset}' subset",
+        no_progress_bar="simple",
     )
 
     # reset validation loss meters
@@ -749,29 +801,31 @@ def validate(args, trainer, task, subset, extra_state):
         stats[k] = meter.avg
     progress.print(stats)
 
-    val_loss = stats["valid_loss"]
-    val_ppl = stats["valid_ppl"]
+    extra_state["tune_eval"]["loss"] = stats["valid_loss"]
+    extra_state["tune_eval"]["perplexity"] = stats["valid_ppl"]
 
     if (
-        extra_state["validate"]["lowest_loss"] is None
-        or val_loss < extra_state["validate"]["lowest_loss"]
+        extra_state["tune_eval"]["lowest_loss"] is None
+        or extra_state["tune_eval"]["loss"] < extra_state["tune_eval"]["lowest_loss"]
     ):
-        extra_state["validate"] = {"lowest_loss": val_loss, "num_since_best": 0}
+        extra_state["tune_eval"]["lowest_loss"] = extra_state["tune_eval"]["loss"]
+        extra_state["tune_eval"]["num_since_best"] = 0
     else:
-        extra_state["validate"]["num_since_best"] += 1
+        extra_state["tune_eval"]["num_since_best"] += 1
 
-    stop_due_to_val_loss = False
+    stop_due_to_tune_loss = False
     if (
         args.stop_no_best_validate_loss >= 0
-        and extra_state["validate"]["num_since_best"] > args.stop_no_best_validate_loss
+        and extra_state["tune_eval"]["num_since_best"] > args.stop_no_best_validate_loss
     ):
-        stop_due_to_val_loss = True
+        stop_due_to_tune_loss = True
         print(
-            f"Stopping training due to validation score stagnation - last best "
-            f"validation loss of {extra_state['validate']['lowest_loss']} (current loss: {val_loss}) "
-            f"was {extra_state['validate']['num_since_best']} validations ago."
+            f"Stopping training due to eval tune loss stagnation - last best "
+            f"eval tune loss of {extra_state['tune_eval']['lowest_loss']} "
+            f"(current loss: {extra_state['tune_eval']['loss']}) "
+            f"was {extra_state['tune_eval']['num_since_best']} validations ago."
         )
-    return val_loss, val_ppl, stop_due_to_val_loss
+    return extra_state, stop_due_to_tune_loss
 
 
 def get_valid_stats(trainer):
@@ -786,12 +840,12 @@ def get_valid_stats(trainer):
     return stats
 
 
-def _save_averaged_checkpoint(args, extra_state):
+def save_averaged_checkpoint(args, extra_state):
     epoch, offset = extra_state["epoch"], extra_state["batch_offset"]
-    if not hasattr(_save_averaged_checkpoint, "last_avg_checkpoints"):
+    if not hasattr(save_averaged_checkpoint, "last_avg_checkpoints"):
         if args.max_checkpoints_kept == 0:
             raise argparse.ArgumentTypeError("--max-checkpoints-kept must be != 0.")
-        _save_averaged_checkpoint.last_avg_checkpoints = ManagedCheckpoints(
+        save_averaged_checkpoint.last_avg_checkpoints = ManagedCheckpoints(
             max(args.max_checkpoints_kept, 1), auto_clear=args.max_checkpoints_kept > 0
         )
 
@@ -806,7 +860,7 @@ def _save_averaged_checkpoint(args, extra_state):
         )
     averaged_state = average_checkpoints.average_checkpoints(last_checkpoints)
     filename = os.path.join(args.save_dir, f"averaged_checkpoint{epoch}_{offset}.pt")
-    _save_averaged_checkpoint.last_avg_checkpoints.append(filename)
+    save_averaged_checkpoint.last_avg_checkpoints.append(filename)
     if args.log_verbose:
         print(
             f"| Preparing to save averaged checkpoint for "
@@ -847,9 +901,9 @@ def calculate_bleu_on_subset(args, task, epoch_str: str, offset, dataset_split):
 
 def evaluate_bleu(args, task, extra_state):
     epoch, offset = extra_state["epoch"], extra_state["batch_offset"]
-    filename = _save_averaged_checkpoint(args, extra_state)
+    filename = save_averaged_checkpoint(args, extra_state)
     args.path = filename
-    val_bleu, translation_samples = calculate_bleu_on_subset(
+    extra_state["tune_bleu"]["current"], translation_samples = calculate_bleu_on_subset(
         args=args,
         task=task,
         epoch_str=f"{epoch:03d}",
@@ -858,136 +912,137 @@ def evaluate_bleu(args, task, extra_state):
     )
 
     if (
-        extra_state["evaluate_bleu"]["best"] is None
-        or val_bleu > extra_state["evaluate_bleu"]["best"]
+        extra_state["tune_bleu"]["best"] is None
+        or extra_state["tune_bleu"]["current"] > extra_state["tune_bleu"]["best"]
     ):
-        extra_state["evaluate_bleu"] = {
-            "best": val_bleu,
-            "best_epoch": epoch,
-            "num_since_best": 0,
-        }
+        extra_state["tune_bleu"]["best"] = extra_state["tune_bleu"]["current"]
+        extra_state["tune_bleu"]["best_epoch"] = epoch
+        extra_state["tune_bleu"]["num_since_best"] = 0
         best_filename = os.path.join(
             args.save_dir, constants.AVERAGED_CHECKPOINT_BEST_FILENAME
         )
         shutil.copy2(filename, best_filename)
     else:
-        extra_state["evaluate_bleu"]["num_since_best"] += 1
+        extra_state["tune_bleu"]["num_since_best"] += 1
 
-    decay_lr = False
-    if (
-        args.shrink_lr_no_best_bleu_eval > 0
-        and extra_state["evaluate_bleu"]["num_since_best"]
-        > args.shrink_lr_no_best_bleu_eval
-    ):
-        decay_lr = True
-
-    stop_due_to_val_bleu = False
+    stop_due_to_tune_bleu = False
     if (
         args.stop_no_best_bleu_eval >= 0
-        and extra_state["evaluate_bleu"]["num_since_best"] > args.stop_no_best_bleu_eval
+        and extra_state["tune_bleu"]["num_since_best"] > args.stop_no_best_bleu_eval
     ):
-        stop_due_to_val_bleu = True
+        stop_due_to_tune_bleu = True
         print(
-            f"Stopping training due to BLEU score stagnation on valid set - "
-            f"last best BLEU score of {extra_state['evaluate_bleu']['best']} "
-            f"(current score: {val_bleu}) was "
-            f"{extra_state['evaluate_bleu']['num_since_best']} evals ago."
+            f"Stopping training due to BLEU score stagnation on tune set - "
+            f"last best BLEU score of {extra_state['tune_bleu']['best']} "
+            f"(current score: {extra_state['tune_bleu']['current']}) was "
+            f"{extra_state['tune_bleu']['num_since_best']} evals ago."
         )
-    return val_bleu, stop_due_to_val_bleu, translation_samples, decay_lr
+    return extra_state, stop_due_to_tune_bleu, translation_samples
 
 
-def validate_save_and_evaluate_bleu(
+def save_and_eval(
     args,
     trainer,
     task,
     extra_state: Dict[str, Any],
-    do_validate: bool,
+    do_eval_tune_loss: bool,
     do_save: bool,
     do_eval_bleu: bool,
-) -> Tuple[
-    Optional[float], Optional[float], Optional[float], bool, Optional[list], float
-]:
-    # evaluate on validate set
-    val_loss = None
-    val_ppl = None
-    stop_due_to_val_loss = False
-    if do_validate:
-        val_loss, val_ppl, stop_due_to_val_loss = validate(
+) -> Tuple[Dict[str, Any], bool, Optional[list]]:
+    # Clear any remaining metrics from previous steps. This should already
+    # have been done before, but just in case - to make sure we catch
+    # any case where extra_case does not get populated correctly.
+    extra_state = clear_per_step_extra_state(extra_state)
+
+    # Under multiprocessing, each process will run eval over a different
+    # shard of the tune data set and then aggregate the results across all
+    # processes, so the eval stats from all processes' trainer should
+    # remain synchronized.
+    stop_due_to_tune_loss = False
+    if do_eval_tune_loss:
+        extra_state, stop_due_to_tune_loss = eval_tune_loss(
             args=args,
             trainer=trainer,
             task=task,
             subset=args.valid_subset,
             extra_state=extra_state,
         )
-    extra_state["val_loss"] = val_loss
-    extra_state["val_ppl"] = val_ppl
 
-    lr = trainer.optimizer.get_lr()
-    val_bleu = None
-    stop_due_to_val_bleu = False
+    # Only save checkpoints and eval tune BLEU on the master - all other
+    # processes will just get the results from the master.
+    master_extra_state = None
+    master_stop_training = None
     translation_samples = None
-    if do_save and distributed_utils.is_master(args):
-        # save checkpoint
-        save_checkpoint(trainer=trainer, args=args, extra_state=extra_state)
+    if distributed_utils.is_master(args):
+        stop_due_to_tune_bleu = False
+        if do_save:
+            extra_state = save_checkpoint(
+                trainer=trainer, args=args, extra_state=extra_state
+            )
+        if do_eval_bleu and not do_save:
+            raise ValueError(
+                "do_save should always be true when do_eval_bleu is true "
+                "since a new BLEU eval can only be done when there's a new "
+                "checkpoint."
+            )
         if do_eval_bleu:
-            (
-                val_bleu,
-                stop_due_to_val_bleu,
-                translation_samples,
-                decay_lr,
-            ) = evaluate_bleu(args=args, task=task, extra_state=extra_state)
-            if decay_lr:
-                current_lr = lr
-                trainer.optimizer.set_lr(lr * args.lr_shrink)
-                lr = trainer.optimizer.get_lr()
-                print(f"Decay lr from {current_lr} to {lr}.")
+            extra_state, stop_due_to_tune_bleu, translation_samples = evaluate_bleu(
+                args=args, task=task, extra_state=extra_state
+            )
+        master_extra_state = extra_state
+        master_stop_training = stop_due_to_tune_loss or stop_due_to_tune_bleu
 
-    return (
-        val_loss,
-        val_ppl,
-        val_bleu,
-        stop_due_to_val_loss or stop_due_to_val_bleu,
-        translation_samples,
-        lr,
+    # We don't all_gather the translation_samples since the sample sentences
+    # could be pretty long, and only the master uses it anyway.
+    extra_state, stop_training = pytorch_translate_utils.all_gather_from_master(
+        args=args, data=[master_extra_state, master_stop_training]
+    )
+
+    # Basic sanity checks that extra_state is populated correctly.
+    assert not (
+        do_eval_tune_loss
+        and (
+            extra_state["tune_eval"]["loss"] is None
+            or extra_state["tune_eval"]["perplexity"] is None
+        )
+    )
+    assert not (do_eval_bleu and extra_state["tune_bleu"]["current"] is None)
+    return extra_state, stop_training, translation_samples
+
+
+def single_process_main(args):
+    """Train the model for multiple epochs."""
+    extra_state, trainer, task, epoch_itr = setup_training(args)
+    train(
+        args=args,
+        extra_state=extra_state,
+        trainer=trainer,
+        task=task,
+        epoch_itr=epoch_itr,
     )
 
 
-class ErrorHandler(object):
-    """A class that listens for exceptions in children processes and propagates
-    the tracebacks to the parent process."""
-
-    def __init__(self, error_queue):
-        import signal
-        import threading
-
-        self.error_queue = error_queue
-        self.children_pids = []
-        self.error_thread = threading.Thread(target=self.error_listener, daemon=True)
-        self.error_thread.start()
-        signal.signal(signal.SIGUSR1, self.signal_handler)
-
-    def add_child(self, pid):
-        self.children_pids.append(pid)
-
-    def error_listener(self):
-        (rank, original_trace) = self.error_queue.get()
-        self.error_queue.put((rank, original_trace))
-        os.kill(os.getpid(), signal.SIGUSR1)
-
-    def signal_handler(self, signalnum, stackframe):
-        for pid in self.children_pids:
-            os.kill(pid, signal.SIGINT)  # kill children processes
-        (rank, original_trace) = self.error_queue.get()
-        msg = "\n\n-- Tracebacks above this line can probably be ignored --\n\n"
-        msg += original_trace
-        raise Exception(msg)
-
-
-def run(args, single_process_train, error_queue):
+def multi_process_train(
+    args,
+    error_queue: mp_queues.SimpleQueue,
+    output_queue: Optional[mp_queues.Queue],
+    init_fn: Optional[Callable[[], None]] = None,
+):
     try:
+        if init_fn:
+            init_fn()
         torch.cuda.set_device(args.device_id)
-        args.distributed_rank = distributed_utils.distributed_init(args)
-        single_process_train(args)
+        if args.distributed_world_size > 1:
+            args.distributed_rank = distributed_utils.distributed_init(args)
+        extra_state, trainer, task, epoch_itr = setup_training(args)
+        train(
+            args=args,
+            extra_state=extra_state,
+            trainer=trainer,
+            task=task,
+            epoch_itr=epoch_itr,
+            output_queue=output_queue,
+        )
     except KeyboardInterrupt:
         pass  # killed by parent, do nothing
     except Exception:
@@ -997,44 +1052,57 @@ def run(args, single_process_train, error_queue):
         error_queue.put((args.distributed_rank, traceback.format_exc()))
 
 
-def main(args, single_process_train):
-    # We preprocess the data (generating vocab files and binarized data files
-    # if needed) outside of the train clones to prevent them from having to
-    # wait while the master clone is doing this.
-    preprocess.preprocess_corpora(args)
-
-    # Set distributed training parameters for a single node.
-    args.distributed_world_size = torch.cuda.device_count()
-    args.distributed_init_method = f"tcp://localhost:{random.randint(10000, 20000)}"
-
-    if args.distributed_world_size == 1:
-        return single_process_train(args)
-
-    mp = multiprocessing.get_context("spawn")
+def multi_process_main(
+    args: Any,
+    use_output_queue: bool,
+    start_rank: int = 0,
+    init_fn: Optional[Callable[[], None]] = None,
+):
+    torch_mp = torch.multiprocessing.get_context("spawn")
 
     # Create a thread to listen for errors in the child processes.
-    error_queue = mp.SimpleQueue()
-    error_handler = ErrorHandler(error_queue)
+    error_queue = torch_mp.SimpleQueue()
+    error_handler = pytorch_translate_utils.ErrorHandler(error_queue)
+    # SimpleQueue doesn't seem to work for output_queue since it seems to block
+    # on put() if the parent process doesn't get() the results?
+    output_queue = torch_mp.Queue() if use_output_queue else None
 
     # Train with multiprocessing.
-    procs = []
-    for i in range(args.distributed_world_size):
-        args.distributed_rank = i
+    processes = []
+    for i in range(torch.cuda.device_count()):
+        args.distributed_rank = start_rank + i
         args.device_id = i
-        procs.append(
-            mp.Process(
-                target=run, args=(args, single_process_train, error_queue), daemon=True
+        processes.append(
+            torch_mp.Process(
+                target=multi_process_train,
+                args=(args, error_queue, output_queue, init_fn),
+                daemon=True,
             )
         )
-        procs[i].start()
-        error_handler.add_child(procs[i].pid)
-    for p in procs:
-        p.join()
+        processes[i].start()
+        error_handler.add_child(processes[i].pid)
+
+    return (processes, error_handler, output_queue)
+
+
+def main(args):
+    # We preprocess the data (generating vocab files and binarized data files
+    # if needed) outside of the train processes to prevent them from having to
+    # wait while the master process is doing this.
+    preprocess.preprocess_corpora(args)
+
+    if args.distributed_world_size == 1:
+        single_process_main(args)
+    else:
+        processes, error_handler, _ = multi_process_main(
+            args=args, use_output_queue=False, start_rank=0
+        )
+        for p in processes:
+            p.join()
 
 
 if __name__ == "__main__":
     parser = get_parser_with_args()
     args = options.parse_args_and_arch(parser)
     validate_and_set_default_args(args)
-    pytorch_translate_options.print_args(args)
-    main(args, single_process_main)
+    main(args)

@@ -4,10 +4,13 @@ import argparse
 import collections
 import itertools
 import os
+import signal
+import threading
 import time
+from typing import List
 
 import torch
-from fairseq import utils
+from fairseq import distributed_utils, utils
 
 
 # Helper type for argparse to enable flippable boolean flags. For example,
@@ -33,6 +36,8 @@ def bool_flag(value):
 # In a nutshell, this class remembers the last max_num_checkpoints
 # and delete (auto_clear == True) the oldest checkpoint each time a new one
 # is added past this number.
+# TODO(T34212782): replace this class with simple list of strings and helper fns
+# to avoid messy pickling/unpickling of objects.
 class ManagedCheckpoints:
 
     # - max_num_checkpoints: Maximum number of checkpoints we need at one point.
@@ -43,6 +48,13 @@ class ManagedCheckpoints:
         self.auto_clear = auto_clear
         assert max_num_checkpoints > 0, "Empty listing is not supported"
         self.kept_checkpoints = collections.deque(maxlen=max_num_checkpoints)
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, ManagedCheckpoints)
+            and self.auto_clear == other.auto_clear
+            and self.kept_checkpoints == other.kept_checkpoints
+        )
 
     def __repr__(self):
         return (
@@ -145,6 +157,34 @@ class BucketStopwatchMeter(object):
             else:
                 result[i] = 0
         return result
+
+
+class ErrorHandler(object):
+    """A class that listens for exceptions in children processes and propagates
+    the tracebacks to the parent process."""
+
+    def __init__(self, error_queue):
+        self.error_queue = error_queue
+        self.children_pids = []
+        self.error_thread = threading.Thread(target=self.error_listener, daemon=True)
+        self.error_thread.start()
+        signal.signal(signal.SIGUSR1, self.signal_handler)
+
+    def add_child(self, pid):
+        self.children_pids.append(pid)
+
+    def error_listener(self):
+        (rank, original_trace) = self.error_queue.get()
+        self.error_queue.put((rank, original_trace))
+        os.kill(os.getpid(), signal.SIGUSR1)
+
+    def signal_handler(self, signalnum, stackframe):
+        for pid in self.children_pids:
+            os.kill(pid, signal.SIGINT)  # kill children processes
+        (rank, original_trace) = self.error_queue.get()
+        msg = "\n\n-- Tracebacks above this line can probably be ignored --\n\n"
+        msg += original_trace
+        raise Exception(msg)
 
 
 def load_diverse_ensemble_for_inference(filenames, task):
@@ -309,3 +349,33 @@ def torch_find(index, query, vocab_size):
     full_to_index[index] = index_shape_range
     result = full_to_index[query]
     return result
+
+
+def all_gather_from_master(args, data: List) -> List:
+    if args.distributed_world_size == 1:
+        return data
+
+    gathered_data = distributed_utils.all_gather_list(data)
+    # Converts [[x0, y0, z0, ...], [x1, y1, z1, ...], [x2, y2, z2, ...], ...]
+    # to [[x0, x1, x2, ...], [y0, y1, y2, ...], [z0, z1, z2, ...], ...]
+    gathered_data_list = list(zip(*gathered_data))
+
+    output_data = []
+    for data_index, all_data in enumerate(gathered_data_list):
+        # The master's (process 0) data is guaranteed to be in position 0.
+        master_data = all_data[0]
+        # Sanity check that only the master returned any result.
+        if master_data is None:
+            raise RuntimeError(
+                f"Input data element {data_index} of all_gather_from_master "
+                f"returned None from master. Results from all processes: {all_data}"
+            )
+        for i in range(1, len(all_data)):
+            if all_data[i] is not None:
+                raise RuntimeError(
+                    f"Input data element {data_index} of all_gather_from_master "
+                    f"should have returned None from non-master process {i}. "
+                    f"Results from all processes: {all_data}"
+                )
+        output_data.append(master_data)
+    return output_data
