@@ -3,6 +3,7 @@
 import logging
 import os
 import tempfile
+from collections import defaultdict
 
 import numpy as np
 import onnx
@@ -10,6 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.onnx.operators
+from caffe2.proto.caffe2_pb2 import Argument
 from caffe2.python import core, workspace
 from caffe2.python.onnx import backend as caffe2_backend
 from caffe2.python.predictor import predictor_exporter
@@ -87,9 +89,73 @@ def load_models_from_checkpoints(
     return models, src_dict, dst_dict
 
 
+def merge_transpose_and_batchmatmul(caffe2_backend_rep):
+    """
+    Fuses Transpose and BatchMatMul ops if the Transpose inverts the last two
+    axes and the BatchMatMul is the only thing that consumes the output
+    of the Transpose.
+    """
+    consumed_count = defaultdict(int)
+    transposed_last_axes_blobs = set()
+    consumed_by_batchmatmul = set()
+
+    for operator in caffe2_backend_rep.predict_net.op:
+        for blob in operator.input:
+            consumed_count[blob] += 1
+        if operator.type == "BatchMatMul":
+            for blob in operator.input:
+                consumed_by_batchmatmul.add(blob)
+
+        if operator.type == "Transpose":
+            transpose_last_axes = False
+            for arg in operator.arg._values:
+                if arg.name == "axes":
+                    axes = arg.ints
+                    if axes[-2:] == [len(axes) - 1, len(axes) - 2]:
+                        transpose_last_axes = True
+            if transpose_last_axes:
+                transposed_last_axes_blobs.add(operator.output[0])
+
+    transpose_ops_to_remove = []
+    removed_transpose_outputs_to_inputs = {}
+    for operator in caffe2_backend_rep.predict_net.op:
+        if (
+            operator.type == "Transpose"
+            and operator.output[0] in transposed_last_axes_blobs
+            and consumed_count[operator.output[0]] == 1
+            and operator.output[0] in consumed_by_batchmatmul
+        ):
+            transpose_ops_to_remove.append(operator)
+            removed_transpose_outputs_to_inputs[operator.output[0]] = operator.input[0]
+
+        if operator.type == "BatchMatMul":
+            if operator.input[0] in removed_transpose_outputs_to_inputs:
+                operator.input[0] = removed_transpose_outputs_to_inputs[
+                    operator.input[0]
+                ]
+                new_arg = Argument()
+                new_arg.name = "trans_a"
+                new_arg.i = 1
+                operator.arg.extend([new_arg])
+            if operator.input[1] in removed_transpose_outputs_to_inputs:
+                operator.input[1] = removed_transpose_outputs_to_inputs[
+                    operator.input[1]
+                ]
+                new_arg = Argument()
+                new_arg.name = "trans_b"
+                new_arg.i = 1
+                operator.arg.extend([new_arg])
+
+    for operator in transpose_ops_to_remove:
+        caffe2_backend_rep.predict_net.op.remove(operator)
+        print(operator)
+
+
 def save_caffe2_rep_to_db(
     caffe2_backend_rep, output_path, input_names, output_names, num_workers
 ):
+    merge_transpose_and_batchmatmul(caffe2_backend_rep)
+
     # netdef external_input includes internally produced blobs
     actual_external_inputs = set()
     produced = set()
