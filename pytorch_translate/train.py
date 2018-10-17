@@ -372,7 +372,6 @@ def setup_training(args):
     - load data
     - build trainer, and set up training state
     """
-    pytorch_translate_options.print_args(args)
     task, model, criterion = setup_training_model(args)
 
     trainer, extra_state, epoch_itr = build_trainer(
@@ -1012,6 +1011,7 @@ def save_and_eval(
 
 def single_process_main(args):
     """Train the model for multiple epochs."""
+    pytorch_translate_options.print_args(args)
     extra_state, trainer, task, epoch_itr = setup_training(args)
     train(
         args=args,
@@ -1058,6 +1058,7 @@ def multi_process_main(
     start_rank: int = 0,
     init_fn: Optional[Callable[[], None]] = None,
 ):
+    pytorch_translate_options.print_args(args)
     torch_mp = torch.multiprocessing.get_context("spawn")
 
     # Create a thread to listen for errors in the child processes.
