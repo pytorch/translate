@@ -396,7 +396,7 @@ def train_translation_model(data_dir, extra_flags):
         + (extra_flags or []),
     )
     train.validate_and_set_default_args(args)
-    train.main(args, train.single_process_main)
+    train.main(args)
 
 
 def generate_main(data_dir, extra_flags=None):
