@@ -20,6 +20,7 @@ from pytorch_translate.ensemble_export import (
     DecoderBatchedStepEnsemble,
     EncoderEnsemble,
     ForcedDecoder,
+    merge_transpose_and_batchmatmul,
 )
 from pytorch_translate.test import utils as test_utils
 
@@ -123,7 +124,7 @@ class TestONNX(unittest.TestCase):
 
         encoder_ensemble.save_to_db(os.path.join(tmp_dir, "encoder.predictor_export"))
 
-    def _test_batched_beam_decoder_step(self, test_args):
+    def _test_batched_beam_decoder_step(self, test_args, return_caffe2_rep=False):
         beam_size = 5
         samples, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
         task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
@@ -177,6 +178,9 @@ class TestONNX(unittest.TestCase):
         )
 
         onnx_decoder = caffe2_backend.prepare_zip_archive(decoder_step_pb_path)
+
+        if return_caffe2_rep:
+            return onnx_decoder
 
         decoder_inputs_numpy = [
             next_input_tokens.numpy(),
@@ -480,3 +484,10 @@ class TestONNX(unittest.TestCase):
             original_array = original_out.detach().numpy()
             assert onnx_array.shape == original_array.shape
             np.testing.assert_allclose(onnx_array, original_array)
+
+    def test_merge_transpose_and_batchmatmul(self):
+        test_args = test_utils.ModelParamsDict(transformer=True)
+        caffe2_rep = self._test_batched_beam_decoder_step(
+            test_args, return_caffe2_rep=True
+        )
+        merge_transpose_and_batchmatmul(caffe2_rep)
