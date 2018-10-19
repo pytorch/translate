@@ -457,20 +457,8 @@ def train(
                 stop_training_mid_epoch = True
                 break
 
-            if log_output is None:
-                # This indicates that the batch was skipped, typically
-                # because of OOM or FP16 overflow.
-                continue
-
             if do_prune:
                 apply_prune_masks(prune_masks, trainer)
-
-            train_stats = log_mid_epoch_stats(
-                trainer=trainer,
-                progress=progress,
-                extra_meters=extra_meters,
-                log_output=log_output,
-            )
 
             if i == starting_offset:
                 # ignore the first mini-batch in words-per-second calculation
@@ -505,6 +493,21 @@ def train(
                 do_eval_tune_loss=do_eval_tune_loss,
                 do_save=do_save,
                 do_eval_bleu=do_eval_bleu,
+            )
+
+            # This should come after save_and_eval. Even if log_output is None,
+            # meaning that there was an overflow,  We should still run
+            # save_and_eval to sync all_reduce and then skip the batch.
+            if log_output is None:
+                # This indicates that the batch was skipped, typically
+                # because of OOM or FP16 overflow.
+                continue
+
+            train_stats = log_mid_epoch_stats(
+                trainer=trainer,
+                progress=progress,
+                extra_meters=extra_meters,
+                log_output=log_output,
             )
 
             if distributed_utils.is_master(args) and output_queue is not None:
