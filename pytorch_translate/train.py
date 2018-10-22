@@ -464,25 +464,25 @@ def train(
                 # ignore the first mini-batch in words-per-second calculation
                 trainer.get_meter("wps").reset()
 
-            num_updates = trainer.get_num_updates()
+            num_iterations = trainer.get_num_iterations()
             do_eval_tune_loss = (
                 args.subepoch_validate_interval > 0
-                and num_updates % args.subepoch_validate_interval == 0
+                and num_iterations % args.subepoch_validate_interval == 0
             )
             do_save = (
                 not args.no_save
                 and args.save_interval_updates > 0
-                and num_updates % args.save_interval_updates == 0
+                and num_iterations % args.save_interval_updates == 0
             )
             do_eval_bleu = (
                 # We can only do BLEU eval when we have a new checkpoint to load.
                 do_save
                 and args.generate_bleu_eval_interval > 0
-                and num_updates - extra_state["tune_bleu"]["last_eval_step"]
+                and num_iterations - extra_state["tune_bleu"]["last_eval_step"]
                 >= args.generate_bleu_eval_interval
             )
             if do_eval_bleu:
-                extra_state["tune_bleu"]["last_eval_step"] = num_updates
+                extra_state["tune_bleu"]["last_eval_step"] = num_iterations
 
             extra_state["batch_offset"] = i + 1
             (extra_state, stop_training_mid_epoch, translation_samples) = save_and_eval(
