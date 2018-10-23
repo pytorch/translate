@@ -592,9 +592,11 @@ def train(
         f"| Best BLEU score of {extra_state['tune_bleu']['best']} was from "
         f"epoch {extra_state['tune_bleu']['best_epoch']}"
     )
-    # Put None in the queue to indicate to the consumer that training
-    # has finished.
-    if distributed_utils.is_master(args) and output_queue is not None:
+    # Put None in the queue to indicate to the consumer that training has
+    # finished. We have all processes do this instead of just the master since
+    # with multi-node training, nodes without the master on it still need to be
+    # able to indicate to its local consumer that it has finished training.
+    if output_queue is not None:
         output_queue.put_nowait(None)
 
 
