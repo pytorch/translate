@@ -366,7 +366,7 @@ def build_trainer(args, task, model, criterion, trainer_class):
     return trainer, extra_state, epoch_itr
 
 
-def setup_training(args):
+def setup_training(args, trainer_class=Trainer):
     """ Perform several steps:
     - build model using provided criterion and task
     - load data
@@ -375,7 +375,11 @@ def setup_training(args):
     task, model, criterion = setup_training_model(args)
 
     trainer, extra_state, epoch_itr = build_trainer(
-        args=args, task=task, model=model, criterion=criterion, trainer_class=Trainer
+        args=args,
+        task=task,
+        model=model,
+        criterion=criterion,
+        trainer_class=trainer_class,
     )
 
     return extra_state, trainer, task, epoch_itr
@@ -448,6 +452,13 @@ def train(
 
         for i, samples in enumerate(progress, start=starting_offset):
             clear_per_step_extra_state(extra_state)
+            if (
+                train_step_kwargs is not None
+                and "augment_adv" in train_step_kwargs.keys()
+            ):
+                train_step_kwargs["augment_adv"] = (
+                    extra_state["epoch"] > args.warmup_epochs
+                )
             try:
                 log_output = trainer.train_step(samples, **train_step_kwargs)
             # Fairseq's fp16_trainer raises this uncommon error to indicate
@@ -1014,16 +1025,17 @@ def save_and_eval(
     return extra_state, stop_training, translation_samples
 
 
-def single_process_main(args):
+def single_process_main(args, trainer_class=Trainer, **train_step_kwargs):
     """Train the model for multiple epochs."""
     pytorch_translate_options.print_args(args)
-    extra_state, trainer, task, epoch_itr = setup_training(args)
+    extra_state, trainer, task, epoch_itr = setup_training(args, trainer_class)
     train(
         args=args,
         extra_state=extra_state,
         trainer=trainer,
         task=task,
         epoch_itr=epoch_itr,
+        **train_step_kwargs,
     )
 
 
@@ -1091,14 +1103,14 @@ def multi_process_main(
     return (processes, error_handler, output_queue)
 
 
-def main(args):
+def main(args, trainer_class=Trainer, **train_step_kwargs):
     # We preprocess the data (generating vocab files and binarized data files
     # if needed) outside of the train processes to prevent them from having to
     # wait while the master process is doing this.
     preprocess.preprocess_corpora(args)
 
     if args.distributed_world_size == 1:
-        single_process_main(args)
+        single_process_main(args, trainer_class, **train_step_kwargs)
     else:
         processes, error_handler, _ = multi_process_main(
             args=args, use_output_queue=False, start_rank=0
