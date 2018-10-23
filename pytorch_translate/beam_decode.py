@@ -167,7 +167,11 @@ class SequenceGenerator(torch.nn.Module):
         if isinstance(encoder_outs[0], (list, tuple)):
             src_encoding_len = encoder_outs[0][0].size(0)
         elif isinstance(encoder_outs[0], dict):
-            src_encoding_len = encoder_outs[0]["encoder_out"].size(0)
+            if isinstance(encoder_outs[0]["encoder_out"], tuple):
+                # Fairseq compatibility
+                src_encoding_len = encoder_outs[0]["encoder_out"][0].size(1)
+            else:
+                src_encoding_len = encoder_outs[0]["encoder_out"].size(0)
 
         attn = scores.new(bsz * beam_size, src_encoding_len, maxlen + 2)
         attn_buf = attn.clone()
