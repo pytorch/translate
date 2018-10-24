@@ -319,36 +319,24 @@ def add_preprocessing_args(parser):
 def validate_preprocessing_args(args):
     if not (
         (
-            hasattr(args, "train_source_text_file")
-            and args.train_source_text_file
-            or hasattr(args, "train_source_binary_path")
-            and args.train_source_binary_path
-            or hasattr(args, "multiling_train_source_text_file")
-            and args.multiling_train_source_text_file
+            getattr(args, "train_source_text_file", None)
+            or getattr(args, "train_source_binary_path", None)
+            or getattr(args, "multiling_train_source_text_file", None)
         )
         and (
-            hasattr(args, "train_target_text_file")
-            and args.train_target_text_file
-            or hasattr(args, "train_target_binary_path")
-            and args.train_target_binary_path
-            or hasattr(args, "multiling_train_target_text_file")
-            and args.multiling_train_target_text_file
+            getattr(args, "train_target_text_file")
+            or getattr(args, "train_target_binary_path")
+            or getattr(args, "multiling_train_target_text_file")
         )
         and (
-            hasattr(args, "eval_source_text_file")
-            and args.eval_source_text_file
-            or hasattr(args, "eval_source_binary_path")
-            and args.eval_source_binary_path
-            or hasattr(args, "multiling_eval_source_text_file")
-            and args.multiling_eval_source_text_file
+            getattr(args, "eval_source_text_file", None)
+            or getattr(args, "eval_source_binary_path", None)
+            or getattr(args, "multiling_eval_source_text_file", None)
         )
         and (
-            hasattr(args, "eval_target_text_file")
-            and args.eval_target_text_file
-            or hasattr(args, "eval_target_binary_path")
-            and args.eval_target_binary_path
-            or hasattr(args, "multiling_eval_target_text_file")
-            and args.multiling_eval_target_text_file
+            getattr(args, "eval_target_text_file", None)
+            or getattr(args, "eval_target_binary_path", None)
+            or getattr(args, "multiling_eval_target_text_file", None)
         )
     ):
         raise ValueError(
@@ -378,22 +366,9 @@ def validate_preprocessing_args(args):
             )
 
     if args.task == "pytorch_translate_semisupervised" and not (
-        (
-            hasattr(args, "train_mono_source_binary_path")
-            and args.train_mono_source_binary_path
-        )
-        or (
-            hasattr(args, "train_mono_target_binary_path")
-            and args.train_mono_target_binary_path
-        )
-        or (
-            hasattr(args, "train_mono_source_text_file")
-            and args.train_mono_source_text_file
-        )
-        or (
-            hasattr(args, "train_mono_target_text_file")
-            and args.train_mono_target_text_file
-        )
+        getattr(args, "train_mono_source_binary_path", None)
+        or getattr(args, "train_mono_target_binary_path", None)
+        or getattr(args, "train_mono_source_text_file", None)
     ):
         raise ValueError(
             "For semisupervised training, at least one of --*_text_file or "

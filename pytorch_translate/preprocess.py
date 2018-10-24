@@ -193,14 +193,10 @@ def preprocess_corpora(args):
         # task
         if args.task == "pytorch_translate_semisupervised":
             args.train_mono_source_binary_path = maybe_generate_temp_file_path(
-                output_path=args.train_mono_source_binary_path
-                if hasattr(args, "train_mono_source_binary_path")
-                else None
+                output_path=getattr(args, "train_mono_source_binary_path", None)
             )
             args.train_mono_target_binary_path = maybe_generate_temp_file_path(
-                output_path=args.train_mono_target_binary_path
-                if hasattr(args, "train_mono_target_binary_path")
-                else None
+                output_path=getattr(args, "train_mono_target_binary_path", None)
             )
             preprocess_monolingual_corpora(
                 args,
@@ -221,10 +217,7 @@ def preprocess_monolingual_corpora(
     Prerequisite: Vocabs are already built (see build_vocabs)
     """
     use_char_source = char_source_dict is not None
-    if (
-        hasattr(args, "train_mono_source_text_file")
-        and args.train_mono_source_text_file
-    ):
+    if getattr(args, "train_mono_source_text_file", None):
         args.train_mono_source_binary_path = binarize_text_file(
             text_file=args.train_mono_source_text_file,
             dictionary=source_dict,
@@ -237,10 +230,7 @@ def preprocess_monolingual_corpora(
 
     # For target sentences, we always append EOS tokens, and never reverse
     # their order.
-    if (
-        hasattr(args, "train_mono_target_text_file")
-        and args.train_mono_target_text_file
-    ):
+    if getattr(args, "train_mono_target_text_file", None):
         args.train_mono_target_binary_path = binarize_text_file(
             text_file=args.train_mono_target_text_file,
             dictionary=target_dict,
@@ -261,26 +251,18 @@ def preprocess_monolingual_corpora(
 def build_vocabs(args: argparse.Namespace):
     """
     Builds vocabs or loads them from existing vocab files. If args.task
-    is pytorch_translate_semisupervised, we use the monolingual corpora in
+    is pytorch_translate_semi_supervised, we use the monolingual corpora in
     addition to the parallel corpora for building source and target vocabs.
     """
     source_files = [args.train_source_text_file]
     target_files = [args.train_target_text_file]
 
-    if (
-        args.task == "pytorch_translate_semisupervised"
-        and hasattr(args, "add_monolingual_data_for_vocab_building")
-        and args.add_monolingual_data_to_build_vocab
+    if args.task == "pytorch_translate_semisupervised" and getattr(
+        args, "add_monolingual_data_for_vocab_building", None
     ):
-        if (
-            hasattr(args, "train_mono_source_text_file")
-            and args.train_mono_source_text_file
-        ):
+        if getattr(args, "train_mono_source_text_file", None):
             source_files.append(args.train_mono_source_text_file)
-        if (
-            hasattr(args, "train_mono_target_text_file")
-            and args.train_mono_target_text_file
-        ):
+        if getattr(args, "train_mono_target_text_file", None):
             target_files.append(args.train_mono_target_text_file)
 
     source_dict = Dictionary.build_vocab_file_if_nonexistent(
