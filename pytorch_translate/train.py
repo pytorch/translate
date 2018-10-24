@@ -366,13 +366,16 @@ def build_trainer(args, task, model, criterion, trainer_class):
     return trainer, extra_state, epoch_itr
 
 
-def setup_training(args, trainer_class=Trainer):
+def setup_training(args, trainer_class=None):
     """ Perform several steps:
     - build model using provided criterion and task
     - load data
     - build trainer, and set up training state
     """
     task, model, criterion = setup_training_model(args)
+
+    if trainer_class is None:
+        trainer_class = Trainer
 
     trainer, extra_state, epoch_itr = build_trainer(
         args=args,
@@ -1044,6 +1047,8 @@ def multi_process_train(
     error_queue: mp_queues.SimpleQueue,
     output_queue: Optional[mp_queues.Queue],
     init_fn: Optional[Callable[[], None]] = None,
+    trainer_class=None,
+    train_step_kwargs=None,
 ):
     try:
         if init_fn:
@@ -1051,7 +1056,7 @@ def multi_process_train(
         torch.cuda.set_device(args.device_id)
         if args.distributed_world_size > 1:
             args.distributed_rank = distributed_utils.distributed_init(args)
-        extra_state, trainer, task, epoch_itr = setup_training(args)
+        extra_state, trainer, task, epoch_itr = setup_training(args, trainer_class)
         train(
             args=args,
             extra_state=extra_state,
@@ -1059,6 +1064,7 @@ def multi_process_train(
             task=task,
             epoch_itr=epoch_itr,
             output_queue=output_queue,
+            **train_step_kwargs,
         )
     except KeyboardInterrupt:
         pass  # killed by parent, do nothing
@@ -1074,6 +1080,8 @@ def multi_process_main(
     use_output_queue: bool,
     start_rank: int = 0,
     init_fn: Optional[Callable[[], None]] = None,
+    trainer_class=None,
+    **train_step_kwargs,
 ):
     pytorch_translate_options.print_args(args)
     torch_mp = torch.multiprocessing.get_context("spawn")
@@ -1093,7 +1101,14 @@ def multi_process_main(
         processes.append(
             torch_mp.Process(
                 target=multi_process_train,
-                args=(args, error_queue, output_queue, init_fn),
+                args=(
+                    args,
+                    error_queue,
+                    output_queue,
+                    init_fn,
+                    trainer_class,
+                    train_step_kwargs,
+                ),
                 daemon=True,
             )
         )
