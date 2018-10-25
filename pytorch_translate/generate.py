@@ -143,7 +143,7 @@ def _generate_score(models, args, task, dataset_split, optimize=True):
             translation_samples.append(
                 collections.OrderedDict(
                     {
-                        "sample_id": trans_info.sample_id,
+                        "sample_id": trans_info.sample_id.item(),
                         "src_str": trans_info.src_str,
                         "target_str": trans_info.target_str,
                         "hypo_str": trans_info.hypo_str,
