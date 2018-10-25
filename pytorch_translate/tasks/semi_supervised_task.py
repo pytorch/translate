@@ -51,6 +51,7 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
         # This is explicitly set so that we can re-use code from
         # MultilingualTranslationTask
         self.args.lang_pairs = self.lang_pairs
+        self.model = None
 
     @staticmethod
     def add_args(parser):
@@ -198,6 +199,7 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
 
     def build_model(self, args):
         model = models.build_model(args, self)
+        self.model = model
         if not isinstance(model, FairseqMultiModel):
             raise ValueError(
                 "PytorchTranslateSemiSupervised task requires a FairseqMultiModel "

@@ -156,13 +156,16 @@ def benchmark(args):
 
         # priming
         scorer, num_sentences, gen_timer, _ = pytorch_translate_generate._generate_score(
-            models=models, args=args, task=task, dataset_split=args.gen_subset
+            models=models, args=args, task=task, dataset=task.dataset(args.gen_subset)
         )
 
         total_time = 0.0
         for _ in range(args.runs_per_length):
             scorer, num_sentences, gen_timer, _ = pytorch_translate_generate._generate_score(
-                models=models, args=args, task=task, dataset_split=args.gen_subset
+                models=models,
+                args=args,
+                task=task,
+                dataset=task.dataset(args.gen_subset),
             )
             total_time += gen_timer.sum
             gen_timer.reset()

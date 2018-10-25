@@ -42,6 +42,7 @@ from pytorch_translate import (
 from pytorch_translate.research.knowledge_distillation import (  # noqa
     knowledge_distillation_loss,
 )
+from pytorch_translate.tasks.semi_supervised_task import PytorchTranslateSemiSupervised
 from pytorch_translate.utils import ManagedCheckpoints
 from pytorch_translate.word_prediction import word_prediction_criterion  # noqa
 from pytorch_translate.word_prediction import word_prediction_model  # noqa
@@ -901,22 +902,41 @@ def calculate_bleu_on_subset(args, task, epoch_str: str, offset, dataset_split):
     # This is a trick to have generate use max_sentences_valid
     max_sentences_train = args.max_sentences
     args.max_sentences = args.max_sentences_valid
-    # Generate score
-    scorer, num_sentences, gen_timer, translation_samples = generate.generate_score(
-        args=args, task=task, dataset_split=dataset_split
+    datasets = []
+    lang_pairs = []
+    """
+    In multi model training set up, evaluate one model at a time with
+    corresponding dataset
+    lang_pair is passed to identify model to be used for generation
+    """
+    if isinstance(task, PytorchTranslateSemiSupervised):
+        for key, dataset in task.datasets[dataset_split].datasets.items():
+            datasets.append(dataset)
+            lang_pairs.append(key)
+    else:
+        datasets = [task.dataset(dataset_split)]
+        lang_pairs = [None]
+    score_aggregator_fn = (
+        task.score_aggregator if hasattr(task, "score_aggregator") else sum
     )
+    scores = []
+    for dataset, lang_pair in zip(datasets, lang_pairs):
+        # Generate score
+        scorer, num_sentences, gen_timer, translation_samples = generate.generate_score(
+            args=args, task=task, dataset=dataset, lang_pair=lang_pair
+        )
+        scores.append(scorer.score())
+        print(
+            f"| epoch {epoch_str} | offset {offset} "
+            f"| Eval on {dataset_split} {lang_pair if lang_pair else ''} subset "
+            f"with beam={args.beam}: {scorer.result_string()}. "
+            f"Generated {num_sentences} sentences ({gen_timer.n} tokens) "
+            f"in {gen_timer.sum:.1f}s ({1. / gen_timer.avg:.2f} tokens/s).",
+            flush=True,
+        )
     # Set max_sentences to its original value
     args.max_sentences = max_sentences_train
-
-    print(
-        f"| epoch {epoch_str} | offset {offset} "
-        f"| Eval on {dataset_split} subset "
-        f"with beam={args.beam}: {scorer.result_string()}. "
-        f"Generated {num_sentences} sentences ({gen_timer.n} tokens) "
-        f"in {gen_timer.sum:.1f}s ({1. / gen_timer.avg:.2f} tokens/s).",
-        flush=True,
-    )
-    return scorer.score(), translation_samples
+    return score_aggregator_fn(scores), translation_samples
 
 
 def evaluate_bleu(args, task, extra_state):
