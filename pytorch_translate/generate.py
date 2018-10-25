@@ -17,7 +17,6 @@ from pytorch_translate import (
     data as pytorch_translate_data,
     dictionary as pytorch_translate_dictionary,
     options as pytorch_translate_options,
-    tasks as pytorch_translate_tasks,
     utils as pytorch_translate_utils,
 )
 from pytorch_translate.research.beam_search import competing_completed

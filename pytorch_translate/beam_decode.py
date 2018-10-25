@@ -104,19 +104,20 @@ class SequenceGenerator(torch.nn.Module):
             input = s["net_input"]
             srclen = input["src_tokens"].size(1)
             if self.use_char_source:
-                encoder_input = (
-                    input["src_tokens"],
-                    input["src_lengths"],
-                    input["char_inds"],
-                    input["word_lengths"],
-                )
+                encoder_input = {
+                    k: v
+                    for k, v in input.items()
+                    if k in ["src_tokens", "src_lengths", "char_inds", "word_lengths"]
+                }
             else:
-                encoder_input = (input["src_tokens"], input["src_lengths"])
+                encoder_input = {
+                    k: v for k, v in input.items() if k in ["src_tokens", "src_lengths"]
+                }
             if timer is not None:
                 timer.start()
             with torch.no_grad():
                 hypos = self.generate(
-                    encoder_input,
+                    encoder_input=encoder_input,
                     beam_size=beam_size,
                     maxlen=int(maxlen_a * srclen + maxlen_b),
                     prefix_tokens=s["target"][:, :prefix_size]
@@ -138,7 +139,7 @@ class SequenceGenerator(torch.nn.Module):
 
     def _generate(self, encoder_input, beam_size=None, maxlen=None, prefix_tokens=None):
 
-        src_tokens = encoder_input[0]
+        src_tokens = encoder_input["src_tokens"]
 
         bsz, srclen = src_tokens.size()
         maxlen = min(maxlen, self.maxlen) if maxlen is not None else self.maxlen
@@ -152,7 +153,7 @@ class SequenceGenerator(torch.nn.Module):
         # Encode, expanding outputs for each example beam_size times
         reorder_indices = torch.arange(bsz).view(-1, 1).repeat(1, beam_size).view(-1)
         encoder_outs, incremental_states = self._encode(
-            encoder_input=encoder_input,
+            encoder_input=(encoder_input["src_tokens"], encoder_input["src_lengths"]),
             reorder_indices=reorder_indices.type_as(src_tokens),
         )
 

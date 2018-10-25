@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from fairseq.tasks import register_task
-from pytorch_translate.tasks import PytorchTranslateTask
+from pytorch_translate.tasks.pytorch_translate_task import PytorchTranslateTask
 
 from . import adversarial_criterion, adversaries
 
