@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from fairseq import bleu, data, options, progress_bar, tasks, tokenizer, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
+from fairseq.models import FairseqMultiModel
 from pytorch_translate import rnn  # noqa
 from pytorch_translate import transformer  # noqa
 from pytorch_translate import (
@@ -23,9 +24,27 @@ from pytorch_translate.research.beam_search import competing_completed
 from pytorch_translate.research.multisource import multisource_data, multisource_decode
 
 
-def generate_score(args, task, dataset_split):
+def generate_score(args, task, dataset, lang_pair=None):
+    """
+    Generation for single and multi model training
+
+    Args:
+        args: Command-line arguments.
+        task: FairseqTask object.
+        dataset: Dataset set object for a specific split for a specific model
+        lang_pair: Model key in a multi model object. Specify None in single
+            model set up
+    """
     models, _ = utils.load_ensemble_for_inference(args.path.split(":"), task)
-    return _generate_score(models, args, task, dataset_split)
+    if lang_pair and len(models) > 0 and isinstance(models[0], FairseqMultiModel):
+        return _generate_score(
+            models=[multi_model.models[lang_pair] for multi_model in models],
+            args=args,
+            task=task,
+            dataset=dataset,
+        )
+    else:
+        return _generate_score(models=models, args=args, task=task, dataset=dataset)
 
 
 class TranslationInfo(NamedTuple):
@@ -70,9 +89,9 @@ def build_sequence_generator(args, task, models):
     return translator
 
 
-def get_eval_itr(args, models, task, dataset_split):
+def get_eval_itr(args, models, task, dataset):
     return task.get_batch_iterator(
-        dataset=task.dataset(dataset_split),
+        dataset=dataset,
         max_tokens=args.max_tokens,
         max_sentences=args.max_sentences,
         max_positions=utils.resolve_max_positions(
@@ -85,7 +104,7 @@ def get_eval_itr(args, models, task, dataset_split):
     ).next_epoch_itr(shuffle=False)
 
 
-def _generate_score(models, args, task, dataset_split, optimize=True):
+def _generate_score(models, args, task, dataset, optimize=True):
     use_cuda = torch.cuda.is_available() and not args.cpu
 
     # Load ensemble
@@ -108,13 +127,13 @@ def _generate_score(models, args, task, dataset_split, optimize=True):
     # Keep track of translations
     # Initialize with empty translations
     # and zero probs scores
-    translated_sentences = [""] * len(task.dataset(dataset_split))
-    translated_scores = [0.0] * len(task.dataset(dataset_split))
+    translated_sentences = [""] * len(dataset)
+    translated_scores = [0.0] * len(dataset)
 
     # Generate and compute BLEU score
     dst_dict = task.target_dictionary
     scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
-    itr = get_eval_itr(args, models, task, dataset_split)
+    itr = get_eval_itr(args, models, task, dataset)
 
     num_sentences = 0
     translation_samples = []
@@ -134,7 +153,7 @@ def _generate_score(models, args, task, dataset_split, optimize=True):
         else:
             first_best_translations = _iter_first_best_bilingual
         for trans_info in first_best_translations(
-            args, task, dataset_split, translations, align_dict
+            args, task, dataset, translations, align_dict
         ):
             scorer.add(trans_info.target_tokens, trans_info.hypo_tokens)
             translated_sentences[trans_info.sample_id] = trans_info.hypo_str
@@ -168,7 +187,7 @@ def _generate_score(models, args, task, dataset_split, optimize=True):
     return scorer, num_sentences, gen_timer, translation_samples
 
 
-def _iter_first_best_bilingual(args, task, dataset_split, translations, align_dict):
+def _iter_first_best_bilingual(args, task, dataset, translations, align_dict):
     """Iterate over first best translations.
 
     This is a generator function which yields information about the first best
@@ -178,7 +197,7 @@ def _iter_first_best_bilingual(args, task, dataset_split, translations, align_di
     Args:
         args: Command-line arguments.
         task: FairseqTask object.
-        dataset_split: Name of the test set split in `dataset`.
+        dataset: Dataset set object for a specific split.
         translations: Batched translation iterator, as returned by
             SequenceGenerator.generate_batched_itr().
         align_dict: Dictionary for UNK replacement.
@@ -191,8 +210,8 @@ def _iter_first_best_bilingual(args, task, dataset_split, translations, align_di
         target_tokens = target_tokens.int().cpu()
         # Either retrieve the original sentences or regenerate them from tokens.
         if align_dict is not None:
-            src_str = task.dataset(dataset_split).src.get_original_text(sample_id)
-            target_str = task.dataset(dataset_split).tgt.get_original_text(sample_id)
+            src_str = dataset.src.get_original_text(sample_id)
+            target_str = dataset.tgt.get_original_text(sample_id)
         else:
             src_str = task.source_dictionary.string(src_tokens, args.remove_bpe)
             target_str = task.target_dictionary.string(
@@ -253,7 +272,7 @@ def _iter_first_best_bilingual(args, task, dataset_split, translations, align_di
                 )
 
 
-def _iter_first_best_multilingual(args, task, dataset_split, translations, align_dict):
+def _iter_first_best_multilingual(args, task, dataset, translations, align_dict):
     """Like _iter_first_best_bilingual but for multilingual NMT."""
     src_dicts = task.source_dictionaries
     target_dicts = task.target_dictionaries
@@ -273,8 +292,8 @@ def _iter_first_best_multilingual(args, task, dataset_split, translations, align
         target_dict = target_dicts[task.get_decoder_lang_code(target_lang_id)]
         # Either retrieve the original sentences or regenerate them from tokens.
         if align_dict is not None:
-            src_str = task.dataset(dataset_split).src.get_original_text(sample_id)
-            target_str = task.dataset(dataset_split).tgt.get_original_text(sample_id)
+            src_str = dataset.src.get_original_text(sample_id)
+            target_str = dataset.tgt.get_original_text(sample_id)
         else:
             src_str = src_dict.string(src_tokens, args.remove_bpe)
             target_str = target_dict.string(
@@ -546,7 +565,7 @@ def generate(args):
         )
 
     scorer, num_sentences, gen_timer, _ = _generate_score(
-        models=models, args=args, task=task, dataset_split=args.gen_subset
+        models=models, args=args, task=task, dataset=task.dataset(args.gen_subset)
     )
     print(
         f"| Translated {num_sentences} sentences ({gen_timer.n} tokens) "
