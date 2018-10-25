@@ -16,6 +16,7 @@ from caffe2.python import core, workspace
 from caffe2.python.onnx import backend as caffe2_backend
 from caffe2.python.predictor import predictor_exporter
 from fairseq import utils
+from pytorch_translate.tasks.pytorch_translate_task import DictionaryHolderTask
 from pytorch_translate.word_prediction import word_prediction_model
 from torch.onnx import ExportTypes, OperatorExportTypes
 
@@ -24,7 +25,6 @@ from pytorch_translate import (  # noqa; noqa
     char_source_model,
     dictionary,
     rnn,
-    tasks,
     transformer,
 )
 
@@ -64,7 +64,7 @@ def load_models_from_checkpoints(
             checkpoint_data["args"].vocab_reduction_params[
                 "lexical_dictionaries"
             ] = lexical_dict_paths
-        task = tasks.DictionaryHolderTask(src_dict, dst_dict)
+        task = DictionaryHolderTask(src_dict, dst_dict)
 
         architecture = checkpoint_data["args"].arch
         if architecture == "rnn":

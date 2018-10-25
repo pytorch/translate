@@ -3,4 +3,4 @@
 AVERAGED_CHECKPOINT_BEST_FILENAME = "averaged_checkpoint_best.pt"
 LAST_CHECKPOINT_FILENAME = "checkpoint_last.pt"
 
-MONOLINGUAL_DATA_IDENTIFIER = "_mono_"
+MONOLINGUAL_DATA_IDENTIFIER = "mono"

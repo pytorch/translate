@@ -13,7 +13,6 @@ from fairseq import models
 from pytorch_translate import char_source_model  # noqa (must be after rnn)
 from pytorch_translate import rnn  # noqa
 from pytorch_translate import transformer  # noqa
-from pytorch_translate import tasks
 from pytorch_translate.ensemble_export import (
     BeamSearch,
     CharSourceEncoderEnsemble,
@@ -22,6 +21,7 @@ from pytorch_translate.ensemble_export import (
     ForcedDecoder,
     merge_transpose_and_batchmatmul,
 )
+from pytorch_translate.tasks import pytorch_translate_task as tasks
 from pytorch_translate.test import utils as test_utils
 
 

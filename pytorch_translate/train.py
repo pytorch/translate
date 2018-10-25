@@ -37,7 +37,6 @@ from pytorch_translate import (
     multi_model,
     options as pytorch_translate_options,
     preprocess,
-    tasks as pytorch_translate_tasks,
     utils as pytorch_translate_utils,
 )
 from pytorch_translate.research.knowledge_distillation import (  # noqa
@@ -49,6 +48,10 @@ from pytorch_translate.word_prediction import word_prediction_model  # noqa
 
 
 from pytorch_translate import rnn  # noqa; noqa
+
+# we import semi_supervised here so that the model gets registered in fairseq
+# model registry
+from pytorch_translate import semi_supervised  # noqa; noqa
 
 
 from pytorch_translate import char_source_model  # noqa; noqa
@@ -227,28 +230,6 @@ def setup_training_model(args):
 
     # Setup task and load dataset
     task = tasks.setup_task(args)
-    task.load_dataset(
-        args.train_subset,
-        args.train_source_binary_path,
-        args.train_target_binary_path,
-        weights_file=getattr(args, "train_weights_path", None),
-    )
-    if args.task == "pytorch_translate_semisupervised":
-        task.load_monolingual_dataset(
-            split=args.train_subset
-            + constants.MONOLINGUAL_DATA_IDENTIFIER
-            + args.source_lang,
-            bin_path=args.train_mono_source_binary_path,
-        )
-        task.load_monolingual_dataset(
-            split=args.train_subset
-            + constants.MONOLINGUAL_DATA_IDENTIFIER
-            + args.target_lang,
-            bin_path=args.train_mono_target_binary_path,
-        )
-    task.load_dataset(
-        args.valid_subset, args.eval_source_binary_path, args.eval_target_binary_path
-    )
 
     # Build model and criterion
     model = task.build_model(args)
@@ -258,6 +239,27 @@ def setup_training_model(args):
     print(
         f"| num. model params: \
         {sum(p.numel() for p in model.parameters())}"
+    )
+
+    if args.task == "pytorch_translate_semi_supervised":
+        task.load_dataset(
+            split=args.train_subset,
+            src_bin_path=args.train_source_binary_path,
+            tgt_bin_path=args.train_target_binary_path,
+            forward_model=task.forward_model,
+            backward_model=task.backward_model,
+        )
+    else:
+        task.load_dataset(
+            split=args.train_subset,
+            src_bin_path=args.train_source_binary_path,
+            tgt_bin_path=args.train_target_binary_path,
+            weights_file=getattr(args, "train_weights_path", None),
+        )
+    task.load_dataset(
+        split=args.valid_subset,
+        src_bin_path=args.eval_source_binary_path,
+        tgt_bin_path=args.eval_target_binary_path,
     )
     return task, model, criterion
 

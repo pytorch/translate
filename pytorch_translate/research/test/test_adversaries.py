@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 from pytorch_translate.dictionary import Dictionary
 from pytorch_translate.research.adversarial import adversaries
-from pytorch_translate.tasks import PytorchTranslateTask
+from pytorch_translate.tasks.pytorch_translate_task import PytorchTranslateTask
 
 
 # For determinism

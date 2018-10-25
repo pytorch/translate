@@ -7,7 +7,8 @@ import numpy as np
 import torch
 from fairseq.trainer import Trainer
 from pytorch_translate import rnn  # noqa
-from pytorch_translate import tasks, train
+from pytorch_translate import train
+from pytorch_translate.tasks import pytorch_translate_task as tasks
 from pytorch_translate.test import utils as test_utils
 
 
