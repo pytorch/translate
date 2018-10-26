@@ -21,7 +21,7 @@ from pytorch_translate import (
 from pytorch_translate.tasks.pytorch_translate_task import PytorchTranslateTask
 
 
-@register_task("pytorch_translate_semi_supervised")
+@register_task(constants.SEMI_SUPERVISED_TASK)
 class PytorchTranslateSemiSupervised(PytorchTranslateTask):
     def __init__(self, args, dicts, training):
         super().__init__(args, dicts[self.source_lang], dicts[self.target_lang])

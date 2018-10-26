@@ -2,7 +2,7 @@
 
 import os
 
-from pytorch_translate import utils
+from pytorch_translate import constants, utils
 
 
 def add_dataset_args(parser, train=False, gen=False):
@@ -365,7 +365,7 @@ def validate_preprocessing_args(args):
                 f"for it to be written to."
             )
 
-    if args.task == "pytorch_translate_semisupervised" and not (
+    if args.task == constants.SEMI_SUPERVISED_TASK and not (
         getattr(args, "train_mono_source_binary_path", None)
         or getattr(args, "train_mono_target_binary_path", None)
         or getattr(args, "train_mono_source_text_file", None)

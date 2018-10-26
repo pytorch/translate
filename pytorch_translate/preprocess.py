@@ -7,6 +7,7 @@ from typing import List, Optional
 
 from pytorch_translate import (
     char_data,
+    constants,
     data as pytorch_translate_data,
     options as pytorch_translate_options,
 )
@@ -191,7 +192,7 @@ def preprocess_corpora(args):
         )
         # Binarize additional monolingual corpora for the semisupervised translation
         # task
-        if args.task == "pytorch_translate_semisupervised":
+        if args.task == constants.SEMI_SUPERVISED_TASK:
             args.train_mono_source_binary_path = maybe_generate_temp_file_path(
                 output_path=getattr(args, "train_mono_source_binary_path", None)
             )
@@ -257,7 +258,7 @@ def build_vocabs(args: argparse.Namespace):
     source_files = [args.train_source_text_file]
     target_files = [args.train_target_text_file]
 
-    if args.task == "pytorch_translate_semisupervised" and getattr(
+    if args.task == constants.SEMI_SUPERVISED_TASK and getattr(
         args, "add_monolingual_data_for_vocab_building", None
     ):
         if getattr(args, "train_mono_source_text_file", None):
