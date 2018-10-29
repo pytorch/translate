@@ -152,8 +152,17 @@ class SequenceGenerator(torch.nn.Module):
 
         # Encode, expanding outputs for each example beam_size times
         reorder_indices = torch.arange(bsz).view(-1, 1).repeat(1, beam_size).view(-1)
+        if self.use_char_source:
+            encoder_inputs = (
+                encoder_input["src_tokens"],
+                encoder_input["src_lengths"],
+                encoder_input["char_inds"],
+                encoder_input["word_lengths"],
+            )
+        else:
+            encoder_inputs = (encoder_input["src_tokens"], encoder_input["src_lengths"])
         encoder_outs, incremental_states = self._encode(
-            encoder_input=(encoder_input["src_tokens"], encoder_input["src_lengths"]),
+            encoder_input=encoder_inputs,
             reorder_indices=reorder_indices.type_as(src_tokens),
         )
 
