@@ -148,7 +148,6 @@ def merge_transpose_and_batchmatmul(caffe2_backend_rep):
 
     for operator in transpose_ops_to_remove:
         caffe2_backend_rep.predict_net.op.remove(operator)
-        print(operator)
 
 
 def save_caffe2_rep_to_db(
