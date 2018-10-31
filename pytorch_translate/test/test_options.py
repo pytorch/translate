@@ -3,7 +3,7 @@
 import argparse
 import unittest
 
-from pytorch_translate import options
+from pytorch_translate import constants, options
 from pytorch_translate.test import utils as test_utils
 
 
@@ -47,7 +47,7 @@ class TestOptions(unittest.TestCase):
         set.
         """
         args = self.get_common_data_args_namespace()
-        args.task = "pytorch_translate_semisupervised"
+        args.task = constants.SEMI_SUPERVISED_TASK
         args.train_mono_source_binary_path = test_utils.make_temp_file()
         args.train_mono_target_text_file = test_utils.make_temp_file()
         options.validate_preprocessing_args(args)
@@ -58,7 +58,7 @@ class TestOptions(unittest.TestCase):
         task when we only have monolingual source data.
         """
         args = self.get_common_data_args_namespace()
-        args.task = "pytorch_translate_semisupervised"
+        args.task = constants.SEMI_SUPERVISED_TASK
         args.train_mono_source_binary_path = test_utils.make_temp_file()
         options.validate_preprocessing_args(args)
 
@@ -68,7 +68,7 @@ class TestOptions(unittest.TestCase):
         task when we only have monolingual source data.
         """
         args = self.get_common_data_args_namespace()
-        args.task = "pytorch_translate_semisupervised"
+        args.task = constants.SEMI_SUPERVISED_TASK
         args.train_mono_target_binary_path = test_utils.make_temp_file()
         options.validate_preprocessing_args(args)
 
@@ -78,5 +78,5 @@ class TestOptions(unittest.TestCase):
         no monolingual data at all.
         """
         args = self.get_common_data_args_namespace()
-        args.task = "pytorch_translate_semisupervised"
+        args.task = constants.SEMI_SUPERVISED_TASK
         self.assertRaises(ValueError, options.validate_preprocessing_args, args)

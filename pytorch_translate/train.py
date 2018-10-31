@@ -242,7 +242,7 @@ def setup_training_model(args):
         {sum(p.numel() for p in model.parameters())}"
     )
 
-    if args.task == "pytorch_translate_semi_supervised":
+    if args.task == constants.SEMI_SUPERVISED_TASK:
         task.load_dataset(
             split=args.train_subset,
             src_bin_path=args.train_source_binary_path,

@@ -4,7 +4,7 @@ import argparse
 import os
 import unittest
 
-from pytorch_translate import preprocess
+from pytorch_translate import constants, preprocess
 from pytorch_translate.test import utils as test_utils
 
 
@@ -69,7 +69,7 @@ class TestPreprocess(unittest.TestCase):
         test_data.py
         """
         args = self.get_common_data_args_namespace()
-        args.task = "pytorch_translate_semisupervised"
+        args.task = constants.SEMI_SUPERVISED_TASK
         args.train_mono_source_text_file = self.source_text_file
         args.train_mono_target_text_file = self.target_text_file
         preprocess.preprocess_corpora(args)
