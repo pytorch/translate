@@ -22,7 +22,7 @@ class TestBeamDecode(unittest.TestCase):
         translator = beam_decode.SequenceGenerator([model], task.target_dictionary)
         src_tokens = torch.LongTensor([[0, 0, 0], [0, 0, 0]])
         src_lengths = torch.LongTensor([3, 3])
-        encoder_input = (src_tokens, src_lengths)
+        encoder_input = {"src_tokens": src_tokens, "src_lengths": src_lengths}
         translator.generate(encoder_input, maxlen=7)
 
     @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
@@ -37,12 +37,19 @@ class TestBeamDecode(unittest.TestCase):
         _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
         task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
         model = task.build_model(test_args)
-        translator = beam_decode.SequenceGenerator([model], task.target_dictionary)
+        translator = beam_decode.SequenceGenerator(
+            [model], task.target_dictionary, use_char_source=True
+        )
         src_tokens = torch.LongTensor([[0, 0, 0], [0, 0, 0]])
         src_lengths = torch.LongTensor([3, 3])
         char_inds = torch.LongTensor(np.zeros((2, 3, 5)))
         word_lengths = torch.LongTensor([[5, 5, 5], [5, 5, 5]])
-        encoder_input = (src_tokens, src_lengths, char_inds, word_lengths)
+        encoder_input = {
+            "src_tokens": src_tokens,
+            "src_lengths": src_lengths,
+            "char_inds": char_inds,
+            "word_lengths": word_lengths,
+        }
         translator.generate(encoder_input, maxlen=7)
 
     @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
