@@ -458,6 +458,7 @@ def train(
 
         for i, samples in enumerate(progress, start=starting_offset):
             clear_per_step_extra_state(extra_state)
+            extra_state["num_iterations"] = extra_state.get("num_iterations", 0) + 1
             if (
                 train_step_kwargs is not None
                 and "augment_adv" in train_step_kwargs.keys()
@@ -481,7 +482,7 @@ def train(
                 # ignore the first mini-batch in words-per-second calculation
                 trainer.get_meter("wps").reset()
 
-            num_iterations = trainer.get_num_iterations()
+            num_iterations = extra_state["num_iterations"]
             do_eval_tune_loss = (
                 args.subepoch_validate_interval > 0
                 and num_iterations % args.subepoch_validate_interval == 0
