@@ -243,12 +243,21 @@ def setup_training_model(args):
     )
 
     if args.task == constants.SEMI_SUPERVISED_TASK:
+        # TODO(T35638969): hide this inside the task itself, just use self.args
         task.load_dataset(
             split=args.train_subset,
             src_bin_path=args.train_source_binary_path,
             tgt_bin_path=args.train_target_binary_path,
             forward_model=task.forward_model,
             backward_model=task.backward_model,
+        )
+    elif args.task == "pytorch_translate_denoising_autoencoder":
+        task.load_dataset(
+            split=args.train_subset,
+            src_bin_path=args.train_source_binary_path,
+            tgt_bin_path=args.train_target_binary_path,
+            seed=args.seed,
+            noiser=task.noiser,
         )
     else:
         task.load_dataset(

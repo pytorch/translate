@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+import copy
 from collections import OrderedDict
 
+import torch.nn as nn
 from fairseq.models import (
     FairseqMultiModel,
     register_model,
@@ -17,13 +19,21 @@ class SemiSupervisedModel(FairseqMultiModel):
     """Train RNN models with iterative backtranslations.
     """
 
-    def __init__(self, encoders, decoders):
+    def __init__(self, task, encoders, decoders):
         super().__init__(encoders, decoders)
+        self.task = task
+
+        # TODO(T35638969): pass this class into super (FairseqMultiModel)
+        self.models = nn.ModuleDict(
+            # Need to use RNNModel since FairseqModel doesn't define get_targets
+            {key: RNNModel(task, encoders[key], decoders[key]) for key in self.keys}
+        )
 
     @staticmethod
     def add_args(parser):
         """Add model-specific arguments to the parser."""
-        # TODO: Generalize this to be able to use other model classes like Transformer
+        # TODO(T35638969): Generalize this to be able to use other model classes
+        # like Transformer
         RNNModel.add_args(parser)
         parser.add_argument(
             "--share-encoder-embeddings",
@@ -80,9 +90,9 @@ class SemiSupervisedModel(FairseqMultiModel):
             return lang
 
         """
-        TODO: Generalize this to be able to use other model classes like Transformer
-        TransformerModel does not currently have build_encoder and build_decoder
-        methods
+        TODO(T35638969): Generalize this to be able to use other model classes
+        like Transformer TransformerModel does not currently have build_encoder
+        and build_decoder methods
         """
 
         def get_encoder(lang):
@@ -91,19 +101,27 @@ class SemiSupervisedModel(FairseqMultiModel):
                 lang_encoders[lang] = RNNModel.build_encoder(args, task.dicts[lang])
             return lang_encoders[lang]
 
-        def get_decoder(lang):
+        def get_decoder(lang_pair):
             """
-            Fetch decoder for the input `lang`, which denotes the target language of
-            the model
+            Fetch decoder for the input `lang_pair`, which denotes the target
+            language of the model
             """
-            if lang not in lang_decoders:
-                lang = strip_suffix(lang)
-                # get source lang for given (target) lang
-                source_lang = src_langs[tgt_langs.index(lang)]
-                lang_decoders[lang] = RNNModel.build_decoder(
-                    args, task.dicts[source_lang], task.dicts[lang]
+            source_lang, target_lang = (
+                strip_suffix(lang) for lang in lang_pair.split("-")
+            )
+            if target_lang not in lang_decoders:
+                # hack to prevent VR for denoising autoencoder. We remove vocab
+                # reduction params if we have lang-lang_any_suffix
+                args_maybe_modified = copy.deepcopy(args)
+                if source_lang == target_lang:
+                    args_maybe_modified.vocab_reduction_params = None
+
+                lang_decoders[target_lang] = RNNModel.build_decoder(
+                    args_maybe_modified,
+                    task.dicts[source_lang],
+                    task.dicts[target_lang],
                 )
-            return lang_decoders[lang]
+            return lang_decoders[target_lang]
 
         # shared encoders/decoders (if applicable)
         shared_encoder, shared_decoder = None, None
@@ -113,15 +131,15 @@ class SemiSupervisedModel(FairseqMultiModel):
             shared_decoder = get_decoder(tgt_langs[0])
 
         encoders, decoders = OrderedDict(), OrderedDict()
-        for lang_pair, src, tgt in zip(task.lang_pairs, src_langs, tgt_langs):
+        for lang_pair, src in zip(task.lang_pairs, src_langs):
             encoders[lang_pair] = (
                 shared_encoder if shared_encoder is not None else get_encoder(src)
             )
             decoders[lang_pair] = (
-                shared_decoder if shared_decoder is not None else get_decoder(tgt)
+                shared_decoder if shared_decoder is not None else get_decoder(lang_pair)
             )
 
-        return SemiSupervisedModel(encoders, decoders)
+        return SemiSupervisedModel(task, encoders, decoders)
 
 
 @register_model_architecture("semi_supervised", "semi_supervised")

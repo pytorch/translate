@@ -109,11 +109,7 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
 
         if self.args.log_verbose:
             print("Starting to load binarized data files.", flush=True)
-
-        if not os.path.exists(corpus.source.data_file):
-            raise ValueError(f"{corpus.source.data_file} for {split} not found!")
-        if not os.path.exists(corpus.target.data_file):
-            raise ValueError(f"{corpus.target.data_file} for {split} not found!")
+        data_utils.validate_corpus_exists(corpus=corpus, split=split)
 
         forward_tgt_dataset = ptt_data.InMemoryNumpyDataset.create_from_file(
             corpus.target.data_file
