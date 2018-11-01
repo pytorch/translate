@@ -9,6 +9,7 @@ from fairseq.tasks import FairseqTask, register_task
 from pytorch_translate import (
     char_data,
     data as pytorch_translate_data,
+    data_utils,
     dictionary as pytorch_translate_dictionary,
     weighted_data,
 )
@@ -112,11 +113,7 @@ class PytorchTranslateTask(FairseqTask):
 
         if self.args.log_verbose:
             print("Starting to load binarized data files.", flush=True)
-
-        if not os.path.exists(corpus.source.data_file):
-            raise ValueError(f"{corpus.source.data_file} for {split} not found!")
-        if not os.path.exists(corpus.target.data_file):
-            raise ValueError(f"{corpus.target.data_file} for {split} not found!")
+        data_utils.validate_corpus_exists(corpus=corpus, split=split)
 
         dst_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
             corpus.target.data_file
