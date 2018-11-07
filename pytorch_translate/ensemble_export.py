@@ -8,6 +8,7 @@ from collections import defaultdict
 import numpy as np
 import onnx
 import torch
+import torch.jit
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.onnx.operators
@@ -832,6 +833,9 @@ class BeamSearch(torch.jit.ScriptModule):
             output_names=self.output_names,
             num_workers=2 * len(self.models),
         )
+
+    def save_to_pytorch(self, output_path):
+        torch.jit.save(self, output_path)
 
 
 class KnownOutputDecoderStepEnsemble(nn.Module):
