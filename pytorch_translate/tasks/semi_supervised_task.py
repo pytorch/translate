@@ -72,7 +72,12 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
         )
 
     def load_monolingual_dataset(self, bin_path, is_source=False):
-        return data_utils.load_monolingual_dataset(self, bin_path, is_source)
+        return data_utils.load_monolingual_dataset(
+            bin_path=bin_path,
+            is_source=is_source,
+            char_source_dict=self.char_source_dict,
+            log_verbose=self.args.log_verbose,
+        )
 
     @classmethod
     def setup_task(cls, args, **kwargs):

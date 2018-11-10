@@ -117,42 +117,20 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
         Load a dataset split. Seed and noiser are only used for loading train
         data, not eval data.
         """
-
-        corpus = pytorch_translate_data.ParallelCorpusConfig(
-            source=pytorch_translate_data.CorpusConfig(
-                dialect=self.source_lang, data_file=src_bin_path
-            ),
-            target=pytorch_translate_data.CorpusConfig(
-                dialect=self.target_lang, data_file=tgt_bin_path
-            ),
-            weights_file=None,
-        )
-
-        if self.args.log_verbose:
-            print("Starting to load binarized data files.", flush=True)
-        data_utils.validate_corpus_exists(corpus=corpus, split=split)
-
-        tgt_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
-            corpus.target.data_file
-        )
-        if self.char_source_dict is not None:
-            src_dataset = char_data.InMemoryNumpyWordCharDataset.create_from_file(
-                corpus.source.data_file
-            )
-        else:
-            src_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
-                corpus.source.data_file
-            )
-        parallel_dataset = weighted_data.WeightedLanguagePairDataset(
-            src=src_dataset,
-            src_sizes=src_dataset.sizes,
-            src_dict=self.source_dictionary,
-            tgt=tgt_dataset,
-            tgt_sizes=tgt_dataset.sizes,
-            tgt_dict=self.target_dictionary,
+        parallel_dataset, src_dataset, tgt_dataset = data_utils.load_parallel_dataset(
+            source_lang=self.source_lang,
+            target_lang=self.target_lang,
+            src_bin_path=src_bin_path,
+            tgt_bin_path=tgt_bin_path,
+            source_dictionary=self.source_dictionary,
+            target_dictionary=self.target_dictionary,
+            split=split,
             remove_eos_from_source=not self.args.append_eos_to_source,
             append_eos_to_target=True,
+            char_source_dict=self.char_source_dict,
+            log_verbose=self.args.log_verbose,
         )
+
         dataset_map = OrderedDict(
             [(f"{self.source_lang}-{self.target_lang}", parallel_dataset)]
         )
