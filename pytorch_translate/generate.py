@@ -22,9 +22,10 @@ from pytorch_translate import (
 )
 from pytorch_translate.research.beam_search import competing_completed
 from pytorch_translate.research.multisource import multisource_data, multisource_decode
+from pytorch_translate.tasks.semi_supervised_task import PytorchTranslateSemiSupervised
 
 
-def generate_score(args, task, dataset, lang_pair=None):
+def generate_score(args, task, dataset, lang_pair=None, models=None):
     """
     Generation for single and multi model training
 
@@ -35,8 +36,11 @@ def generate_score(args, task, dataset, lang_pair=None):
         lang_pair: Model key in a multi model object. Specify None in single
             model set up
     """
-    models, _ = utils.load_ensemble_for_inference(args.path.split(":"), task)
+    if models is None:
+        models, _ = utils.load_ensemble_for_inference(args.path.split(":"), task)
     if lang_pair and len(models) > 0 and isinstance(models[0], FairseqMultiModel):
+        if isinstance(dataset, data.RoundRobinZipDatasets):
+            dataset = dataset.datasets[lang_pair]
         return _generate_score(
             models=[multi_model.models[lang_pair] for multi_model in models],
             args=args,
@@ -476,6 +480,16 @@ def get_parser_with_args():
         "hypos in the beam and let them compete against hypo expansions in the "
         "next time step.",
     )
+    generation_group.add_argument(
+        "--append-eos-to-source",
+        type=pytorch_translate_utils.bool_flag,
+        nargs="?",
+        const=True,
+        default=False,
+        help="Whether source has EOS appended. Should match the setting used "
+        "during training. This is important for loading both the forward and "
+        "backwards datasets for the semisupervised task",
+    )
 
     return parser
 
@@ -564,8 +578,16 @@ def generate(args):
             reverse_source=reverse_source,
         )
 
-    scorer, num_sentences, gen_timer, _ = _generate_score(
-        models=models, args=args, task=task, dataset=task.dataset(args.gen_subset)
+    lang_pair = None
+    if isinstance(task, PytorchTranslateSemiSupervised):
+        lang_pair = "src-tgt"
+
+    scorer, num_sentences, gen_timer, _ = generate_score(
+        args=args,
+        task=task,
+        dataset=task.dataset(args.gen_subset),
+        lang_pair=lang_pair,
+        models=models,
     )
     print(
         f"| Translated {num_sentences} sentences ({gen_timer.n} tokens) "
