@@ -257,7 +257,7 @@ def setup_training_model(args):
             src_bin_path=args.train_source_binary_path,
             tgt_bin_path=args.train_target_binary_path,
             seed=args.seed,
-            noiser=task.noiser,
+            use_noiser=True,
         )
     else:
         task.load_dataset(

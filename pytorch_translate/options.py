@@ -102,6 +102,23 @@ def add_preprocessing_args(parser):
         "flag will have no effect. A value of < 0 means no max size.",
     )
     group.add_argument(
+        "--source-bpe-cont-marker",
+        default=None,
+        type=str,
+        metavar="CONT",
+        help="Source BPE continuation marker. You should only specify this if "
+        "you are using a BPE source vocab that has an continuation marker "
+        "suffix. Note that this is the default BPE format in fairseq. Ex: '@@'",
+    )
+    group.add_argument(
+        "--source-bpe-end-marker",
+        default=None,
+        type=str,
+        metavar="END",
+        help="Source BPE end marker. You should only specify this if you are "
+        "using a BPE source vocab that has an end marker suffix. Ex: '_EOW'",
+    )
+    group.add_argument(
         "--char-source-vocab-file",
         default="",
         metavar="FILE",
@@ -131,7 +148,23 @@ def add_preprocessing_args(parser):
         "top N most common words. If we re-use an existing vocab file, this "
         "flag will have no effect. A value of < 0 means no max size.",
     )
-
+    group.add_argument(
+        "--target-bpe-cont-marker",
+        default=None,
+        type=str,
+        metavar="CONT",
+        help="Target BPE continuation marker. You should only specify this if "
+        "you are using a BPE target vocab that has an continuation marker "
+        "suffix. Note that this is the default BPE format in fairseq. Ex: '@@'",
+    )
+    group.add_argument(
+        "--target-bpe-end-marker",
+        default=None,
+        type=str,
+        metavar="END",
+        help="Target BPE end marker. You should only specify this if you are "
+        "using a BPE target vocab that has an end marker suffix. Ex: '_EOW'",
+    )
     group.add_argument(
         "--train-source-text-file",
         default="",
