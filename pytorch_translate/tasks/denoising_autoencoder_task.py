@@ -10,6 +10,7 @@ from pytorch_translate import (
     constants,
     data as pytorch_translate_data,
     data_utils,
+    utils,
     weighted_data,
 )
 from pytorch_translate.semi_supervised import SemiSupervisedModel
@@ -56,12 +57,16 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
         parser.add_argument(
             "--train-mono-source-binary-path",
             default="",
+            metavar="FILE",
+            type=str,
             help="Path for the binary file containing monolingual source "
             "training examples.",
         )
         parser.add_argument(
             "--train-mono-target-binary-path",
             default="",
+            metavar="FILE",
+            type=str,
             help="Path for the binary file containing monolingual target "
             "training examples.",
         )
@@ -89,30 +94,44 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
 
         parser.add_argument(
             "--denoising-source-parallel",
-            action="store_true",
+            type=utils.bool_flag,
+            nargs="?",
+            const=True,
+            default=False,
             help="Whether to add a denoising autoencoder objective using "
             "the source side of the parallel data",
         )
         parser.add_argument(
             "--denoising-target-parallel",
-            action="store_true",
+            type=utils.bool_flag,
+            nargs="?",
+            const=True,
+            default=False,
             help="Whether to add a denoising autoencoder objective using "
             "the target side of the parallel data",
         )
         parser.add_argument(
             "--denoising-source-mono",
-            action="store_true",
+            type=utils.bool_flag,
+            nargs="?",
+            const=True,
+            default=False,
             help="Whether to add a denoising autoencoder objective using "
             "the monolingual source corpus",
         )
         parser.add_argument(
             "--denoising-target-mono",
-            action="store_true",
+            type=utils.bool_flag,
+            nargs="?",
+            const=True,
+            default=False,
             help="Whether to add a denoising autoencoder objective using "
             "the monolingual source corpus",
         )
 
-    def load_dataset(self, split, src_bin_path, tgt_bin_path, seed=None, noiser=None):
+    def load_dataset(
+        self, split, src_bin_path, tgt_bin_path, seed=None, use_noiser=False
+    ):
         """
         Load a dataset split. Seed and noiser are only used for loading train
         data, not eval data.
@@ -135,7 +154,7 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
             [(f"{self.source_lang}-{self.target_lang}", parallel_dataset)]
         )
 
-        if noiser is not None:
+        if use_noiser:
             if getattr(self.args, "denoising_source_parallel", False):
                 dataset_map[
                     (f"{self.source_lang}-{self.source_lang}")
@@ -144,7 +163,7 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
                         src_dataset=src_dataset,
                         src_dict=self.source_dictionary,
                         seed=seed,
-                        noiser=self.noiser,
+                        noiser=self.source_noiser,
                     ),
                     tgt=src_dataset,
                     src_sizes=src_dataset.sizes,
@@ -160,7 +179,7 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
                         src_dataset=tgt_dataset,
                         src_dict=self.target_dictionary,
                         seed=seed,
-                        noiser=self.noiser,
+                        noiser=self.target_noiser,
                     ),
                     tgt=tgt_dataset,
                     src_sizes=tgt_dataset.sizes,
@@ -183,7 +202,7 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
                         src_dataset=source_mono_dataset,
                         src_dict=self.source_dictionary,
                         seed=seed,
-                        noiser=self.noiser,
+                        noiser=self.source_noiser,
                     ),
                     tgt=source_mono_dataset,
                     src_sizes=source_mono_dataset.sizes,
@@ -205,7 +224,7 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
                         src_dataset=target_mono_dataset,
                         src_dict=self.target_dictionary,
                         seed=seed,
-                        noiser=self.noiser,
+                        noiser=self.target_noiser,
                     ),
                     tgt=target_mono_dataset,
                     src_sizes=target_mono_dataset.sizes,
@@ -230,10 +249,20 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
             )
         # TODO(T35539829): implement a Noising registry so this can be built
         # with any noising class as long as it has a @register_noising decorator
-        self.noiser = noising.UnsupervisedMTNoising(
+        self.source_noiser = noising.UnsupervisedMTNoising(
             dictionary=self.source_dictionary,
             max_word_shuffle_distance=args.max_word_shuffle_distance,
             word_dropout_prob=args.word_dropout_prob,
             word_blanking_prob=args.word_blanking_prob,
+            bpe_cont_marker=self.args.source_bpe_cont_marker,
+            bpe_end_marker=self.args.source_bpe_end_marker,
+        )
+        self.target_noiser = noising.UnsupervisedMTNoising(
+            dictionary=self.target_dictionary,
+            max_word_shuffle_distance=args.max_word_shuffle_distance,
+            word_dropout_prob=args.word_dropout_prob,
+            word_blanking_prob=args.word_blanking_prob,
+            bpe_cont_marker=self.args.target_bpe_cont_marker,
+            bpe_end_marker=self.args.target_bpe_end_marker,
         )
         return model
