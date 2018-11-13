@@ -2,6 +2,7 @@
 
 import os
 
+import torch
 from pytorch_translate import constants, utils
 
 
@@ -388,6 +389,17 @@ def validate_preprocessing_args(args):
 def expand_optimization_args(group):
     """Expands the optimization related arguments with pytorch_translate
     specific arguments"""
+    group.add_argument(
+        "--local-num-gpus",
+        default=torch.cuda.device_count(),
+        type=int,
+        metavar="N",
+        help=(
+            "The number of local GPUs to use for training on this machine. "
+            "Defaults to using all visible GPUs. This should be "
+            "<= --distributed-world-size."
+        ),
+    )
     group.add_argument(
         "--subepoch-validate-interval",
         default=0,
