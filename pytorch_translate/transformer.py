@@ -283,6 +283,12 @@ class TransformerEncoder(FairseqEncoder):
             ]
         )
 
+        self.output_fc = None
+        if args.encoder_embed_dim != args.decoder_embed_dim:
+            self.output_fc = fairseq_transformer.Linear(
+                embed_dim, args.decoder_embed_dim
+            )
+
         # Variable tracker
         self.tracker = VariableTracker()
 
@@ -318,6 +324,9 @@ class TransformerEncoder(FairseqEncoder):
             if self.all_layer_position_embed:
                 x += positions
             x = layer(x, encoder_padding_mask)
+
+        if self.output_fc is not None:
+            x = self.output_fc(x)
 
         return x, src_tokens, encoder_padding_mask
 
