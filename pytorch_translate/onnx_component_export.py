@@ -76,8 +76,8 @@ def get_parser_with_args():
 def assert_required_args_are_set(args):
     if args.encoder_output_file == args.decoder_output_file == "":
         print(
-            "No action taken. Need at least one of --encoder_output_file "
-            "and --decoder_output_file."
+            "No action taken. Need at least one of --encoder-output-file "
+            "and --decoder-output-file."
         )
         return
 
