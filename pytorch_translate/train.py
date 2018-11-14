@@ -930,10 +930,15 @@ def calculate_bleu_on_subset(args, task, epoch_str: str, offset, dataset_split):
         task.score_aggregator if hasattr(task, "score_aggregator") else sum
     )
     scores = []
+    ensemble_models, _ = utils.load_ensemble_for_inference(args.path.split(":"), task)
     for dataset, lang_pair in zip(datasets, lang_pairs):
         # Generate score
         scorer, num_sentences, gen_timer, translation_samples = generate.generate_score(
-            args=args, task=task, dataset=dataset, lang_pair=lang_pair
+            args=args,
+            task=task,
+            dataset=dataset,
+            models=ensemble_models,
+            lang_pair=lang_pair,
         )
         scores.append(scorer.score())
         print(

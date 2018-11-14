@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 
+import argparse
 import collections
 import os
-from typing import NamedTuple
+from typing import List, NamedTuple, Optional
 
 import numpy as np
 import torch
 from fairseq import bleu, data, options, progress_bar, tasks, tokenizer, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
-from fairseq.models import FairseqMultiModel
+from fairseq.models import FairseqModel, FairseqMultiModel
 from pytorch_translate import rnn  # noqa
 from pytorch_translate import transformer  # noqa
 from pytorch_translate import (
@@ -25,7 +26,13 @@ from pytorch_translate.research.multisource import multisource_data, multisource
 from pytorch_translate.tasks.semi_supervised_task import PytorchTranslateSemiSupervised
 
 
-def generate_score(args, task, dataset, lang_pair=None, models=None):
+def generate_score(
+    args: argparse.Namespace,
+    task: tasks.FairseqTask,
+    dataset: data.FairseqDataset,
+    models: List[FairseqModel],
+    lang_pair: Optional[str] = None,
+):
     """
     Generation for single and multi model training
 
@@ -33,11 +40,10 @@ def generate_score(args, task, dataset, lang_pair=None, models=None):
         args: Command-line arguments.
         task: FairseqTask object.
         dataset: Dataset set object for a specific split for a specific model
-        lang_pair: Model key in a multi model object. Specify None in single
-            model set up
+        models: List[FairseqModel], an ensemble of models
+        lang_pair: Optional model key in a multi model object. Specify None in
+            single model set up
     """
-    if models is None:
-        models, _ = utils.load_ensemble_for_inference(args.path.split(":"), task)
     if lang_pair and len(models) > 0 and isinstance(models[0], FairseqMultiModel):
         if isinstance(dataset, data.RoundRobinZipDatasets):
             dataset = dataset.datasets[lang_pair]
@@ -480,16 +486,6 @@ def get_parser_with_args():
         "hypos in the beam and let them compete against hypo expansions in the "
         "next time step.",
     )
-    generation_group.add_argument(
-        "--append-eos-to-source",
-        type=pytorch_translate_utils.bool_flag,
-        nargs="?",
-        const=True,
-        default=False,
-        help="Whether source has EOS appended. Should match the setting used "
-        "during training. This is important for loading both the forward and "
-        "backwards datasets for the semisupervised task",
-    )
 
     return parser
 
@@ -528,11 +524,8 @@ def validate_args(args):
 def generate(args):
     pytorch_translate_options.print_args(args)
 
-    # Setup task
-    task = tasks.setup_task(args)
-
-    models, model_args = pytorch_translate_utils.load_diverse_ensemble_for_inference(
-        args.path.split(":"), task
+    models, model_args, task = pytorch_translate_utils.load_diverse_ensemble_for_inference(
+        args.path.split(":")
     )
     args.source_lang = model_args[0].source_lang
     args.target_lang = model_args[0].target_lang

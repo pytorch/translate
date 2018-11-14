@@ -7,10 +7,10 @@ import os
 import signal
 import threading
 import time
-from typing import List
+from typing import List, Optional
 
 import torch
-from fairseq import distributed_utils, utils
+from fairseq import distributed_utils, tasks, utils
 
 
 # Helper type for argparse to enable flippable boolean flags. For example,
@@ -187,7 +187,9 @@ class ErrorHandler(object):
         raise Exception(msg)
 
 
-def load_diverse_ensemble_for_inference(filenames, task):
+def load_diverse_ensemble_for_inference(
+    filenames: List[str], task: Optional[tasks.FairseqTask] = None
+):
     """Load an ensemble of diverse models for inference.
 
     This method is similar to fairseq.utils.load_ensemble_for_inference
@@ -195,19 +197,22 @@ def load_diverse_ensemble_for_inference(filenames, task):
 
     Args:
         filenames: List of file names to checkpoints
-        task: FairseqTask
+        task: Optional[FairseqTask]. If this isn't provided, we setup the task
+            using the first checkpoint's model args loaded from the saved state.
 
     Return:
         models, args: Tuple of lists. models contains the loaded models, args
-        the corresponding configurations.
+            the corresponding configurations.
+        task: Either the input task or the task created within this function
+            using args
     """
 
     # load model architectures and weights
-    states = []
+    checkpoints_data = []
     for filename in filenames:
         if not os.path.exists(filename):
             raise IOError("Model file not found: {}".format(filename))
-        states.append(
+        checkpoints_data.append(
             torch.load(
                 filename,
                 map_location=lambda s, l: torch.serialization.default_restore_location(
@@ -217,11 +222,14 @@ def load_diverse_ensemble_for_inference(filenames, task):
         )
     # build ensemble
     ensemble = []
-    for state in states:
-        model = task.build_model(state["args"])
-        model.load_state_dict(state["model"])
+    if task is None:
+        task = tasks.setup_task(checkpoints_data[0]["args"])
+    for checkpoint_data in checkpoints_data:
+        model = task.build_model(checkpoint_data["args"])
+        model.load_state_dict(checkpoint_data["model"])
         ensemble.append(model)
-    return ensemble, [s["args"] for s in states]
+    args_list = [s["args"] for s in checkpoints_data]
+    return ensemble, args_list, task
 
 
 def densify(t):
