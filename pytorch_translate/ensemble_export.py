@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import copy
 import logging
 import os
 import tempfile
@@ -16,7 +17,7 @@ from caffe2.proto.caffe2_pb2 import Argument
 from caffe2.python import core, workspace
 from caffe2.python.onnx import backend as caffe2_backend
 from caffe2.python.predictor import predictor_exporter
-from fairseq import utils
+from fairseq import tasks, utils
 from pytorch_translate.tasks.pytorch_translate_task import DictionaryHolderTask
 from pytorch_translate.word_prediction import word_prediction_model
 from torch.onnx import ExportTypes, OperatorExportTypes
@@ -26,6 +27,7 @@ from pytorch_translate import (  # noqa; noqa
     char_source_model,
     dictionary,
     rnn,
+    semi_supervised,
     transformer,
 )
 
@@ -82,10 +84,19 @@ def load_models_from_checkpoints(
             model = transformer.TransformerModel.build_model(
                 checkpoint_data["args"], task
             )
+        elif architecture == "semi_supervised":
+            model_args = copy.deepcopy(checkpoint_data["args"])
+            model_args.source_vocab_file = src_dict_filename
+            model_args.target_vocab_file = dst_dict_filename
+            task = tasks.setup_task(model_args)
+            model = semi_supervised.SemiSupervisedModel.build_model(model_args, task)
         else:
             raise RuntimeError("Architecture not supported: {architecture}")
         model.load_state_dict(checkpoint_data["model"])
-        models.append(model)
+        if isinstance(model, semi_supervised.SemiSupervisedModel):
+            models.append(model.models["src-tgt"])
+        else:
+            models.append(model)
 
     return models, src_dict, dst_dict
 
