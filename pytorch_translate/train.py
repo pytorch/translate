@@ -176,10 +176,15 @@ def validate_and_set_default_args(args):
     # calculating BLEU score.
     args.quiet = True
 
-    if args.distributed_world_size < torch.cuda.device_count():
+    if args.local_num_gpus > args.distributed_world_size:
         raise ValueError(
-            f"--distributed-world-size={args.distributed_world_size} "
-            f"must be >= the number of GPUs: {torch.cuda.device_count()}."
+            f"--local-num-gpus={args.local_num_gpus} must be "
+            f"<= --distributed-world-size={args.distributed_world_size}."
+        )
+    if args.local_num_gpus > torch.cuda.device_count():
+        raise ValueError(
+            f"--local-num-gpus={args.local_num_gpus} must be "
+            f"<= the number of GPUs: {torch.cuda.device_count()}."
         )
     # Set default init method for multi-GPU training if the user didn't specify
     # them.
@@ -1127,7 +1132,8 @@ def multi_process_main(
 
     # Train with multiprocessing.
     processes = []
-    for i in range(torch.cuda.device_count()):
+    num_processes = args.local_num_gpus
+    for i in range(num_processes):
         args.distributed_rank = start_rank + i
         args.device_id = i
         processes.append(
