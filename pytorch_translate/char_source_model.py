@@ -7,8 +7,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from fairseq.models import FairseqEncoder, register_model, register_model_architecture
-from pytorch_translate import char_encoder, rnn, word_dropout
+from pytorch_translate import (
+    char_encoder,
+    model_constants,
+    rnn,
+    utils,
+    vocab_constants,
+    word_dropout,
+)
 from pytorch_translate.common_layers import VariableTracker
+from pytorch_translate.dictionary import TAGS
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
@@ -74,6 +82,38 @@ class CharSourceModel(rnn.RNNModel):
             metavar="N",
             help=("Char cnn encoder highway layers."),
         )
+        parser.add_argument(
+            "--char-cnn-output-dim",
+            type=int,
+            default=-1,
+            metavar="N",
+            help="Output dim of the CNN layer. If set to -1, this is computed "
+            "from char-cnn-params.",
+        )
+        parser.add_argument(
+            "--use-pretrained-weights",
+            type=utils.bool_flag,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Use pretrained weights for the character model including "
+            "the char embeddings, CNN filters, highway networks",
+        )
+        parser.add_argument(
+            "--finetune-pretrained-weights",
+            type=utils.bool_flag,
+            nargs="?",
+            const=True,
+            default=False,
+            help="Boolean flag to specify whether or not to update the "
+            "pretrained weights as part of training",
+        )
+        parser.add_argument(
+            "--pretrained-weights-file",
+            type=str,
+            default="",
+            help=("Weights file for loading pretrained weights"),
+        )
 
     @classmethod
     def build_model(cls, args, task):
@@ -90,9 +130,22 @@ class CharSourceModel(rnn.RNNModel):
         )
 
         if hasattr(args, "char_cnn_params"):
+            args.embed_bytes = getattr(args, "embed_bytes", False)
+
+            # If we embed bytes then the number of indices is fixed and does not
+            # depend on the dictionary
+            if args.embed_bytes:
+                num_chars = vocab_constants.NUM_BYTE_INDICES + TAGS.__len__() + 1
+            else:
+                num_chars = args.char_source_dict_size
+
+            # In case use_pretrained_weights is true, verify the model params
+            # are correctly set
+            if args.embed_bytes and getattr(args, "use_pretrained_weights", False):
+                verify_pretrain_params(args)
             encoder = CharCNNEncoder(
                 src_dict,
-                num_chars=args.char_source_dict_size,
+                num_chars=num_chars,
                 embed_dim=args.char_embed_dim,
                 token_embed_dim=args.encoder_embed_dim,
                 freeze_embed=args.encoder_freeze_embed,
@@ -100,6 +153,7 @@ class CharSourceModel(rnn.RNNModel):
                 char_cnn_nonlinear_fn=args.char_cnn_nonlinear_fn,
                 char_cnn_pool_type=args.char_cnn_pool_type,
                 char_cnn_num_highway_layers=args.char_cnn_num_highway_layers,
+                char_cnn_output_dim=getattr(args, "char_cnn_output_dim", -1),
                 num_layers=args.encoder_layers,
                 hidden_dim=args.encoder_hidden_dim,
                 dropout_in=args.encoder_dropout_in,
@@ -107,6 +161,11 @@ class CharSourceModel(rnn.RNNModel):
                 residual_level=args.residual_level,
                 bidirectional=bool(args.encoder_bidirectional),
                 word_dropout_params=args.word_dropout_params,
+                use_pretrained_weights=getattr(args, "use_pretrained_weights", False),
+                finetune_pretrained_weights=getattr(
+                    args, "finetune_pretrained_weights", False
+                ),
+                weights_file=getattr(args, "pretrained_weights_file", ""),
             )
         else:
             encoder = CharRNNEncoder(
@@ -416,10 +475,10 @@ class CharCNNEncoder(FairseqEncoder):
         token_embed_dim=256,
         freeze_embed=False,
         char_cnn_params="[(128, 3), (128, 5)]",
-        char_cnn_output_dim=256,
         char_cnn_nonlinear_fn="tanh",
         char_cnn_pool_type="max",
         char_cnn_num_highway_layers=0,
+        char_cnn_output_dim=-1,
         hidden_dim=512,
         num_layers=1,
         dropout_in=0.1,
@@ -427,6 +486,9 @@ class CharCNNEncoder(FairseqEncoder):
         residual_level=None,
         bidirectional=False,
         word_dropout_params=None,
+        use_pretrained_weights=False,
+        finetune_pretrained_weights=False,
+        weights_file=None,
     ):
 
         super().__init__(dictionary)
@@ -446,6 +508,10 @@ class CharCNNEncoder(FairseqEncoder):
             char_cnn_nonlinear_fn,
             char_cnn_pool_type,
             char_cnn_num_highway_layers,
+            char_cnn_output_dim,
+            use_pretrained_weights,
+            finetune_pretrained_weights,
+            weights_file,
         )
 
         self.embed_tokens = None
@@ -459,8 +525,11 @@ class CharCNNEncoder(FairseqEncoder):
                 freeze_embed=freeze_embed,
             )
         self.word_dim = (
-            sum(out_dim for (out_dim, _) in convolutions_params) + token_embed_dim
+            char_cnn_output_dim
+            if char_cnn_output_dim != -1
+            else sum(out_dim for (out_dim, _) in convolutions_params)
         )
+        self.word_dim = self.word_dim + token_embed_dim
 
         self.layers = nn.ModuleList([])
         for layer in range(num_layers):
@@ -588,6 +657,32 @@ class CharCNNEncoder(FairseqEncoder):
     def max_positions(self):
         """Maximum input length supported by the encoder."""
         return int(1e5)  # an arbitrary large number
+
+
+def verify_pretrain_params(args):
+    """
+    Function which verifies the model params in case we are using a pretrained
+    model like ELMo. This is needed because the model params must match up
+    with the weights that are being loaded.
+    """
+    assert (
+        args.embed_bytes
+    ), "To use pretrained weights, embed_bytes must be set to True."
+
+    assert (
+        args.char_cnn_nonlinear_fn == model_constants.PRETRAINED_CHAR_CNN_NONLINEAR_FN
+    ), "To use pretrained weights, the non linearity used should be relu."
+
+    assert (
+        args.char_embed_dim == model_constants.PRETRAINED_CHAR_EMBED_DIM
+    ), "To use pretrained weights char_embed_dim should be set to 16."
+
+    assert (
+        args.char_cnn_output_dim == model_constants.PRETRAINED_CHAR_CNN_OUTPUT_DIM
+    ), "To use pretrained weights, the output dim of the CNN layer should be 512."
+    assert (
+        literal_eval(args.char_cnn_params) == model_constants.PRETRAINED_CHAR_CNN_PARAMS
+    ), "CNN Params don't match with the ones needed for loading pretrained weights"
 
 
 @register_model_architecture("char_source", "char_source")

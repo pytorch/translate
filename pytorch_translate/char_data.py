@@ -3,6 +3,7 @@
 import numpy as np
 import torch
 from fairseq import data, tokenizer
+from pytorch_translate import vocab_constants
 from pytorch_translate.dictionary import TAGS
 
 
@@ -63,7 +64,44 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
         self.char_buffer = npz["char_buffer"]
         self.char_offsets = npz["char_offsets"]
 
-    def parse(self, path, word_dict, char_dict, reverse_order=False, append_eos=False):
+    def _sent_to_word_ids(self, sent, word_dict, reverse_order=False, append_eos=False):
+        """
+        Extract the word ids for words associated with the input sentence.
+        """
+        words = tokenizer.tokenize_line(sent)
+        if reverse_order:
+            words.reverse()
+        word_inds = [word_dict.index(w) for w in words]
+        if append_eos:
+            word_inds.append(word_dict.eos_index)
+        return words, word_inds
+
+    def _word_to_char_ids(self, word, char_dict, embed_bytes=False):
+        """
+        Extract the char/byte ids for char/bytes associated with the input word.
+        """
+        if embed_bytes:
+            # The byte_id needs to be incremented by 1 to account for the
+            # padding id (0) in the embedding table
+            char_inds = (
+                [vocab_constants.NUM_BYTE_INDICES + TAGS.index(word) + 1]
+                if word in TAGS
+                else [byte_id + 1 for byte_id in word.encode("utf8", "ignore")]
+            )
+        else:
+            chars = [word] if word in TAGS else list(word)
+            char_inds = [char_dict.index(c) for c in chars]
+        return char_inds
+
+    def parse(
+        self,
+        path,
+        word_dict,
+        char_dict,
+        embed_bytes=False,
+        reverse_order=False,
+        append_eos=False,
+    ):
         word_array_list = []
         word_offsets = [0]
         char_array_list = []
@@ -71,20 +109,16 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
         sizes = []
         with open(path, "r") as f:
             for line in f:
-                words = tokenizer.tokenize_line(line)
-                if reverse_order:
-                    words.reverse()
-                word_inds = [word_dict.index(w) for w in words]
-                if append_eos:
-                    word_inds.append(dict.eos_index)
+                words, word_inds = self._sent_to_word_ids(
+                    line, word_dict, reverse_order, append_eos
+                )
 
                 word_array_list.append(np.array(word_inds, dtype=np.int32))
                 word_offsets.append(word_offsets[-1] + len(word_inds))
                 sizes.append(len(word_inds))
 
                 for word in words:
-                    chars = [word] if word in TAGS else list(word)
-                    char_inds = [char_dict.index(c) for c in chars]
+                    char_inds = self._word_to_char_ids(word, char_dict, embed_bytes)
                     char_array_list.append(np.array(char_inds, dtype=np.int32))
                     char_offsets.append(char_offsets[-1] + len(char_inds))
 

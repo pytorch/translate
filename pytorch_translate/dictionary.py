@@ -9,15 +9,15 @@ from pytorch_translate import vocab_constants
 
 
 TAGS = [
-    "@PLAIN",
-    "@FBENTITY",
     "@DIGITS",
     "@EMOTICON",
-    "@USERNAME",
-    "@URL",
+    "@FBENTITY",
     "@MULTIPUNCT",
-    "@PERSON",
     "@NOTRANSLATE",
+    "@PERSON",
+    "@PLAIN",
+    "@URL",
+    "@USERNAME",
 ]
 
 SPACE_NORMALIZER = re.compile(r"\s+")
@@ -31,7 +31,7 @@ def default_char_dictionary_path(save_dir: str, dialect: str) -> str:
     return os.path.join(save_dir, f"char-dictionary-{dialect}.txt")
 
 
-def tokenize_line(line):
+def tokenize_line(line, embed_bytes=False):
     line = SPACE_NORMALIZER.sub(" ", line)
     line = line.strip()
     return line.split()
@@ -103,13 +103,19 @@ class Dictionary(dictionary.Dictionary):
         max_vocab_size: int,
         tokens_with_penalty: Optional[str] = None,
         is_char_vocab: bool = False,
+        embed_bytes: bool = False,
         padding_factor: int = 8,
     ) -> "Dictionary":  # https://www.python.org/dev/peps/pep-0484/#forward-references
         d = cls()
 
         tokenize = char_tokenize_line if is_char_vocab else tokenize_line
-        for corpus_file in corpus_files:
-            add_file_to_dictionary(filename=corpus_file, dict=d, tokenize=tokenize)
+        embed_bytes = embed_bytes and is_char_vocab
+
+        # if we are embedding byte ids then no need to add these to the dict
+        # the ids an be obtained directly from the character
+        if not embed_bytes:
+            for corpus_file in corpus_files:
+                add_file_to_dictionary(filename=corpus_file, dict=d, tokenize=tokenize)
 
         # Set indices to receive penalty
         if tokens_with_penalty:
@@ -143,6 +149,7 @@ class Dictionary(dictionary.Dictionary):
         max_vocab_size: int,
         tokens_with_penalty: Optional[str] = None,
         is_char_vocab: bool = False,
+        embed_bytes: bool = False,
         padding_factor: int = 8,
     ) -> "Dictionary":  # https://www.python.org/dev/peps/pep-0484/#forward-references
         if os.path.isfile(vocab_file):
@@ -163,6 +170,7 @@ class Dictionary(dictionary.Dictionary):
             max_vocab_size=max_vocab_size,
             tokens_with_penalty=tokens_with_penalty,
             is_char_vocab=is_char_vocab,
+            embed_bytes=embed_bytes,
             padding_factor=padding_factor,
         )
 

@@ -89,6 +89,7 @@ def binarize_text_file(
     append_eos: bool,
     reverse_order: bool,
     use_char_data: bool = False,
+    embed_bytes: bool = False,
     char_dictionary: Optional[Dictionary] = None,
     already_numberized: bool = False,
 ) -> str:
@@ -99,6 +100,7 @@ def binarize_text_file(
             path=text_file,
             word_dict=dictionary,
             char_dict=char_dictionary,
+            embed_bytes=embed_bytes,
             reverse_order=reverse_order,
             append_eos=append_eos,
         )
@@ -277,12 +279,14 @@ def build_vocabs(args: argparse.Namespace):
     )
     char_source_dict = None
     if use_char_source:
+        embed_bytes = getattr(args, "embed_bytes", False)
         char_source_dict = Dictionary.build_vocab_file_if_nonexistent(
             corpus_files=source_files,
             vocab_file=args.char_source_vocab_file,
             max_vocab_size=args.char_source_max_vocab_size,
             tokens_with_penalty=None,
             is_char_vocab=True,
+            embed_bytes=embed_bytes,
         )
 
     target_dict = Dictionary.build_vocab_file_if_nonexistent(
@@ -305,6 +309,7 @@ def preprocess_bilingual_corpora(
     Prerequisite: Vocabs are already built (see build_vocabs)
     """
     use_char_source = args.char_source_vocab_file != ""
+    embed_bytes = getattr(args, "embed_bytes", False)
     if args.train_source_text_file:
         args.train_source_binary_path = binarize_text_file(
             text_file=args.train_source_text_file,
@@ -313,6 +318,7 @@ def preprocess_bilingual_corpora(
             append_eos=args.append_eos_to_source,
             reverse_order=args.reverse_source,
             use_char_data=use_char_source,
+            embed_bytes=embed_bytes,
             char_dictionary=char_source_dict,
         )
     if args.eval_source_text_file:
@@ -323,6 +329,7 @@ def preprocess_bilingual_corpora(
             append_eos=args.append_eos_to_source,
             reverse_order=args.reverse_source,
             use_char_data=use_char_source,
+            embed_bytes=embed_bytes,
             char_dictionary=char_source_dict,
         )
 

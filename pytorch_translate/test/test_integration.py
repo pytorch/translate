@@ -148,6 +148,69 @@ class TestTranslation(unittest.TestCase):
     @unittest.skipIf(
         torch.cuda.device_count() != 1, "Test only supports single-GPU training."
     )
+    def test_pretrained_char_model(self):
+        with contextlib.redirect_stdout(StringIO()):
+            with tempfile.TemporaryDirectory("test_pretrained_char_model") as data_dir:
+                create_dummy_data(data_dir)
+                train_translation_model(
+                    data_dir,
+                    [
+                        "--arch",
+                        "char_source",
+                        "--char-embed-dim",
+                        "16",
+                        "--char-cnn-params",
+                        "[(32, 1), (32, 2), (64, 3), (128, 4), (256, 5), (512, 6), (1024, 7)]",
+                        "--char-cnn-nonlinear-fn",
+                        "relu",
+                        "--char-cnn-num-highway-layers",
+                        "2",
+                        "--embed-bytes",
+                        "true",
+                        "--use-pretrained-weights",
+                        "true",
+                        "--finetune-pretrained-weights",
+                        "true",
+                        "--pretrained-weights-file",
+                        "/mnt/vol/gfsfblearner-oregon/users/aimeeli/elmo/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5",
+                        "--char-cnn-output-dim",
+                        "512",
+                        "--cell-type",
+                        "lstm",
+                        "--sequence-lstm",
+                        "--encoder-dropout-in",
+                        "0",
+                        "--encoder-dropout-out",
+                        "0",
+                        "--decoder-dropout-in",
+                        "0.2",
+                        "--decoder-dropout-out",
+                        "0.2",
+                        "--encoder-bidirectional",
+                        "--encoder-hidden-dim",
+                        "256",
+                        "--encoder-layers",
+                        "2",
+                        "--encoder-embed-dim",
+                        "64",
+                        "--decoder-layers",
+                        "2",
+                        "--decoder-embed-dim",
+                        "256",
+                        "--decoder-hidden-dim",
+                        "256",
+                        "--decoder-out-embed-dim",
+                        "256",
+                        "--attention-type",
+                        "dot",
+                        "--att-weighted-activation-type",
+                        "tanh",
+                    ],
+                )
+
+    @unittest.skipIf(
+        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+    )
     def test_multilingual(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_multilingual") as data_dir:

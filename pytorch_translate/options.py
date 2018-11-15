@@ -126,6 +126,15 @@ def add_preprocessing_args(parser):
         help="Same as --source-vocab-file except using characters.",
     )
     group.add_argument(
+        "--embed-bytes",
+        type=utils.bool_flag,
+        nargs="?",
+        const=True,
+        default=False,
+        help="If specified along with a character model and set to True, "
+        "then we embed bytes instead of characters.",
+    )
+    group.add_argument(
         "--char-source-max-vocab-size",
         default=-1,
         type=int,
