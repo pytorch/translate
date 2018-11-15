@@ -19,7 +19,7 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
         use_cuda = torch.cuda.is_available() and not self.args.cpu
 
         # Load model ensemble from checkpoints
-        self.teacher_models, self.teacher_model_args = pytorch_translate_utils.load_diverse_ensemble_for_inference(
+        self.teacher_models, self.teacher_model_args, _ = pytorch_translate_utils.load_diverse_ensemble_for_inference(
             args.teacher_path.split(":"), task
         )
 

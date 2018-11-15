@@ -116,12 +116,9 @@ def validate_args(args):
 def setup_attack(args):
     """Load model, data and create the AdversarialTrainer object"""
 
-    # Setup task
-    task = tasks.setup_task(args)
-
     # Load model
-    models, models_args = pytorch_translate_utils.load_diverse_ensemble_for_inference(
-        args.path.split(":"), task
+    models, models_args, task = pytorch_translate_utils.load_diverse_ensemble_for_inference(
+        args.path.split(":")
     )
 
     # Only one model is supported as of now

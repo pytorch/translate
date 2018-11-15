@@ -114,9 +114,8 @@ def benchmark(args):
     args.source_lang = "src"
     args.target_lang = "tgt"
 
-    task = tasks.setup_task(args)
-    models, model_args = pytorch_translate_utils.load_diverse_ensemble_for_inference(
-        args.path.split(":"), task
+    models, model_args, task = pytorch_translate_utils.load_diverse_ensemble_for_inference(
+        args.path.split(":")
     )
 
     append_eos_to_source = model_args[0].append_eos_to_source
@@ -155,13 +154,13 @@ def benchmark(args):
         os.remove(target_text_file)
 
         # priming
-        scorer, num_sentences, gen_timer, _ = pytorch_translate_generate._generate_score(
+        scorer, num_sentences, gen_timer, _ = pytorch_translate_generate.generate_score(
             models=models, args=args, task=task, dataset=task.dataset(args.gen_subset)
         )
 
         total_time = 0.0
         for _ in range(args.runs_per_length):
-            scorer, num_sentences, gen_timer, _ = pytorch_translate_generate._generate_score(
+            scorer, num_sentences, gen_timer, _ = pytorch_translate_generate.generate_score(
                 models=models,
                 args=args,
                 task=task,
