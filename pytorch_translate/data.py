@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import os
+import tempfile
 from typing import NamedTuple, Optional
 
 import numpy as np
@@ -11,6 +13,9 @@ from pytorch_translate import dictionary as pytorch_translate_dictionary
 # The n-th source|target language is represented with the token
 # n+MULTILING_DIALECT_ID_OFFSET in the source|target token sequence.
 MULTILING_DIALECT_ID_OFFSET = 10
+
+# Read bigger arrays from disc instead of memory
+ARRAY_SIZE_LIMIT_FOR_MEMORY = 10 ** 10  # 10GB
 
 
 class CorpusConfig(NamedTuple):
@@ -50,7 +55,8 @@ class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
         return self.offsets.size - 1
 
     def __del__(self):
-        pass
+        if isinstance(self.buffer, np.memmap):
+            os.remove(self.buffer.filename)
 
     def save(self, path):
         assert self.buffer is not None
@@ -59,7 +65,20 @@ class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
 
     def load(self, path):
         npz = np.load(path)
-        self.buffer = npz["buffer"]
+
+        # For big input data, we don't want the cpu to OOM.
+        # Therefore, we are loading the huge buffer array into disc
+        # and reading it from disc instead of memory.
+        if npz["buffer"].nbytes > ARRAY_SIZE_LIMIT_FOR_MEMORY:
+            self.buffer = np.memmap(
+                tempfile.NamedTemporaryFile().name,
+                dtype="float32",
+                mode="w+",
+                shape=npz["buffer"].shape,
+            )
+            self.buffer[:] = npz["buffer"][:]
+        else:
+            self.buffer = npz["buffer"]
         self.offsets = npz["offsets"]
         self.sizes = self.offsets[1:] - self.offsets[:-1]
 
