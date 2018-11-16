@@ -330,19 +330,23 @@ def load_embedding(embedding, dictionary, pretrained_embed):
     to the pretrained_embed argument, or a path to an embedding file.
 
     Arguments:
-        embedding (nn.Embedding): Embedding layer whose weights are to be set.
+        embedding (pytorch_translate.common_layers.Embedding):
+            Embedding layer whose weights are to be set.
         dictionary (fairseq.data.dictionary.Dictionary): dictionary with the
             same vocabulary size as the embedding argument.
         pretrained_embed (Union(string, nn.Embedding)): source of the
             weights to be loaded.
     """
     if pretrained_embed is None:
-        pass
-    elif isinstance(pretrained_embed, torch.nn.Embedding):
+        return
+
+    if isinstance(pretrained_embed, torch.nn.Embedding):
         embedding.weight = pretrained_embed.weight
     else:
         embed_dict = utils.parse_embedding(pretrained_embed)
         utils.load_embedding(embed_dict, dictionary, embedding)
+
+    embedding.init_normalization_if_needed()
 
 
 def torch_find(index, query, vocab_size):

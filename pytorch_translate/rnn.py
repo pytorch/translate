@@ -107,6 +107,15 @@ class RNNModel(FairseqModel):
             ),
         )
         parser.add_argument(
+            "--encoder-normalize-embed",
+            default=False,
+            action="store_true",
+            help=(
+                "whether to normalize the encoder embeddings to have zero mean "
+                "and unit variance (weighted by token frequency)"
+            ),
+        )
+        parser.add_argument(
             "--encoder-hidden-dim", type=int, metavar="N", help="encoder cell num units"
         )
         parser.add_argument(
@@ -431,6 +440,7 @@ class RNNModel(FairseqModel):
             src_dict,
             embed_dim=args.encoder_embed_dim,
             freeze_embed=args.encoder_freeze_embed,
+            normalize_embed=args.encoder_normalize_embed,
             cell_type=args.cell_type,
             num_layers=args.encoder_layers,
             hidden_dim=args.encoder_hidden_dim,
@@ -657,6 +667,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
         dictionary,
         embed_dim=512,
         freeze_embed=False,
+        normalize_embed=False,
         cell_type="lstm",
         hidden_dim=512,
         num_layers=1,
@@ -689,6 +700,7 @@ class LSTMSequenceEncoder(FairseqEncoder):
             embedding_dim=embed_dim,
             padding_idx=self.padding_idx,
             freeze_embed=freeze_embed,
+            normalize_embed=normalize_embed,
         )
         pytorch_translate_utils.load_embedding(
             embedding=self.embed_tokens,
@@ -880,6 +892,7 @@ class RNNEncoder(FairseqEncoder):
         word_dropout_params=None,
         embed_dim=512,
         freeze_embed=False,
+        normalize_embed=False,
         hidden_dim=512,
         num_layers=1,
         cell_type="lstm",
@@ -910,6 +923,7 @@ class RNNEncoder(FairseqEncoder):
             embedding_dim=embed_dim,
             padding_idx=self.padding_idx,
             freeze_embed=freeze_embed,
+            normalize_embed=normalize_embed,
         )
         pytorch_translate_utils.load_embedding(
             embedding=self.embed_tokens,
@@ -1360,6 +1374,7 @@ def base_architecture(args):
     args.decoder_dropout_out = getattr(args, "decoder_dropout_out", args.dropout)
     args.averaging_encoder = getattr(args, "averaging_encoder", False)
     args.encoder_freeze_embed = getattr(args, "encoder_freeze_embed", False)
+    args.encoder_normalize_embed = getattr(args, "encoder_normalize_embed", False)
     args.decoder_freeze_embed = getattr(args, "decoder_freeze_embed", False)
     args.ngram_decoder = getattr(args, "ngram_decoder", None)
     args.multi_encoder = getattr(args, "multi_encoder", None)

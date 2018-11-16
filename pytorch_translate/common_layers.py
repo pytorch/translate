@@ -165,18 +165,77 @@ class RNNLayer(nn.Module):
         return next_hidden, output
 
 
-def Embedding(num_embeddings, embedding_dim, padding_idx, freeze_embed):
+class Embedding(nn.Embedding):
     """
-    A wrapper around the embedding layer, which can be randomly
-    initialized or loaded from a .npy file.
+    A wrapper around the embedding layer, which can be randomly initialized or
+    loaded from a .npy file. Also supports normalization of embeddings to have
+    zero mean and unit variance (weighted by token frequency) - this is useful
+    for example when creating adversarial perturbations of the embeddings that
+    should have norms relative to the embeddings' norms.
     """
 
-    m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
-    nn.init.uniform_(m.weight, -0.1, 0.1)
-    nn.init.constant_(m.weight[padding_idx], 0.0)
-    if freeze_embed:
-        m.weight.requires_grad = False
-    return m
+    def __init__(
+        self,
+        num_embeddings,
+        embedding_dim,
+        padding_idx,
+        freeze_embed,
+        normalize_embed=False,
+        normalize_decay_rate=0.99,
+    ):
+        super().__init__(num_embeddings, embedding_dim, padding_idx=padding_idx)
+        nn.init.uniform_(self.weight, -0.1, 0.1)
+        nn.init.constant_(self.weight[padding_idx], 0.0)
+        if freeze_embed:
+            self.weight.requires_grad = False
+
+        assert 0.0 < normalize_decay_rate < 1.0
+        self.normalize = normalize_embed
+        self.normalize_decay_rate = normalize_decay_rate
+        self.mean = None
+        self.var = None
+        self.init_normalization_if_needed()
+
+    def forward(self, x):
+        x = super().forward(x)
+
+        if self.normalize:
+            if self.training:
+                self._update_normalize_params(x)
+            x = (x - self.mean) / torch.sqrt(self.var + 1e-6)
+
+        return x
+
+    def init_normalization_if_needed(self):
+        if not self.normalize:
+            return
+
+        self.mean = nn.Parameter(self.weight.mean(dim=0), requires_grad=False)
+        self.var = nn.Parameter(self.weight.var(dim=0), requires_grad=False)
+
+    def _update_normalize_params(self, x):
+        """
+        Updates the observed mean and variance of the token embeddings. Note
+        that these will be weighted by the empirical frequency of each token
+        (i.e. common tokens will be more heavily weighted in the params).
+        """
+        # Flatten x to be a tensor of embeddings.
+        assert x.size()[-1:] == self.mean.size()
+        x_flattened = x.view(-1, x.size(-1))
+
+        # Update mean.
+        x_mean = x_flattened.mean(dim=0)
+        self.mean.data = (
+            self.normalize_decay_rate * self.mean.data
+            + (1.0 - self.normalize_decay_rate) * x_mean
+        )
+
+        # Update variance.
+        x_var = ((x_flattened - self.mean) ** 2).mean(dim=0)
+        self.var.data = (
+            self.normalize_decay_rate * self.var.data
+            + (1.0 - self.normalize_decay_rate) * x_var
+        )
 
 
 def Linear(in_features, out_features, bias=True):
