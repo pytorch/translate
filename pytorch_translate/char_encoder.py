@@ -5,8 +5,95 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from pytorch_translate import common_layers  # noqa
-from pytorch_translate import rnn
+from pytorch_translate import rnn, utils
 from pytorch_translate.dictionary import TAGS
+from torch.nn.utils.rnn import pack_padded_sequence
+
+
+def add_args(parser):
+    parser.add_argument(
+        "--char-embed-dim",
+        type=int,
+        default=128,
+        metavar="N",
+        help=("Character embedding dimension."),
+    )
+    parser.add_argument(
+        "--char-rnn-units",
+        type=int,
+        default=256,
+        metavar="N",
+        help=("Number of units for Character LSTM."),
+    )
+    parser.add_argument(
+        "--char-rnn-layers",
+        type=int,
+        default=1,
+        metavar="N",
+        help=("Number of Character LSTM layers."),
+    )
+    parser.add_argument(
+        "--char-cnn-params",
+        type=str,
+        metavar="EXPR",
+        help=("String experission, [(dim, kernel_size), ...]."),
+    )
+    parser.add_argument(
+        "--char-cnn-nonlinear-fn",
+        type=str,
+        default="tanh",
+        metavar="EXPR",
+        help=("Nonlinearity applied to char conv outputs. Values: relu, tanh."),
+    )
+    parser.add_argument(
+        "--char-cnn-pool-type",
+        type=str,
+        default="max",
+        metavar="EXPR",
+        help=(
+            "Pooling function of input sequence outputs. "
+            "Values: logsumexp, max, mean, meanmax."
+        ),
+    )
+    parser.add_argument(
+        "--char-cnn-num-highway-layers",
+        type=int,
+        default=0,
+        metavar="N",
+        help=("Char cnn encoder highway layers."),
+    )
+    parser.add_argument(
+        "--char-cnn-output-dim",
+        type=int,
+        default=-1,
+        metavar="N",
+        help="Output dim of the CNN layer. If set to -1, this is computed "
+        "from char-cnn-params.",
+    )
+    parser.add_argument(
+        "--use-pretrained-weights",
+        type=utils.bool_flag,
+        nargs="?",
+        const=True,
+        default=False,
+        help="Use pretrained weights for the character model including "
+        "the char embeddings, CNN filters, highway networks",
+    )
+    parser.add_argument(
+        "--finetune-pretrained-weights",
+        type=utils.bool_flag,
+        nargs="?",
+        const=True,
+        default=False,
+        help="Boolean flag to specify whether or not to update the "
+        "pretrained weights as part of training",
+    )
+    parser.add_argument(
+        "--pretrained-weights-file",
+        type=str,
+        default="",
+        help=("Weights file for loading pretrained weights"),
+    )
 
 
 class HighwayLayer(nn.Module):
@@ -307,3 +394,94 @@ class CharCNNModel(nn.Module):
 
         else:
             raise Exception("Invalid pool type: {}".format(self.pool_type))
+
+
+class CharRNNModel(nn.Module):
+    """Bi-LSTM over characters to produce a word embedding from characters"""
+
+    def __init__(
+        self, dictionary, num_chars, char_embed_dim, char_rnn_units, char_rnn_layers
+    ):
+        super().__init__()
+        self.num_chars = num_chars
+        self.padding_idx = dictionary.pad()
+        self.embed_chars = rnn.Embedding(
+            num_embeddings=num_chars,
+            embedding_dim=char_embed_dim,
+            padding_idx=self.padding_idx,
+            freeze_embed=False,
+        )
+
+        assert (
+            char_rnn_units % 2 == 0
+        ), "char_rnn_units must be even (to be divided evenly between directions)"
+        self.char_lstm_encoder = rnn.LSTMSequenceEncoder.LSTM(
+            char_embed_dim,
+            char_rnn_units // 2,
+            num_layers=char_rnn_layers,
+            bidirectional=True,
+        )
+
+        self.onnx_export_model = False
+
+    def forward(self, src_tokens, src_lengths, char_inds, word_lengths):
+        # char_inds has shape (batch_size, max_words_per_sent, max_word_len)
+        bsz, seqlen, maxchars = char_inds.size()
+
+        if self.onnx_export_model:
+            assert bsz == 1
+            maxchars_tensor = torch.onnx.operators.shape_as_tensor(char_inds)[2]
+            char_inds_flat_shape = torch.cat(
+                (torch.LongTensor([-1]), maxchars_tensor.view(1))
+            )
+            char_inds_flat = torch.onnx.operators.reshape_from_tensor_shape(
+                char_inds, char_inds_flat_shape
+            ).t()
+            char_rnn_input = self.embed_chars(char_inds_flat)
+            packed_char_input = pack_padded_sequence(
+                char_rnn_input, word_lengths.view(-1)
+            )
+        else:
+            # shape (batch_size, max_words_per_sent)
+            nonzero_word_locations = word_lengths > 0
+
+            # (total_words,)
+            word_lengths_flat = word_lengths[nonzero_word_locations]
+
+            # (max_word_length, total_words)
+            char_inds_flat = char_inds[nonzero_word_locations].t()
+
+            # inputs to RNN must be in descending order of length
+            sorted_word_lengths, word_length_order = torch.sort(
+                word_lengths_flat, descending=True
+            )
+
+            char_rnn_input = self.embed_chars(char_inds_flat[:, word_length_order])
+
+            packed_char_input = pack_padded_sequence(
+                char_rnn_input, sorted_word_lengths
+            )
+
+        # h_last shape: (num_layers * num_directions, batch_size, hidden_dim)
+        _, (h_last, _) = self.char_lstm_encoder(packed_char_input)
+
+        # take last-layer output only (shape: (total_words, hidden_dim))
+        # concatenating forward and backward outputs at end/beginning of words
+        char_rnn_output = torch.cat((h_last[-2, :, :], h_last[-1, :, :]), dim=1)
+
+        if self.onnx_export_model:
+            # (seqlen, bsz==1, char_rnn_units)
+            x = char_rnn_output.unsqueeze(1)
+        else:
+            # "unsort" (total_words, char_rnn_units)
+            _, inverted_word_length_order = torch.sort(word_length_order)
+            unsorted_rnn_output = char_rnn_output[inverted_word_length_order, :]
+
+            x = char_rnn_output.new(bsz, seqlen, unsorted_rnn_output.shape[1])
+            x[nonzero_word_locations] = unsorted_rnn_output
+            x = x.transpose(0, 1)  # (seqlen, bsz, char_rnn_units)
+
+        return x
+
+    def prepare_for_onnx_export_(self, **kwargs):
+        self.onnx_export_model = True
