@@ -624,12 +624,6 @@ def train(
         f"| Best BLEU score of {extra_state['tune_bleu']['best']} was from "
         f"epoch {extra_state['tune_bleu']['best_epoch']}"
     )
-    # Put None in the queue to indicate to the consumer that training has
-    # finished. We have all processes do this instead of just the master since
-    # with multi-node training, nodes without the master on it still need to be
-    # able to indicate to its local consumer that it has finished training.
-    if output_queue is not None:
-        output_queue.put_nowait(None)
 
 
 def is_training_over_time_limit(start_time: float, stop_time: float):
@@ -1085,36 +1079,31 @@ def single_process_main(args, trainer_class=Trainer, **train_step_kwargs):
 
 
 def multi_process_train(
+    device_id: int,
     args,
-    error_queue: mp_queues.SimpleQueue,
     output_queue: Optional[mp_queues.Queue],
+    start_rank: int = 0,
     init_fn: Optional[Callable[[], None]] = None,
     trainer_class=None,
     train_step_kwargs=None,
 ):
-    try:
-        if init_fn:
-            init_fn()
-        torch.cuda.set_device(args.device_id)
-        if args.distributed_world_size > 1:
-            args.distributed_rank = distributed_utils.distributed_init(args)
-        extra_state, trainer, task, epoch_itr = setup_training(args, trainer_class)
-        train(
-            args=args,
-            extra_state=extra_state,
-            trainer=trainer,
-            task=task,
-            epoch_itr=epoch_itr,
-            output_queue=output_queue,
-            **train_step_kwargs,
-        )
-    except KeyboardInterrupt:
-        pass  # killed by parent, do nothing
-    except Exception:
-        # propagate exception to parent process, keeping original traceback
-        import traceback
-
-        error_queue.put((args.distributed_rank, traceback.format_exc()))
+    if init_fn:
+        init_fn()
+    args.device_id = device_id
+    args.distributed_rank = start_rank + device_id
+    torch.cuda.set_device(args.device_id)
+    if args.distributed_world_size > 1:
+        args.distributed_rank = distributed_utils.distributed_init(args)
+    extra_state, trainer, task, epoch_itr = setup_training(args, trainer_class)
+    train(
+        args=args,
+        extra_state=extra_state,
+        trainer=trainer,
+        task=task,
+        epoch_itr=epoch_itr,
+        output_queue=output_queue,
+        **train_step_kwargs,
+    )
 
 
 def multi_process_main(
@@ -1126,39 +1115,26 @@ def multi_process_main(
     **train_step_kwargs,
 ):
     pytorch_translate_options.print_args(args)
-    torch_mp = torch.multiprocessing.get_context("spawn")
-
-    # Create a thread to listen for errors in the child processes.
-    error_queue = torch_mp.SimpleQueue()
-    error_handler = pytorch_translate_utils.ErrorHandler(error_queue)
-    # SimpleQueue doesn't seem to work for output_queue since it seems to block
-    # on put() if the parent process doesn't get() the results?
-    output_queue = torch_mp.Queue() if use_output_queue else None
-
+    output_queue = (
+        torch.multiprocessing.get_context("spawn").Queue() if use_output_queue else None
+    )
     # Train with multiprocessing.
-    processes = []
-    num_processes = args.local_num_gpus
-    for i in range(num_processes):
-        args.distributed_rank = start_rank + i
-        args.device_id = i
-        processes.append(
-            torch_mp.Process(
-                target=multi_process_train,
-                args=(
-                    args,
-                    error_queue,
-                    output_queue,
-                    init_fn,
-                    trainer_class,
-                    train_step_kwargs,
-                ),
-                daemon=True,
-            )
-        )
-        processes[i].start()
-        error_handler.add_child(processes[i].pid)
-
-    return (processes, error_handler, output_queue)
+    spawn_context = torch.multiprocessing.spawn(
+        fn=multi_process_train,
+        args=(
+            args,
+            output_queue,
+            start_rank,
+            init_fn,
+            trainer_class,
+            train_step_kwargs,
+        ),
+        nprocs=args.local_num_gpus,
+        # We don't block here to allow caller to process output_queue in
+        # parallel with training.
+        join=False,
+    )
+    return (spawn_context, output_queue)
 
 
 def main(args, trainer_class=Trainer, **train_step_kwargs):
@@ -1170,11 +1146,11 @@ def main(args, trainer_class=Trainer, **train_step_kwargs):
     if args.distributed_world_size == 1:
         single_process_main(args, trainer_class, **train_step_kwargs)
     else:
-        processes, error_handler, _ = multi_process_main(
+        spawn_context, _ = multi_process_main(
             args=args, use_output_queue=False, start_rank=0
         )
-        for p in processes:
-            p.join()
+        while not spawn_context.join():
+            pass
 
 
 if __name__ == "__main__":
