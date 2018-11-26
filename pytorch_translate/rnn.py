@@ -677,7 +677,6 @@ class LSTMSequenceEncoder(FairseqEncoder):
         bidirectional=False,
         pretrained_embed=None,
         word_dropout_params=None,
-        padding_value=0,
         left_pad=True,
         encoder_context_embed=False,
     ):
@@ -692,7 +691,6 @@ class LSTMSequenceEncoder(FairseqEncoder):
         self.bidirectional = bidirectional
         num_embeddings = len(dictionary)
         self.padding_idx = dictionary.pad()
-        self.padding_value = padding_value
         self.left_pad = left_pad
 
         self.embed_tokens = Embedding(
@@ -713,20 +711,15 @@ class LSTMSequenceEncoder(FairseqEncoder):
 
         self.word_dim = embed_dim
 
-        self.layers = nn.ModuleList([])
-        for layer in range(num_layers):
-            is_layer_bidirectional = self.bidirectional and layer == 0
-            self.layers.append(
-                LSTMSequenceEncoder.LSTM(
-                    self.word_dim if layer == 0 else hidden_dim,
-                    hidden_dim // 2 if is_layer_bidirectional else hidden_dim,
-                    num_layers=1,
-                    dropout=self.dropout_out,
-                    bidirectional=is_layer_bidirectional,
-                )
-            )
+        self.bilstm = BiLSTM(
+            num_layers=num_layers,
+            bidirectional=bidirectional,
+            embed_dim=embed_dim,
+            hidden_dim=hidden_dim,
+            dropout=dropout_out,
+            residual_level=residual_level,
+        )
 
-        self.num_layers = len(self.layers)
         self.word_dropout_module = None
         if (
             word_dropout_params
@@ -782,52 +775,8 @@ class LSTMSequenceEncoder(FairseqEncoder):
         if src_lengths.dtype is torch.int64:
             src_lengths = src_lengths.int()
 
-        # Generate packed seq to deal with varying source seq length
-        # packed_input is of type PackedSequence, which consists of:
-        # element [0]: a tensor, the packed data, and
-        # element [1]: a list of integers, the batch size for each step
-        packed_input = pack_padded_sequence(x, src_lengths)
-
-        final_hiddens, final_cells = [], []
-        for i, rnn_layer in enumerate(self.layers):
-            if self.bidirectional and i == 0:
-                h0 = x.new(2, bsz, self.hidden_dim // 2).zero_()
-                c0 = x.new(2, bsz, self.hidden_dim // 2).zero_()
-            else:
-                h0 = x.new(1, bsz, self.hidden_dim).zero_()
-                c0 = x.new(1, bsz, self.hidden_dim).zero_()
-
-            # apply LSTM along entire sequence
-            current_output, (h_last, c_last) = rnn_layer(packed_input, (h0, c0))
-
-            # final state shapes: (bsz, hidden_dim)
-            if self.bidirectional and i == 0:
-                # concatenate last states for forward and backward LSTM
-                h_last = torch.cat((h_last[0, :, :], h_last[1, :, :]), dim=1)
-                c_last = torch.cat((c_last[0, :, :], c_last[1, :, :]), dim=1)
-            else:
-                h_last = h_last.squeeze(dim=0)
-                c_last = c_last.squeeze(dim=0)
-
-            final_hiddens.append(h_last)
-            final_cells.append(c_last)
-
-            if self.residual_level is not None and i >= self.residual_level:
-                packed_input[0] = packed_input.clone()[0] + current_output[0]
-            else:
-                packed_input = current_output
-
-        # Reshape to [num_layer, batch_size, hidden_dim]
-        final_hiddens = torch.cat(final_hiddens, dim=0).view(
-            self.num_layers, *final_hiddens[0].size()
-        )
-        final_cells = torch.cat(final_cells, dim=0).view(
-            self.num_layers, *final_cells[0].size()
-        )
-
-        #  [max_seqlen, batch_size, hidden_dim]
-        unpacked_output, _ = pad_packed_sequence(
-            packed_input, padding_value=self.padding_value
+        unpacked_output, final_hiddens, final_cells = self.bilstm(
+            embeddings=x, lengths=src_lengths
         )
 
         return (
@@ -901,7 +850,6 @@ class RNNEncoder(FairseqEncoder):
         residual_level=None,
         bidirectional=False,
         pretrained_embed=None,
-        padding_value=0,
         left_pad=True,
         encoder_context_embed=False,
     ):
@@ -915,7 +863,6 @@ class RNNEncoder(FairseqEncoder):
         self.bidirectional = bidirectional
         num_embeddings = len(dictionary)
         self.padding_idx = dictionary.pad()
-        self.padding_value = padding_value
         self.left_pad = left_pad
 
         self.embed_tokens = Embedding(
@@ -1024,7 +971,7 @@ class RNNEncoder(FairseqEncoder):
 
         #  [max_seqlen, batch_size, hidden_dim]
         unpacked_output, _ = pad_packed_sequence(
-            PackedSequence(packed_input, batch_sizes), padding_value=self.padding_value
+            PackedSequence(packed_input, batch_sizes)
         )
 
         return (
@@ -1347,6 +1294,103 @@ class RNNDecoder(DecoderWithOutputProjection):
             prev_states.append(self.initial_attn_context)
 
         return prev_states
+
+
+class BiLSTM(nn.Module):
+    """Wrapper for nn.LSTM
+
+    Differences include:
+    * weight initialization
+    * the bidirectional option makes the first layer bidirectional only
+    (and in that case the hidden dim is divided by 2)
+    """
+
+    @staticmethod
+    def LSTM(input_size, hidden_size, **kwargs):
+        m = nn.LSTM(input_size, hidden_size, **kwargs)
+        for name, param in m.named_parameters():
+            if "weight" in name or "bias" in name:
+                param.data.uniform_(-0.1, 0.1)
+        return m
+
+    def __init__(
+        self, num_layers, bidirectional, embed_dim, hidden_dim, dropout, residual_level
+    ):
+        super().__init__()
+        self.num_layers = num_layers
+        self.bidirectional = bidirectional
+        if bidirectional:
+            assert hidden_dim % 2 == 0, "hidden_dim should be even if bidirectional"
+        self.hidden_dim = hidden_dim
+        self.residual_level = residual_level
+        self.layers = nn.ModuleList([])
+        for layer in range(num_layers):
+            is_layer_bidirectional = bidirectional and layer == 0
+            if is_layer_bidirectional:
+                assert hidden_dim % 2 == 0, (
+                    "hidden_dim must be even if bidirectional "
+                    "(to be divided evenly between directions)"
+                )
+            self.layers.append(
+                BiLSTM.LSTM(
+                    embed_dim if layer == 0 else hidden_dim,
+                    hidden_dim // 2 if is_layer_bidirectional else hidden_dim,
+                    num_layers=1,
+                    dropout=dropout,
+                    bidirectional=is_layer_bidirectional,
+                )
+            )
+
+    def forward(self, embeddings, lengths):
+        bsz = embeddings.size()[1]
+
+        # Generate packed seq to deal with varying source seq length
+        # packed_input is of type PackedSequence, which consists of:
+        # element [0]: a tensor, the packed data, and
+        # element [1]: a list of integers, the batch size for each step
+        packed_input = pack_padded_sequence(embeddings, lengths)
+
+        final_hiddens, final_cells = [], []
+        for i, rnn_layer in enumerate(self.layers):
+            if self.bidirectional and i == 0:
+                h0 = embeddings.new(2, bsz, self.hidden_dim // 2).zero_()
+                c0 = embeddings.new(2, bsz, self.hidden_dim // 2).zero_()
+            else:
+                h0 = embeddings.new(1, bsz, self.hidden_dim).zero_()
+                c0 = embeddings.new(1, bsz, self.hidden_dim).zero_()
+
+            # apply LSTM along entire sequence
+            current_output, (h_last, c_last) = rnn_layer(packed_input, (h0, c0))
+
+            # final state shapes: (bsz, hidden_dim)
+            if self.bidirectional and i == 0:
+                # concatenate last states for forward and backward LSTM
+                h_last = torch.cat((h_last[0, :, :], h_last[1, :, :]), dim=1)
+                c_last = torch.cat((c_last[0, :, :], c_last[1, :, :]), dim=1)
+            else:
+                h_last = h_last.squeeze(dim=0)
+                c_last = c_last.squeeze(dim=0)
+
+            final_hiddens.append(h_last)
+            final_cells.append(c_last)
+
+            if self.residual_level is not None and i >= self.residual_level:
+                packed_input[0] = packed_input.clone()[0] + current_output[0]
+            else:
+                packed_input = current_output
+
+        # Reshape to [num_layer, batch_size, hidden_dim]
+        final_hiddens = torch.cat(final_hiddens, dim=0).view(
+            self.num_layers, *final_hiddens[0].size()
+        )
+        final_cells = torch.cat(final_cells, dim=0).view(
+            self.num_layers, *final_cells[0].size()
+        )
+
+        #  [max_seqlen, batch_size, hidden_dim]
+        unpacked_output, _ = pad_packed_sequence(packed_input)
+
+        return (unpacked_output, final_hiddens, final_cells)
 
 
 @register_model_architecture("rnn", "rnn")

@@ -90,7 +90,6 @@ class CharSourceModel(rnn.RNNModel):
                 num_chars=args.char_source_dict_size,
                 char_embed_dim=args.char_embed_dim,
                 token_embed_dim=args.encoder_embed_dim,
-                freeze_embed=args.encoder_freeze_embed,
                 char_rnn_units=args.char_rnn_units,
                 char_rnn_layers=args.char_rnn_layers,
                 num_layers=args.encoder_layers,
@@ -99,7 +98,6 @@ class CharSourceModel(rnn.RNNModel):
                 dropout_out=args.encoder_dropout_out,
                 residual_level=args.residual_level,
                 bidirectional=bool(args.encoder_bidirectional),
-                word_dropout_params=args.word_dropout_params,
             )
 
         decoder = rnn.RNNDecoder(
@@ -141,42 +139,23 @@ class CharRNNEncoder(FairseqEncoder):
     Uses nn.LSTM for cuDNN support / ONNX exportability.
     """
 
-    @staticmethod
-    def LSTM(input_size, hidden_size, **kwargs):
-        m = nn.LSTM(input_size, hidden_size, **kwargs)
-        for name, param in m.named_parameters():
-            if "weight" in name or "bias" in name:
-                param.data.uniform_(-0.1, 0.1)
-        return m
-
     def __init__(
         self,
         dictionary,
         num_chars,
         char_embed_dim,
         token_embed_dim,
-        freeze_embed=False,
-        char_rnn_units=256,
-        char_rnn_layers=1,
-        hidden_dim=512,
-        num_layers=1,
-        dropout_in=0.1,
-        dropout_out=0.1,
-        residual_level=None,
-        bidirectional=False,
-        word_dropout_params=None,
+        char_rnn_units,
+        char_rnn_layers,
+        hidden_dim,
+        num_layers,
+        dropout_in,
+        dropout_out,
+        residual_level,
+        bidirectional,
     ):
-
         super().__init__(dictionary)
-        self.dictionary = dictionary
-        self.num_chars = num_chars
         self.dropout_in = dropout_in
-        self.dropout_out = dropout_out
-        self.residual_level = residual_level
-        self.hidden_dim = hidden_dim
-        self.bidirectional = bidirectional
-        num_tokens = len(dictionary)
-        self.padding_idx = dictionary.pad()
 
         self.embed_chars = char_encoder.CharRNNModel(
             dictionary=dictionary,
@@ -189,50 +168,28 @@ class CharRNNEncoder(FairseqEncoder):
         self.embed_tokens = None
         if token_embed_dim > 0:
             self.embed_tokens = rnn.Embedding(
-                num_embeddings=num_tokens,
+                num_embeddings=len(dictionary),
                 embedding_dim=token_embed_dim,
-                padding_idx=self.padding_idx,
-                freeze_embed=freeze_embed,
+                padding_idx=dictionary.pad(),
+                freeze_embed=False,
             )
 
         self.word_dim = char_rnn_units + token_embed_dim
 
-        self.layers = nn.ModuleList([])
-        for layer in range(num_layers):
-            is_layer_bidirectional = self.bidirectional and layer == 0
-            if is_layer_bidirectional:
-                assert hidden_dim % 2 == 0, (
-                    "encoder_hidden_dim must be even if encoder_bidirectional "
-                    "(to be divided evenly between directions)"
-                )
-            self.layers.append(
-                rnn.LSTMSequenceEncoder.LSTM(
-                    self.word_dim if layer == 0 else hidden_dim,
-                    hidden_dim // 2 if is_layer_bidirectional else hidden_dim,
-                    num_layers=1,
-                    dropout=self.dropout_out,
-                    bidirectional=is_layer_bidirectional,
-                )
-            )
-
-        self.num_layers = len(self.layers)
-        self.word_dropout_module = None
-        if (
-            word_dropout_params
-            and word_dropout_params["word_dropout_freq_threshold"] is not None
-            and word_dropout_params["word_dropout_freq_threshold"] > 0
-        ):
-            self.word_dropout_module = word_dropout.WordDropout(
-                dictionary, word_dropout_params
-            )
+        self.bilstm = rnn.BiLSTM(
+            num_layers=num_layers,
+            bidirectional=bidirectional,
+            embed_dim=self.word_dim,
+            hidden_dim=hidden_dim,
+            dropout=dropout_out,
+            residual_level=residual_level,
+        )
 
         # disables sorting and word-length thresholding if True
         # (enables ONNX tracing of length-sorted input with batch_size = 1)
         self.onnx_export_model = False
 
     def forward(self, src_tokens, src_lengths, char_inds, word_lengths):
-        bsz = char_inds.size()[0]
-
         x = self.embed_chars(
             src_tokens=src_tokens,
             src_lengths=src_lengths,
@@ -254,51 +211,9 @@ class CharRNNEncoder(FairseqEncoder):
 
         embedded_words = x
 
-        # Generate packed seq to deal with varying source seq length
-        # packed_input is of type PackedSequence, which consists of:
-        # element [0]: a tensor, the packed data, and
-        # element [1]: a list of integers, the batch size for each step
-        packed_input = pack_padded_sequence(x, src_lengths)
-
-        final_hiddens, final_cells = [], []
-        for i, rnn_layer in enumerate(self.layers):
-            if self.bidirectional and i == 0:
-                h0 = x.new(2, bsz, self.hidden_dim // 2).zero_()
-                c0 = x.new(2, bsz, self.hidden_dim // 2).zero_()
-            else:
-                h0 = x.new(1, bsz, self.hidden_dim).zero_()
-                c0 = x.new(1, bsz, self.hidden_dim).zero_()
-
-            # apply LSTM along entire sequence
-            current_output, (h_last, c_last) = rnn_layer(packed_input, (h0, c0))
-
-            # final state shapes: (bsz, hidden_dim)
-            if self.bidirectional and i == 0:
-                # concatenate last states for forward and backward LSTM
-                h_last = torch.cat((h_last[0, :, :], h_last[1, :, :]), dim=1)
-                c_last = torch.cat((c_last[0, :, :], c_last[1, :, :]), dim=1)
-            else:
-                h_last = h_last.squeeze(dim=0)
-                c_last = c_last.squeeze(dim=0)
-
-            final_hiddens.append(h_last)
-            final_cells.append(c_last)
-
-            if self.residual_level is not None and i >= self.residual_level:
-                packed_input[0] = packed_input.clone()[0] + current_output[0]
-            else:
-                packed_input = current_output
-
-        # Reshape to [num_layer, batch_size, hidden_dim]
-        final_hiddens = torch.cat(final_hiddens, dim=0).view(
-            self.num_layers, *final_hiddens[0].size()
+        unpacked_output, final_hiddens, final_cells = self.bilstm(
+            embeddings=x, lengths=src_lengths
         )
-        final_cells = torch.cat(final_cells, dim=0).view(
-            self.num_layers, *final_cells[0].size()
-        )
-
-        #  [max_seqlen, batch_size, hidden_dim]
-        unpacked_output, _ = pad_packed_sequence(packed_input)
 
         return (
             unpacked_output,
@@ -347,14 +262,8 @@ class CharCNNEncoder(FairseqEncoder):
         finetune_pretrained_weights=False,
         weights_file=None,
     ):
-
         super().__init__(dictionary)
-        self.dictionary = dictionary
         self.dropout_in = dropout_in
-        self.dropout_out = dropout_out
-        self.residual_level = residual_level
-        self.hidden_dim = hidden_dim
-        self.bidirectional = bidirectional
 
         convolutions_params = literal_eval(char_cnn_params)
         self.char_cnn_encoder = char_encoder.CharCNNModel(
@@ -388,34 +297,14 @@ class CharCNNEncoder(FairseqEncoder):
         )
         self.word_dim = self.word_dim + token_embed_dim
 
-        self.layers = nn.ModuleList([])
-        for layer in range(num_layers):
-            is_layer_bidirectional = self.bidirectional and layer == 0
-            if is_layer_bidirectional:
-                assert hidden_dim % 2 == 0, (
-                    "encoder_hidden_dim must be even if encoder_bidirectional "
-                    "(to be divided evenly between directions)"
-                )
-            self.layers.append(
-                rnn.LSTMSequenceEncoder.LSTM(
-                    self.word_dim if layer == 0 else hidden_dim,
-                    hidden_dim // 2 if is_layer_bidirectional else hidden_dim,
-                    num_layers=1,
-                    dropout=self.dropout_out,
-                    bidirectional=is_layer_bidirectional,
-                )
-            )
-
-        self.num_layers = len(self.layers)
-        self.word_dropout_module = None
-        if (
-            word_dropout_params
-            and word_dropout_params["word_dropout_freq_threshold"] is not None
-            and word_dropout_params["word_dropout_freq_threshold"] > 0
-        ):
-            self.word_dropout_module = word_dropout.WordDropout(
-                dictionary, word_dropout_params
-            )
+        self.bilstm = rnn.BiLSTM(
+            num_layers=num_layers,
+            bidirectional=bidirectional,
+            embed_dim=self.word_dim,
+            hidden_dim=hidden_dim,
+            dropout=dropout_out,
+            residual_level=residual_level,
+        )
 
         # Variable tracker
         self.tracker = VariableTracker()
@@ -451,52 +340,9 @@ class CharCNNEncoder(FairseqEncoder):
             x = F.dropout(x, p=self.dropout_in, training=self.training)
         embedded_words = x
 
-        # The rest is the same as CharRNNEncoder, so could be refactored
-        # Generate packed seq to deal with varying source seq length
-        # packed_input is of type PackedSequence, which consists of:
-        # element [0]: a tensor, the packed data, and
-        # element [1]: a list of integers, the batch size for each step
-        packed_input = pack_padded_sequence(x, src_lengths)
-
-        final_hiddens, final_cells = [], []
-        for i, rnn_layer in enumerate(self.layers):
-            if self.bidirectional and i == 0:
-                h0 = x.data.new(2, bsz, self.hidden_dim // 2).zero_()
-                c0 = x.data.new(2, bsz, self.hidden_dim // 2).zero_()
-            else:
-                h0 = x.data.new(1, bsz, self.hidden_dim).zero_()
-                c0 = x.data.new(1, bsz, self.hidden_dim).zero_()
-
-            # apply LSTM along entire sequence
-            current_output, (h_last, c_last) = rnn_layer(packed_input, (h0, c0))
-
-            # final state shapes: (bsz, hidden_dim)
-            if self.bidirectional and i == 0:
-                # concatenate last states for forward and backward LSTM
-                h_last = torch.cat((h_last[0, :, :], h_last[1, :, :]), dim=1)
-                c_last = torch.cat((c_last[0, :, :], c_last[1, :, :]), dim=1)
-            else:
-                h_last = h_last.squeeze(dim=0)
-                c_last = c_last.squeeze(dim=0)
-
-            final_hiddens.append(h_last)
-            final_cells.append(c_last)
-
-            if self.residual_level is not None and i >= self.residual_level:
-                packed_input[0] = packed_input.clone()[0] + current_output[0]
-            else:
-                packed_input = current_output
-
-        # Reshape to [num_layer, batch_size, hidden_dim]
-        final_hiddens = torch.cat(final_hiddens, dim=0).view(
-            self.num_layers, *final_hiddens[0].size()
+        unpacked_output, final_hiddens, final_cells = self.bilstm(
+            embeddings=x, lengths=src_lengths
         )
-        final_cells = torch.cat(final_cells, dim=0).view(
-            self.num_layers, *final_cells[0].size()
-        )
-
-        #  [max_seqlen, batch_size, hidden_dim]
-        unpacked_output, _ = pad_packed_sequence(packed_input)
 
         return (
             unpacked_output,
