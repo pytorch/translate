@@ -5,7 +5,12 @@ from collections import OrderedDict
 
 import torch
 from fairseq import models
-from fairseq.data import BacktranslationDataset, RoundRobinZipDatasets
+from fairseq.data import (
+    BacktranslationDataset,
+    LanguagePairDataset,
+    RoundRobinZipDatasets,
+    TransformEosDataset,
+)
 from fairseq.models import FairseqMultiModel
 from fairseq.tasks import register_task
 from fairseq.tasks.multilingual_translation import MultilingualTranslationTask
@@ -163,33 +168,73 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
             " both have to be non-null or null"
         )
         if forward_model and backward_model:
+            fwd_generator = beam_decode.SequenceGenerator(
+                models=[forward_model], tgt_dict=self.source_dictionary
+            )
+            bwd_generator = beam_decode.SequenceGenerator(
+                models=[backward_model], tgt_dict=self.target_dictionary
+            )
+
+            def monolingual_dataset(path, dictionary):
+                dataset = self.load_monolingual_dataset(path)
+                return LanguagePairDataset(
+                    src=dataset,
+                    src_sizes=dataset.sizes,
+                    src_dict=dictionary,
+                    tgt=None,
+                    tgt_sizes=None,
+                    tgt_dict=None,
+                )
+
+            src_dataset = monolingual_dataset(
+                self.args.train_mono_source_binary_path, self.source_dictionary
+            )
+            tgt_dataset = monolingual_dataset(
+                self.args.train_mono_target_binary_path, self.target_dictionary
+            )
+
             dataset_map[
                 f"{self.source_lang}-"
                 f"{self.target_lang}_{constants.MONOLINGUAL_DATA_IDENTIFIER}"
             ] = BacktranslationDataset(
-                tgt_dataset=self.load_monolingual_dataset(
-                    self.args.train_mono_target_binary_path
+                tgt_dataset=TransformEosDataset(
+                    dataset=tgt_dataset,
+                    eos=self.target_dictionary.eos(),
+                    # Remove EOS from the input before backtranslation.
+                    remove_eos_from_src=True,
                 ),
-                tgt_dict=self.target_dictionary,
-                backtranslation_model=backward_model,
+                backtranslation_fn=bwd_generator.generate,
                 max_len_a=self.args.max_len_a,
                 max_len_b=self.args.max_len_b,
-                remove_eos_at_src=True,
-                generator_class=beam_decode.SequenceGenerator,
+                output_collater=TransformEosDataset(
+                    dataset=tgt_dataset,
+                    eos=self.target_dictionary.eos(),
+                    # The original input (now the target) doesn't have
+                    # an EOS, so we need to add one. The generated
+                    # backtranslation (now the source) will have an EOS,
+                    # so we want to remove it.
+                    append_eos_to_tgt=True,
+                    remove_eos_from_src=True,
+                ).collater,
             )
             dataset_map[
                 f"{self.target_lang}-"
                 f"{self.source_lang}_{constants.MONOLINGUAL_DATA_IDENTIFIER}"
             ] = BacktranslationDataset(
-                tgt_dataset=self.load_monolingual_dataset(
-                    self.args.train_mono_source_binary_path
-                ),
-                tgt_dict=self.source_dictionary,
-                backtranslation_model=forward_model,
+                tgt_dataset=src_dataset,
+                backtranslation_fn=fwd_generator.generate,
                 max_len_a=self.args.max_len_a,
                 max_len_b=self.args.max_len_b,
-                remove_eos_at_src=True,
-                generator_class=beam_decode.SequenceGenerator,
+                output_collater=TransformEosDataset(
+                    dataset=src_dataset,
+                    eos=self.source_dictionary.eos(),
+                    # The original input (now the target) doesn't have
+                    # an EOS, so we need to add one. The generated
+                    # backtranslation (now the source) will have an EOS,
+                    # so we want to remove it.
+                    append_eos_to_tgt=True,
+                    remove_eos_from_src=True,
+                ).collater,
             )
         self.datasets[split] = RoundRobinZipDatasets(dataset_map)
 
