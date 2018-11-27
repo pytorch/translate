@@ -1108,16 +1108,13 @@ def multi_process_train(
 
 def multi_process_main(
     args: Any,
-    use_output_queue: bool,
     start_rank: int = 0,
     init_fn: Optional[Callable[[], None]] = None,
     trainer_class=None,
     **train_step_kwargs,
 ):
     pytorch_translate_options.print_args(args)
-    output_queue = (
-        torch.multiprocessing.get_context("spawn").Queue() if use_output_queue else None
-    )
+    output_queue = torch.multiprocessing.get_context("spawn").Queue()
     # Train with multiprocessing.
     spawn_context = torch.multiprocessing.spawn(
         fn=multi_process_train,
@@ -1146,9 +1143,7 @@ def main(args, trainer_class=Trainer, **train_step_kwargs):
     if args.distributed_world_size == 1:
         single_process_main(args, trainer_class, **train_step_kwargs)
     else:
-        spawn_context, _ = multi_process_main(
-            args=args, use_output_queue=False, start_rank=0
-        )
+        spawn_context, _ = multi_process_main(args=args, start_rank=0)
         while not spawn_context.join():
             pass
 
