@@ -7,9 +7,12 @@ import torch
 from fairseq import models
 from fairseq.data import (
     BacktranslationDataset,
+    FairseqDataset,
     LanguagePairDataset,
     RoundRobinZipDatasets,
     TransformEosDataset,
+    data_utils,
+    iterators,
 )
 from fairseq.models import FairseqMultiModel
 from fairseq.tasks import register_task
@@ -18,12 +21,92 @@ from pytorch_translate import (
     beam_decode,
     constants,
     data as ptt_data,
-    data_utils,
+    data_utils as ptt_data_utils,
     dictionary as pytorch_translate_dictionary,
     rnn,
     weighted_data,
 )
 from pytorch_translate.tasks.pytorch_translate_task import PytorchTranslateTask
+
+
+class WeightedEpochBatchIterator(iterators.EpochBatchIterator):
+    def __init__(
+        self,
+        dataset,
+        collate_fn,
+        batch_sampler,
+        seed=1,
+        num_shards=1,
+        shard_id=0,
+        weights=None,
+    ):
+        """
+        Extension of fairseq.iterators.EpochBatchIterator to use an additional
+        weights structure. This weighs datasets as a function of epoch value.
+
+        Args:
+            dataset (~torch.utils.data.Dataset): dataset from which to load the data
+            collate_fn (callable): merges a list of samples to form a mini-batch
+            batch_sampler (~torch.utils.data.Sampler): an iterator over batches of
+                indices
+            seed (int, optional): seed for random number generator for
+                reproducibility. Default: ``1``
+            num_shards (int, optional): shard the data iterator into N
+                shards. Default: ``1``
+            shard_id (int, optional): which shard of the data iterator to
+                return. Default: ``0``
+            weights: is of the format [(epoch, {dataset: weight})]
+        """
+        super().__init__(dataset, collate_fn, batch_sampler, seed, num_shards, shard_id)
+        self.weights = weights
+
+    def next_epoch_itr(self, shuffle=True, fix_batches_to_gpus=False):
+        """Return a new iterator over the dataset.
+
+        Args:
+            shuffle (bool, optional): shuffle batches before returning the
+                iterator. Default: ``True``
+            fix_batches_to_gpus: ensure that batches are always
+                allocated to the same shards across epochs. Requires
+                that :attr:`dataset` supports prefetching. Default:
+                ``False``
+        """
+        if self.weights:
+            """
+            Set dataset weight based on schedule and current epoch
+            """
+            prev_scheduled_epochs = 0
+            dataset_weights_map = None
+            for schedule in self.weights:
+                # schedule looks like (epoch, {dataset: weight})
+                if self.epoch <= schedule[0] + prev_scheduled_epochs:
+                    dataset_weights_map = schedule[1]
+                    break
+                prev_scheduled_epochs += schedule[0]
+            # Use last weights map if weights map is not specified for the current epoch
+            if dataset_weights_map is None:
+                dataset_weights_map = self.weights[-1][1]
+            for dataset_name in self.dataset.datasets:
+                if dataset_name in dataset_weights_map:
+                    assert isinstance(
+                        self.dataset.datasets[dataset_name],
+                        weighted_data.WeightedLanguagePairDataset,
+                    ) or isinstance(
+                        self.dataset.datasets[dataset_name],
+                        weighted_data.WeightedBacktranslationDataset,
+                    )
+                    self.dataset.datasets[dataset_name].weights = [
+                        dataset_weights_map[dataset_name]
+                    ]
+        if self._next_epoch_itr is not None:
+            self._cur_epoch_itr = self._next_epoch_itr
+            self._next_epoch_itr = None
+        else:
+            self.epoch += 1
+            self._cur_epoch_itr = self._get_iterator_for_epoch(
+                self.epoch, shuffle, fix_batches_to_gpus=fix_batches_to_gpus
+            )
+        return self._cur_epoch_itr
 
 
 @register_task(constants.SEMI_SUPERVISED_TASK)
@@ -57,6 +140,26 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
         # MultilingualTranslationTask
         self.args.lang_pairs = self.lang_pairs
         self.model = None
+        # TODO: Expose this as easy-to-use command line argument
+        """
+        loss_weights refers to weights given to training loss for constituent
+        models for specified number of epochs. If we don't specify a model, they
+        receive a weight of 1
+        The format is [(epochs, {model: weight})]
+
+        Sample input:
+        [(5, {'src-tgt': 1, 'src-tgt_mono': 0}), (10, {'src-tgt': 0.5, 'src-tgt_mono': 0.5})]
+        Here, we give assign weights as follows:
+        For first 5 epochs, 'src-tgt' model gets weight 1, 'src-tgt_mono' gets 0
+        For the next 10 epochs (till the end of training), 'src-tgt' model gets
+            weight 0.5, 'src-tgt_mono' gets 0.5, the rest get 1
+
+        """
+        self.loss_weights = [
+            (5, {"src-tgt": 1, "src-tgt_mono": 0, "tgt-src": 1, "tgt-src_mono": 0}),
+            (5, {"src-tgt": 1, "src-tgt_mono": 0.5, "tgt-src": 1, "tgt-src_mono": 0.5}),
+            (100, {"src-tgt": 1, "src-tgt_mono": 1, "tgt-src": 1, "tgt-src_mono": 1}),
+        ]
 
     @staticmethod
     def add_args(parser):
@@ -77,7 +180,7 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
         )
 
     def load_monolingual_dataset(self, bin_path, is_source=False):
-        return data_utils.load_monolingual_dataset(
+        return ptt_data_utils.load_monolingual_dataset(
             bin_path=bin_path,
             is_source=is_source,
             char_source_dict=self.char_source_dict,
@@ -119,7 +222,7 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
 
         if self.args.log_verbose:
             print("Starting to load binarized data files.", flush=True)
-        data_utils.validate_corpus_exists(corpus=corpus, split=split)
+        ptt_data_utils.validate_corpus_exists(corpus=corpus, split=split)
 
         forward_tgt_dataset = ptt_data.InMemoryNumpyDataset.create_from_file(
             corpus.target.data_file
@@ -196,45 +299,49 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
             dataset_map[
                 f"{self.source_lang}-"
                 f"{self.target_lang}_{constants.MONOLINGUAL_DATA_IDENTIFIER}"
-            ] = BacktranslationDataset(
-                tgt_dataset=TransformEosDataset(
-                    dataset=tgt_dataset,
-                    eos=self.target_dictionary.eos(),
-                    # Remove EOS from the input before backtranslation.
-                    remove_eos_from_src=True,
-                ),
-                backtranslation_fn=bwd_generator.generate,
-                max_len_a=self.args.max_len_a,
-                max_len_b=self.args.max_len_b,
-                output_collater=TransformEosDataset(
-                    dataset=tgt_dataset,
-                    eos=self.target_dictionary.eos(),
-                    # The original input (now the target) doesn't have
-                    # an EOS, so we need to add one. The generated
-                    # backtranslation (now the source) will have an EOS,
-                    # so we want to remove it.
-                    append_eos_to_tgt=True,
-                    remove_eos_from_src=True,
-                ).collater,
+            ] = weighted_data.WeightedBacktranslationDataset(
+                dataset=BacktranslationDataset(
+                    tgt_dataset=TransformEosDataset(
+                        dataset=tgt_dataset,
+                        eos=self.target_dictionary.eos(),
+                        # Remove EOS from the input before backtranslation.
+                        remove_eos_from_src=True,
+                    ),
+                    backtranslation_fn=bwd_generator.generate,
+                    max_len_a=self.args.max_len_a,
+                    max_len_b=self.args.max_len_b,
+                    output_collater=TransformEosDataset(
+                        dataset=tgt_dataset,
+                        eos=self.target_dictionary.eos(),
+                        # The original input (now the target) doesn't have
+                        # an EOS, so we need to add one. The generated
+                        # backtranslation (now the source) will have an EOS,
+                        # so we want to remove it.
+                        append_eos_to_tgt=True,
+                        remove_eos_from_src=True,
+                    ).collater,
+                )
             )
             dataset_map[
                 f"{self.target_lang}-"
                 f"{self.source_lang}_{constants.MONOLINGUAL_DATA_IDENTIFIER}"
-            ] = BacktranslationDataset(
-                tgt_dataset=src_dataset,
-                backtranslation_fn=fwd_generator.generate,
-                max_len_a=self.args.max_len_a,
-                max_len_b=self.args.max_len_b,
-                output_collater=TransformEosDataset(
-                    dataset=src_dataset,
-                    eos=self.source_dictionary.eos(),
-                    # The original input (now the target) doesn't have
-                    # an EOS, so we need to add one. The generated
-                    # backtranslation (now the source) will have an EOS,
-                    # so we want to remove it.
-                    append_eos_to_tgt=True,
-                    remove_eos_from_src=True,
-                ).collater,
+            ] = weighted_data.WeightedBacktranslationDataset(
+                dataset=BacktranslationDataset(
+                    tgt_dataset=src_dataset,
+                    backtranslation_fn=fwd_generator.generate,
+                    max_len_a=self.args.max_len_a,
+                    max_len_b=self.args.max_len_b,
+                    output_collater=TransformEosDataset(
+                        dataset=src_dataset,
+                        eos=self.source_dictionary.eos(),
+                        # The original input (now the target) doesn't have
+                        # an EOS, so we need to add one. The generated
+                        # backtranslation (now the source) will have an EOS,
+                        # so we want to remove it.
+                        append_eos_to_tgt=True,
+                        remove_eos_from_src=True,
+                    ).collater,
+                )
             )
         self.datasets[split] = RoundRobinZipDatasets(dataset_map)
 
@@ -328,6 +435,52 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
         flat_logging_output["nsentences"] = sum_over_languages("nsentences")
         flat_logging_output["ntokens"] = sum_over_languages("ntokens")
         return flat_logging_output
+
+    def get_batch_iterator(
+        self,
+        dataset,
+        max_tokens=None,
+        max_sentences=None,
+        max_positions=None,
+        ignore_invalid_inputs=False,
+        required_batch_size_multiple=1,
+        seed=1,
+        num_shards=1,
+        shard_id=0,
+    ):
+        assert isinstance(dataset, FairseqDataset)
+
+        # get indices ordered by example size
+        with data_utils.numpy_seed(seed):
+            indices = dataset.ordered_indices()
+
+        # filter examples that are too large
+        indices = data_utils.filter_by_size(
+            indices,
+            dataset.size,
+            max_positions,
+            raise_exception=(not ignore_invalid_inputs),
+        )
+
+        # create mini-batches with given size constraints
+        batch_sampler = data_utils.batch_by_size(
+            indices,
+            dataset.num_tokens,
+            max_tokens=max_tokens,
+            max_sentences=max_sentences,
+            required_batch_size_multiple=required_batch_size_multiple,
+        )
+
+        # return a reusable, sharded iterator
+        return WeightedEpochBatchIterator(
+            dataset=dataset,
+            collate_fn=dataset.collater,
+            batch_sampler=batch_sampler,
+            seed=seed,
+            num_shards=num_shards,
+            shard_id=shard_id,
+            weights=self.loss_weights,
+        )
 
     @property
     def source_dictionary(self):
