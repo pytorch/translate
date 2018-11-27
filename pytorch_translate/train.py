@@ -333,7 +333,7 @@ def setup_training_state(args, trainer, task):
         )
         if loaded_extra_state:
             extra_state.update(loaded_extra_state)
-        if loaded:
+        if loaded and distributed_utils.is_master(args):
             args.path = checkpoint_path
             calculate_bleu_on_subset(
                 args=args,
