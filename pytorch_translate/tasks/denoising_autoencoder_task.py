@@ -43,6 +43,38 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
         # MultilingualTranslationTask
         self.args.lang_pairs = self.lang_pairs
 
+        """
+        loss_weights refers to weights given to training loss for constituent
+        models for specified number of epochs. If we don't specify a model, they
+        receive a weight of 1
+        The format is [(epochs, {model: weight})]
+
+        Sample input:
+        [(5, {'src-tgt': 1, 'src-tgt_mono': 0}), (10, {'src-tgt': 0.5, 'src-tgt_mono': 0.5})]
+        Here, we give assign weights as follows:
+        For first 5 epochs, 'src-tgt' model gets weight 1, 'src-tgt_mono' gets 0
+        For the next 10 epochs (till the end of training), 'src-tgt' model gets
+            weight 0.5, 'src-tgt_mono' gets 0.5, the rest get 1
+
+        """
+        self.loss_weights = [
+            (5, {"src-tgt": 1, "src-src_mono": 1}),
+            (5, {"src-tgt": 1, "src-tgt_mono": 1}),
+            (100, {"src-tgt": 1, "src-tgt_mono": 1}),
+        ]
+        if self.args.denoising_loss_schedule == "grow":
+            self.loss_weights = [
+                (5, {"src-tgt": 1, "src-src_mono": 0}),
+                (5, {"src-tgt": 1, "src-tgt_mono": 0.5}),
+                (100, {"src-tgt": 1, "src-tgt_mono": 1}),
+            ]
+        elif self.args.denoising_loss_schedule == "decay":
+            self.loss_weights = [
+                (5, {"src-tgt": 1, "src-src_mono": 1}),
+                (5, {"src-tgt": 1, "src-tgt_mono": 0.5}),
+                (100, {"src-tgt": 1, "src-tgt_mono": 0}),
+            ]
+
     @staticmethod
     def add_args(parser):
         PytorchTranslateTask.add_args(parser)
@@ -127,6 +159,16 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
             default=False,
             help="Whether to add a denoising autoencoder objective using "
             "the monolingual source corpus",
+        )
+        parser.add_argument(
+            "--denoising-loss-schedule",
+            default="constant",
+            metavar="STR",
+            choices=["constant", "grow", "decay"],
+            help="'constant': keep the denoising autoencoder loss contribution "
+            " constant, 'grow': grow the denoising autoencoder loss "
+            "contribution, 'decay': decay the denoising autoencoder loss "
+            "contribution",
         )
 
     def load_dataset(
