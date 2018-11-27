@@ -39,6 +39,9 @@ from pytorch_translate import (
     preprocess,
     utils as pytorch_translate_utils,
 )
+from pytorch_translate.dual_learning import dual_learning_criterion  # noqa
+from pytorch_translate.dual_learning import dual_learning_task  # noqa
+from pytorch_translate.dual_learning.dual_learning_task import DualLearningTask
 from pytorch_translate.research.knowledge_distillation import (  # noqa
     knowledge_distillation_loss,
 )
@@ -264,6 +267,8 @@ def setup_training_model(args):
             seed=args.seed,
             use_noiser=True,
         )
+    elif args.task == "dual_learning_task":
+        task.load_dataset(split=args.train_subset, seed=args.seed)
     else:
         task.load_dataset(
             split=args.train_subset,
@@ -271,11 +276,14 @@ def setup_training_model(args):
             tgt_bin_path=args.train_target_binary_path,
             weights_file=getattr(args, "train_weights_path", None),
         )
-    task.load_dataset(
-        split=args.valid_subset,
-        src_bin_path=args.eval_source_binary_path,
-        tgt_bin_path=args.eval_target_binary_path,
-    )
+    if args.task == "dual_learning_task":
+        task.load_dataset(split=args.valid_subset, seed=args.seed)
+    else:
+        task.load_dataset(
+            split=args.valid_subset,
+            src_bin_path=args.eval_source_binary_path,
+            tgt_bin_path=args.eval_target_binary_path,
+        )
     return task, model, criterion
 
 
@@ -918,7 +926,9 @@ def calculate_bleu_on_subset(args, task, epoch_str: str, offset, dataset_split):
     corresponding dataset
     lang_pair is passed to identify model to be used for generation
     """
-    if isinstance(task, PytorchTranslateSemiSupervised):
+    if isinstance(task, PytorchTranslateSemiSupervised) or isinstance(
+        task, DualLearningTask
+    ):
         for key, dataset in task.datasets[dataset_split].datasets.items():
             datasets.append(dataset)
             lang_pairs.append(key)

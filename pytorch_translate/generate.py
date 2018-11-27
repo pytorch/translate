@@ -21,6 +21,7 @@ from pytorch_translate import (
     options as pytorch_translate_options,
     utils as pytorch_translate_utils,
 )
+from pytorch_translate.dual_learning.dual_learning_models import DualLearningModel
 from pytorch_translate.research.beam_search import competing_completed
 from pytorch_translate.research.multisource import multisource_data, multisource_decode
 from pytorch_translate.tasks.semi_supervised_task import PytorchTranslateSemiSupervised
@@ -53,6 +54,20 @@ def generate_score(
             task=task,
             dataset=dataset,
         )
+    elif lang_pair and len(models) > 0 and isinstance(models[0], DualLearningModel):
+        # TODO: this could be refactored to use lang_pari as key too
+        return _generate_score(
+            models=[
+                multi_model.models["primal"]
+                if lang_pair == "primal_parallel"
+                else multi_model.models["dual"]
+                for multi_model in models
+            ],
+            args=args,
+            task=task,
+            dataset=dataset,
+        )
+
     else:
         return _generate_score(models=models, args=args, task=task, dataset=dataset)
 

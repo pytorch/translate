@@ -360,27 +360,30 @@ def add_preprocessing_args(parser):
 
 
 def validate_preprocessing_args(args):
-    if not (
-        (
-            getattr(args, "train_source_text_file", None)
-            or getattr(args, "train_source_binary_path", None)
-            or getattr(args, "multiling_train_source_text_file", None)
+    if (
+        not (
+            (
+                getattr(args, "train_source_text_file", None)
+                or getattr(args, "train_source_binary_path", None)
+                or getattr(args, "multiling_train_source_text_file", None)
+            )
+            and (
+                getattr(args, "train_target_text_file")
+                or getattr(args, "train_target_binary_path")
+                or getattr(args, "multiling_train_target_text_file")
+            )
+            and (
+                getattr(args, "eval_source_text_file", None)
+                or getattr(args, "eval_source_binary_path", None)
+                or getattr(args, "multiling_eval_source_text_file", None)
+            )
+            and (
+                getattr(args, "eval_target_text_file", None)
+                or getattr(args, "eval_target_binary_path", None)
+                or getattr(args, "multiling_eval_target_text_file", None)
+            )
         )
-        and (
-            getattr(args, "train_target_text_file")
-            or getattr(args, "train_target_binary_path")
-            or getattr(args, "multiling_train_target_text_file")
-        )
-        and (
-            getattr(args, "eval_source_text_file", None)
-            or getattr(args, "eval_source_binary_path", None)
-            or getattr(args, "multiling_eval_source_text_file", None)
-        )
-        and (
-            getattr(args, "eval_target_text_file", None)
-            or getattr(args, "eval_target_binary_path", None)
-            or getattr(args, "multiling_eval_target_text_file", None)
-        )
+        and args.task != "dual_learning_task"
     ):
         raise ValueError(
             "At least one of --*_text_file or --*_binary_path flags must be "
