@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import numpy as np
 import torch
 import torch.nn as nn
@@ -456,7 +455,13 @@ class RNNModel(FairseqModel):
 
     @staticmethod
     def build_single_decoder(
-        args, src_dict, dst_dict, ngram_decoder=None, project_output=True, is_lm=False
+        args,
+        src_dict,
+        dst_dict,
+        ngram_decoder=None,
+        project_output=True,
+        is_lm=False,
+        embedding_module=None,
     ):
         if args.adaptive_softmax_cutoff is not None:
             project_output = False
@@ -521,6 +526,7 @@ class RNNModel(FairseqModel):
                 att_weighted_src_embeds=args.att_weighted_src_embeds,
                 src_embed_dim=args.encoder_embed_dim,
                 att_weighted_activation_type=args.att_weighted_activation_type,
+                embedding_module=embedding_module,
                 fp16=args.fp16,
             )
 
@@ -552,7 +558,7 @@ class RNNModel(FairseqModel):
         return encoder
 
     @classmethod
-    def build_decoder(cls, args, src_dict, dst_dict):
+    def build_decoder(cls, args, src_dict, dst_dict, embedding_module=None):
         """Build a new (multi-)decoder instance."""
         if args.multi_decoder is not None:
             ngram_decoder_args = [None] * args.multi_decoder
@@ -567,7 +573,13 @@ class RNNModel(FairseqModel):
             assert len(is_lm_args) == args.multi_decoder
             decoders = [
                 RNNModel.build_single_decoder(
-                    args, src_dict, dst_dict, n, project_output=False, is_lm=is_lm
+                    args,
+                    src_dict,
+                    dst_dict,
+                    n,
+                    project_output=False,
+                    is_lm=is_lm,
+                    embedding_module=None,
                 )
                 for is_lm, n in zip(is_lm_args, ngram_decoder_args)
             ]
@@ -586,7 +598,9 @@ class RNNModel(FairseqModel):
             if args.multi_encoder:
                 args.encoder_hidden_dim *= args.multi_encoder
             n = args.ngram_decoder[0] if args.ngram_decoder else None
-            decoder = RNNModel.build_single_decoder(args, src_dict, dst_dict, n)
+            decoder = RNNModel.build_single_decoder(
+                args, src_dict, dst_dict, n, embedding_module=None
+            )
         return decoder
 
     @classmethod
@@ -1027,6 +1041,7 @@ class RNNDecoder(DecoderWithOutputProjection):
         src_embed_dim=512,
         att_weighted_activation_type="tanh",
         predictor=None,
+        embedding_module=None,
         fp16: bool = False,
     ):
         super().__init__(
@@ -1057,11 +1072,15 @@ class RNNDecoder(DecoderWithOutputProjection):
         self.first_layer_attention = first_layer_attention
         num_embeddings = len(dst_dict)
         self.padding_idx = dst_dict.pad()
-        self.embed_tokens = Embedding(
-            num_embeddings=num_embeddings,
-            embedding_dim=embed_dim,
-            padding_idx=self.padding_idx,
-            freeze_embed=freeze_embed,
+        self.embed_tokens = (
+            Embedding(
+                num_embeddings=num_embeddings,
+                embedding_dim=embed_dim,
+                padding_idx=self.padding_idx,
+                freeze_embed=freeze_embed,
+            )
+            if embedding_module is None
+            else embedding_module
         )
         if self.tie_embeddings:
             assert self.embed_dim == self.out_embed_dim, (

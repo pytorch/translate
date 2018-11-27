@@ -9,7 +9,7 @@ from fairseq.models import (
     register_model,
     register_model_architecture,
 )
-from pytorch_translate import constants
+from pytorch_translate import common_layers, constants
 from pytorch_translate.rnn import RNNModel, base_architecture
 from pytorch_translate.tasks.semi_supervised_task import PytorchTranslateSemiSupervised
 
@@ -101,7 +101,7 @@ class SemiSupervisedModel(FairseqMultiModel):
                 lang_encoders[lang] = RNNModel.build_encoder(args, task.dicts[lang])
             return lang_encoders[lang]
 
-        def get_decoder(lang_pair):
+        def get_decoder(lang_pair, shared_decoder_embed_tokens=None):
             """
             Fetch decoder for the input `lang_pair`, which denotes the target
             language of the model
@@ -120,23 +120,36 @@ class SemiSupervisedModel(FairseqMultiModel):
                     args_maybe_modified,
                     task.dicts[source_lang],
                     task.dicts[target_lang],
+                    embedding_module=shared_decoder_embed_tokens,
                 )
             return lang_decoders[target_lang]
 
         # shared encoders/decoders (if applicable)
-        shared_encoder, shared_decoder = None, None
+        shared_encoder, shared_decoder, shared_decoder_embed_tokens = None, None, None
         if args.share_encoders:
             shared_encoder = get_encoder(src_langs[0])
         if args.share_decoders:
             shared_decoder = get_decoder(tgt_langs[0])
 
+        if args.share_decoder_embeddings:
+            shared_decoder_embed_tokens = FairseqMultiModel.build_shared_embeddings(
+                dicts=task.dicts,
+                langs=[strip_suffix(tgt_lang) for tgt_lang in tgt_langs],
+                embed_dim=args.decoder_embed_dim,
+                build_embedding=common_layers.build_embedding,
+                pretrained_embed_path=None,
+            )
         encoders, decoders = OrderedDict(), OrderedDict()
         for lang_pair, src in zip(task.lang_pairs, src_langs):
             encoders[lang_pair] = (
                 shared_encoder if shared_encoder is not None else get_encoder(src)
             )
             decoders[lang_pair] = (
-                shared_decoder if shared_decoder is not None else get_decoder(lang_pair)
+                shared_decoder
+                if shared_decoder is not None
+                else get_decoder(
+                    lang_pair, shared_decoder_embed_tokens=shared_decoder_embed_tokens
+                )
             )
 
         return SemiSupervisedModel(task, encoders, decoders)
