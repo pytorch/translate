@@ -478,7 +478,7 @@ def train(
                 and "augment_adv" in train_step_kwargs.keys()
             ):
                 train_step_kwargs["augment_adv"] = (
-                    extra_state["epoch"] > args.warmup_epochs
+                    extra_state["num_iterations"] > args.warmup_epochs
                 )
             try:
                 log_output = trainer.train_step(samples, **train_step_kwargs)
