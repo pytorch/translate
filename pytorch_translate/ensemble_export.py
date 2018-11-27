@@ -658,7 +658,9 @@ class BeamSearch(torch.jit.ScriptModule):
 
         encoder_ens = EncoderEnsemble(self.models)
         example_encoder_outs = encoder_ens(src_tokens, src_lengths)
-        self.encoder_ens = torch.jit.trace(encoder_ens, (src_tokens, src_lengths))
+        self.encoder_ens = torch.jit.trace(
+            encoder_ens, (src_tokens, src_lengths), _force_outplace=True
+        )
         decoder_ens = DecoderBatchedStepEnsemble(
             self.models,
             tgt_dict,
@@ -682,7 +684,9 @@ class BeamSearch(torch.jit.ScriptModule):
             prev_token, prev_scores, ts, *example_encoder_outs
         )
         self.decoder_ens_tile = torch.jit.trace(
-            decoder_ens_tile, (prev_token, prev_scores, ts, *example_encoder_outs)
+            decoder_ens_tile,
+            (prev_token, prev_scores, ts, *example_encoder_outs),
+            _force_outplace=True,
         )
         self.decoder_ens = torch.jit.trace(
             decoder_ens,
@@ -692,6 +696,7 @@ class BeamSearch(torch.jit.ScriptModule):
                 ts,
                 *tiled_states,
             ),
+            _force_outplace=True,
         )
 
         self.input_names = [
@@ -1013,7 +1018,9 @@ class ForcedDecoder(torch.jit.ScriptModule):
 
         encoder_ens = EncoderEnsemble(self.models)
         example_encoder_outs = encoder_ens(source_tokens, source_length)
-        self.encoder_ens = torch.jit.trace(encoder_ens, (source_tokens, source_length))
+        self.encoder_ens = torch.jit.trace(
+            encoder_ens, (source_tokens, source_length), _force_outplace=True
+        )
         decoder_ens = KnownOutputDecoderStepEnsemble(
             self.models, tgt_dict, word_reward, unk_reward
         )
@@ -1022,7 +1029,9 @@ class ForcedDecoder(torch.jit.ScriptModule):
         ts = torch.LongTensor([0])
         _, *states = decoder_ens(prev_token, target_token, ts, *example_encoder_outs)
         self.decoder_ens = torch.jit.trace(
-            decoder_ens, (prev_token, target_token, ts, *example_encoder_outs)
+            decoder_ens,
+            (prev_token, target_token, ts, *example_encoder_outs),
+            _force_outplace=True,
         )
 
         self.input_names = [
