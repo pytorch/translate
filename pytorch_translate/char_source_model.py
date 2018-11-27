@@ -66,6 +66,7 @@ class CharSourceModel(rnn.RNNModel):
                 embed_dim=args.char_embed_dim,
                 token_embed_dim=args.encoder_embed_dim,
                 freeze_embed=args.encoder_freeze_embed,
+                normalize_embed=args.encoder_normalize_embed,
                 char_cnn_params=args.char_cnn_params,
                 char_cnn_nonlinear_fn=args.char_cnn_nonlinear_fn,
                 char_cnn_pool_type=args.char_cnn_pool_type,
@@ -90,6 +91,7 @@ class CharSourceModel(rnn.RNNModel):
                 num_chars=args.char_source_dict_size,
                 char_embed_dim=args.char_embed_dim,
                 token_embed_dim=args.encoder_embed_dim,
+                normalize_embed=args.encoder_normalize_embed,
                 char_rnn_units=args.char_rnn_units,
                 char_rnn_layers=args.char_rnn_layers,
                 num_layers=args.encoder_layers,
@@ -145,6 +147,7 @@ class CharRNNEncoder(FairseqEncoder):
         num_chars,
         char_embed_dim,
         token_embed_dim,
+        normalize_embed,
         char_rnn_units,
         char_rnn_layers,
         hidden_dim,
@@ -172,6 +175,7 @@ class CharRNNEncoder(FairseqEncoder):
                 embedding_dim=token_embed_dim,
                 padding_idx=dictionary.pad(),
                 freeze_embed=False,
+                normalize_embed=normalize_embed,
             )
 
         self.word_dim = char_rnn_units + token_embed_dim
@@ -246,6 +250,7 @@ class CharCNNEncoder(FairseqEncoder):
         embed_dim=32,
         token_embed_dim=256,
         freeze_embed=False,
+        normalize_embed=False,
         char_cnn_params="[(128, 3), (128, 5)]",
         char_cnn_nonlinear_fn="tanh",
         char_cnn_pool_type="max",
@@ -289,6 +294,7 @@ class CharCNNEncoder(FairseqEncoder):
                 embedding_dim=token_embed_dim,
                 padding_idx=self.padding_idx,
                 freeze_embed=freeze_embed,
+                normalize_embed=normalize_embed,
             )
         self.word_dim = (
             char_cnn_output_dim
@@ -310,12 +316,20 @@ class CharCNNEncoder(FairseqEncoder):
         self.tracker = VariableTracker()
         # Initialize adversarial mode
         self.set_gradient_tracking_mode(False)
+        self.set_embed_noising_mode(False)
 
     def set_gradient_tracking_mode(self, mode=True):
         """ This allows AdversarialTrainer to turn on retrain_grad when
         running adversarial example generation model."""
         self.tracker.reset()
         self.track_gradients = mode
+
+    def set_embed_noising_mode(self, mode=True):
+        """This allows adversarial trainer to turn on and off embedding noising
+        layers. In regular training, this mode is off, and it is not included
+        in forward pass.
+        """
+        self.embed_noising_mode = mode
 
     def forward(self, src_tokens, src_lengths, char_inds, word_lengths):
         self.tracker.reset()
