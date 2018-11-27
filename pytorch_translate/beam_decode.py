@@ -3,7 +3,7 @@
 import math
 
 import torch
-from fairseq import utils
+from fairseq import search, utils
 from fairseq.models import FairseqIncrementalDecoder
 
 
@@ -24,6 +24,9 @@ class SequenceGenerator(torch.nn.Module):
         word_reward=0,
         model_weights=None,
         use_char_source=False,
+        sampling=False,
+        sampling_topk=-1,
+        sampling_temperature=1,
     ):
         """Generates translations of a given source sentence.
 
@@ -69,6 +72,10 @@ class SequenceGenerator(torch.nn.Module):
         else:
             self.model_weights = [1.0 / len(models)] * len(models)
         self.use_char_source = use_char_source
+
+        assert sampling_topk < 0 or sampling, "--sampling-topk requires --sampling"
+        if sampling:
+            self.search = search.Sampling(tgt_dict, sampling_topk, sampling_temperature)
 
     def cuda(self):
         for model in self.models:

@@ -45,6 +45,7 @@ class WeightedLanguagePairDataset(data.language_pair_dataset.LanguagePairDataset
     ):
         super().__init__(src, src_sizes, src_dict, tgt, tgt_sizes, tgt_dict, **kwargs)
         self.weights = weights
+        self.src_dict = src_dict
 
     def __getitem__(self, i):
         example = super().__getitem__(i)
@@ -59,9 +60,15 @@ class WeightedLanguagePairDataset(data.language_pair_dataset.LanguagePairDataset
         return super().__len__()
 
     def collater(self, samples):
+        return WeightedLanguagePairDataset.collate(
+            samples, self.src_dict.pad(), self.src_dict.eos()
+        )
+
+    @staticmethod
+    def collate(samples, pad_idx, eos_idx):
         if len(samples) == 0:
             return {}
-        unweighted_data = super().collater(samples)
+        unweighted_data = data.language_pair_dataset.collate(samples, pad_idx, eos_idx)
         original_weights = torch.FloatTensor([s.get("weight", 1.0) for s in samples])
         # sort by descending source length
         src_lengths = torch.LongTensor([s["source"].numel() for s in samples])
