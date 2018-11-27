@@ -178,7 +178,7 @@ class Embedding(nn.Embedding):
         num_embeddings,
         embedding_dim,
         padding_idx,
-        freeze_embed,
+        freeze_embed=False,
         normalize_embed=False,
         normalize_decay_rate=0.99,
     ):
@@ -508,3 +508,14 @@ class VariableTracker(object):
 
     def __getitem__(self, name):
         return self.tracker[name]
+
+
+def build_embedding(dictionary, embed_dim, path=None):
+    num_embeddings = len(dictionary)
+    padding_idx = dictionary.pad()
+    emb = Embedding(num_embeddings, embed_dim, padding_idx)
+    # if provided, load from preloaded dictionaries
+    if path:
+        embed_dict = utils.parse_embedding(path)
+        utils.load_embedding(embed_dict, dictionary, emb)
+    return emb
