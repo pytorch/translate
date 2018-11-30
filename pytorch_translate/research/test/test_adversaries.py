@@ -53,7 +53,7 @@ class DummyArgs(NamedTuple):
 
 class AdversariesTest(unittest.TestCase):
     def setUp(self):
-        self.num_random_retries = 10
+        self.num_random_retries = 2
         self.n_symbols = 20
         self.dim = 4
         self.bsz = 3
