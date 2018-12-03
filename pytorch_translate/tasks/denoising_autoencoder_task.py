@@ -190,7 +190,7 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
 
             if getattr(self.args, "denoising_source_mono", False):
                 source_mono_dataset = self.load_monolingual_dataset(
-                    self.args.train_mono_source_binary_path
+                    bin_path=self.args.train_mono_source_binary_path, is_source=True
                 )
                 dataset_map[
                     (
@@ -212,7 +212,7 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
                 )
             if getattr(self.args, "denoising_target_mono", False):
                 target_mono_dataset = self.load_monolingual_dataset(
-                    self.args.train_mono_target_binary_path
+                    bin_path=self.args.train_mono_target_binary_path, is_source=False
                 )
                 dataset_map[
                     (
@@ -233,7 +233,14 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
                     append_eos_to_target=True,
                 )
 
+        # print before loading RoundRobinZipDatasets to help catch any bugs
+        for dataset_key, dataset in dataset_map.items():
+            print(f"| {split}: {dataset_key} {len(dataset)} examples in dataset")
+
         self.datasets[split] = RoundRobinZipDatasets(dataset_map)
+        print(
+            f"| {split} {len(self.datasets[split])} examples in RoundRobinZipDatasets"
+        )
 
         if self.args.log_verbose:
             print("Finished loading dataset", flush=True)
