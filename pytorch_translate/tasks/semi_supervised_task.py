@@ -175,8 +175,8 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
                 models=[backward_model], tgt_dict=self.target_dictionary
             )
 
-            def monolingual_dataset(path, dictionary):
-                dataset = self.load_monolingual_dataset(path)
+            def monolingual_dataset(path, dictionary, is_source=False):
+                dataset = self.load_monolingual_dataset(path, is_source)
                 return LanguagePairDataset(
                     src=dataset,
                     src_sizes=dataset.sizes,
@@ -187,10 +187,14 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
                 )
 
             src_dataset = monolingual_dataset(
-                self.args.train_mono_source_binary_path, self.source_dictionary
+                path=self.args.train_mono_source_binary_path,
+                dictionary=self.source_dictionary,
+                is_source=True,
             )
             tgt_dataset = monolingual_dataset(
-                self.args.train_mono_target_binary_path, self.target_dictionary
+                path=self.args.train_mono_target_binary_path,
+                dictionary=self.target_dictionary,
+                is_source=False,
             )
 
             dataset_map[
@@ -236,12 +240,18 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
                     remove_eos_from_src=True,
                 ).collater,
             )
+
+        # print before loading RoundRobinZipDatasets to help catch any bugs
+        for dataset_key, dataset in dataset_map.items():
+            print(f"| {split}: {dataset_key} {len(dataset)} examples in dataset")
+
         self.datasets[split] = RoundRobinZipDatasets(dataset_map)
+        print(
+            f"| {split} {len(self.datasets[split])} examples in RoundRobinZipDatasets"
+        )
 
         if self.args.log_verbose:
             print("Finished loading dataset", flush=True)
-
-        print(f"| {split} {len(self.datasets[split])} datasets")
 
     def build_model(self, args):
         model = models.build_model(args, self)
