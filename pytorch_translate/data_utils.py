@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+from typing import Optional
 
 from pytorch_translate import char_data, data as pytorch_translate_data, weighted_data
 
@@ -57,7 +58,11 @@ def load_parallel_dataset(
 
 
 def load_monolingual_dataset(
-    bin_path, is_source=False, char_source_dict=None, log_verbose=True
+    bin_path,
+    is_source=False,
+    char_source_dict=None,
+    log_verbose=True,
+    num_examples_limit: Optional[int] = None,
 ):
     if log_verbose:
         print("Starting to load binarized monolingual data file.", flush=True)
@@ -70,7 +75,7 @@ def load_monolingual_dataset(
 
     else:
         dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
-            path=bin_path
+            path=bin_path, num_examples_limit=num_examples_limit
         )
 
     if log_verbose:
