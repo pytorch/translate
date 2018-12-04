@@ -45,7 +45,7 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
 
     @staticmethod
     def add_args(parser):
-        PytorchTranslateTask.add_args(parser)
+        PytorchTranslateSemiSupervised.add_args(parser)
 
         """
         Add denoising autoencoder arguments to the parser.
@@ -54,22 +54,6 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
         just add a denoising autoencoder objective using one side (source or
         target) of the parallel dataset.
         """
-        parser.add_argument(
-            "--train-mono-source-binary-path",
-            default="",
-            metavar="FILE",
-            type=str,
-            help="Path for the binary file containing monolingual source "
-            "training examples.",
-        )
-        parser.add_argument(
-            "--train-mono-target-binary-path",
-            default="",
-            metavar="FILE",
-            type=str,
-            help="Path for the binary file containing monolingual target "
-            "training examples.",
-        )
 
         # TODO(T35539829): implement a Noising registry so we can build a noiser
         # and use the corresponding class to pass noise-type specific args
@@ -154,6 +138,11 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
             [(f"{self.source_lang}-{self.target_lang}", parallel_dataset)]
         )
 
+        monolingual_num_examples_limit = None
+        if self.args.monolingual_ratio is not None:
+            monolingual_num_examples_limit = int(
+                self.args.monolingual_ratio * len(parallel_dataset)
+            )
         if use_noiser:
             if getattr(self.args, "denoising_source_parallel", False):
                 dataset_map[
@@ -190,7 +179,9 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
 
             if getattr(self.args, "denoising_source_mono", False):
                 source_mono_dataset = self.load_monolingual_dataset(
-                    bin_path=self.args.train_mono_source_binary_path, is_source=True
+                    bin_path=self.args.train_mono_source_binary_path,
+                    is_source=True,
+                    num_examples_limit=monolingual_num_examples_limit,
                 )
                 dataset_map[
                     (
@@ -212,7 +203,9 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
                 )
             if getattr(self.args, "denoising_target_mono", False):
                 target_mono_dataset = self.load_monolingual_dataset(
-                    bin_path=self.args.train_mono_target_binary_path, is_source=False
+                    bin_path=self.args.train_mono_target_binary_path,
+                    is_source=False,
+                    num_examples_limit=monolingual_num_examples_limit,
                 )
                 dataset_map[
                     (

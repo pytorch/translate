@@ -63,7 +63,7 @@ class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
         assert self.offsets is not None
         np.savez(path, buffer=self.buffer, offsets=self.offsets)
 
-    def load(self, path):
+    def load(self, path, num_examples_limit: Optional[int] = None):
         npz = np.load(path)
 
         # For big input data, we don't want the cpu to OOM.
@@ -80,6 +80,9 @@ class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
         else:
             self.buffer = npz["buffer"]
         self.offsets = npz["offsets"]
+        if num_examples_limit is not None and len(self.offsets) > num_examples_limit:
+            self.offsets = self.offsets[: num_examples_limit + 1]
+            self.buffer = self.buffer[: self.offsets[-1]]
         self.sizes = self.offsets[1:] - self.offsets[:-1]
 
     def parse(
@@ -185,9 +188,9 @@ class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
         del sizes
 
     @staticmethod
-    def create_from_file(path):
+    def create_from_file(path, num_examples_limit: Optional[int] = None):
         result = InMemoryNumpyDataset()
-        result.load(path)
+        result.load(path, num_examples_limit=num_examples_limit)
         return result
 
 

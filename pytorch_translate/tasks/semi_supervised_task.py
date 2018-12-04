@@ -2,6 +2,7 @@
 
 import os
 from collections import OrderedDict
+from typing import Optional
 
 import torch
 from fairseq import models
@@ -75,13 +76,24 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
             help="Path for the binary file containing monolingual target "
             "training examples.",
         )
+        parser.add_argument(
+            "--monolingual-ratio",
+            default=None,
+            type=float,
+            metavar="N",
+            help="Upper-bounds the number of monolingual examples to N times "
+            "the amount of parallel data.",
+        )
 
-    def load_monolingual_dataset(self, bin_path, is_source=False):
+    def load_monolingual_dataset(
+        self, bin_path, is_source=False, num_examples_limit=None
+    ):
         return data_utils.load_monolingual_dataset(
             bin_path=bin_path,
             is_source=is_source,
             char_source_dict=self.char_source_dict,
             log_verbose=self.args.log_verbose,
+            num_examples_limit=num_examples_limit,
         )
 
     @classmethod
@@ -175,8 +187,15 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
                 models=[backward_model], tgt_dict=self.target_dictionary
             )
 
-            def monolingual_dataset(path, dictionary, is_source=False):
-                dataset = self.load_monolingual_dataset(path, is_source)
+            def monolingual_dataset(
+                path,
+                dictionary,
+                is_source=False,
+                num_examples_limit: Optional[int] = None,
+            ):
+                dataset = self.load_monolingual_dataset(
+                    path, is_source=is_source, num_examples_limit=num_examples_limit
+                )
                 return LanguagePairDataset(
                     src=dataset,
                     src_sizes=dataset.sizes,
@@ -186,15 +205,23 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
                     tgt_dict=None,
                 )
 
+            monolingual_num_examples_limit = None
+            if self.args.monolingual_ratio is not None:
+                monolingual_num_examples_limit = int(
+                    self.args.monolingual_ratio * len(forward_parallel_dataset)
+                )
+
             src_dataset = monolingual_dataset(
                 path=self.args.train_mono_source_binary_path,
                 dictionary=self.source_dictionary,
                 is_source=True,
+                num_examples_limit=monolingual_num_examples_limit,
             )
             tgt_dataset = monolingual_dataset(
                 path=self.args.train_mono_target_binary_path,
                 dictionary=self.target_dictionary,
                 is_source=False,
+                num_examples_limit=monolingual_num_examples_limit,
             )
 
             dataset_map[
