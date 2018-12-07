@@ -356,9 +356,10 @@ def build_trainer(args, task, model, criterion, trainer_class):
         task.max_positions(), model.max_positions()
     )
     dummy_batch = task.dataset("train").get_dummy_batch(args.max_tokens, max_positions)
+    oom_batch = task.dataset("train").get_dummy_batch(1, max_positions)
 
     # Build trainer
-    trainer = trainer_class(args, task, model, criterion, dummy_batch)
+    trainer = trainer_class(args, task, model, criterion, dummy_batch, oom_batch)
 
     print(
         f"| training on {args.distributed_world_size} total GPUs "
