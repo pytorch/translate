@@ -250,6 +250,30 @@ class PytorchTranslateTask(FairseqTask):
             self.target_dictionary,
         )
 
+    def get_eval_batch_iterator(
+        self,
+        dataset,
+        max_tokens=None,
+        max_sentences=None,
+        max_positions=None,
+        ignore_invalid_inputs=False,
+        required_batch_size_multiple=1,
+        seed=1,
+        num_shards=1,
+        shard_id=0,
+    ):
+        return self.get_batch_iterator(
+            dataset=dataset,
+            max_tokens=max_tokens,
+            max_sentences=max_sentences,
+            max_positions=max_positions,
+            ignore_invalid_inputs=ignore_invalid_inputs,
+            required_batch_size_multiple=required_batch_size_multiple,
+            seed=seed,
+            num_shards=num_shards,
+            shard_id=shard_id,
+        )
+
     @property
     def source_dictionary(self):
         return self.src_dict

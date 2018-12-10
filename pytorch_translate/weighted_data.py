@@ -30,6 +30,17 @@ class WeightedLanguagePairDataset(data.language_pair_dataset.LanguagePairDataset
     """
     Extension of fairseq.data.LanguagePairDataset where each example
     has a weight in [0.0, 1.0], which will be used to weigh the loss.
+
+    TODO: Refactor this class to look like WeightedBacktranslationDataset.
+    We could wrap an existing dataset object and provide additional weights
+    feature. This way, it will be more composable and can be used with arbitrary
+    datasets. See D13143051.
+
+    Args:
+        weights (list): list of per example weight values; each example
+        has a weight in [0.0, 1.0]. Alternatively, when weights consists of a
+        single value, that value is broadcast as weight to all examples. [0.0]
+        gives 0 weight to all examples.
     """
 
     def __init__(
@@ -50,7 +61,16 @@ class WeightedLanguagePairDataset(data.language_pair_dataset.LanguagePairDataset
     def __getitem__(self, i):
         example = super().__getitem__(i)
         if self.weights:
-            example["weight"] = self.weights[i]
+            """
+            If weight for example is missing, use last seen weight. Sometimes we just
+            want to assign a weight to the entire dataset with a single value but also
+            maintain the list convention of weights. This way, even if we don't care/know
+            about dataset size, we can assign same weight to all examples.
+            """
+            if len(self.weights) <= i:
+                example["weight"] = self.weights[-1]
+            else:
+                example["weight"] = self.weights[i]
         else:
             example["weight"] = 1.0
 
@@ -69,6 +89,60 @@ class WeightedLanguagePairDataset(data.language_pair_dataset.LanguagePairDataset
         if len(samples) == 0:
             return {}
         unweighted_data = data.language_pair_dataset.collate(samples, pad_idx, eos_idx)
+        original_weights = torch.FloatTensor([s.get("weight", 1.0) for s in samples])
+        # sort by descending source length
+        src_lengths = torch.LongTensor([s["source"].numel() for s in samples])
+        src_lengths, sort_order = src_lengths.sort(descending=True)
+        weights = original_weights.index_select(0, sort_order)
+        unweighted_data["weights"] = weights
+        return unweighted_data
+
+
+class WeightedBacktranslationDataset(
+    data.backtranslation_dataset.BacktranslationDataset
+):
+    """
+    Extension of fairseq.data.BacktranslationDataset where each example
+    has a weight in [0.0, 1.0], which will be used to weigh the loss.
+
+    Args:
+        weights (list): list of per example weight values; each example
+        has a weight in [0.0, 1.0]. Alternatively, when weights consists of a
+        single value, that value is broadcast as weight to all examples. [0.0]
+        gives 0 weight to all examples.
+    """
+
+    def __init__(self, dataset, weights=None, **kwargs):
+        self.weights = weights
+        self.dataset = dataset
+
+    def __getattr__(self, attr):
+        if attr in self.__dict__:
+            return getattr(self, attr)
+        return getattr(self.dataset, attr)
+
+    def __getitem__(self, i):
+        example = self.dataset.__getitem__(i)
+        if self.weights:
+            """
+            If weight for example is missing, use last seen weight. Sometimes we just
+            want to assign a weight to the entire dataset with a single value but also
+            maintain the list convention of weights. This way, even if we don't care or
+            don't know about dataset size, we can assign same weight to all examples.
+            """
+            if len(self.weights) <= i:
+                example["weight"] = self.weights[-1]
+            else:
+                example["weight"] = self.weights[i]
+        else:
+            example["weight"] = 1.0
+
+        return example
+
+    def collater(self, samples):
+        if len(samples) == 0:
+            return {}
+        unweighted_data = self.dataset.collater(samples)
         original_weights = torch.FloatTensor([s.get("weight", 1.0) for s in samples])
         # sort by descending source length
         src_lengths = torch.LongTensor([s["source"].numel() for s in samples])
