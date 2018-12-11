@@ -172,7 +172,7 @@ class TestTranslation(unittest.TestCase):
                         "--finetune-pretrained-weights",
                         "true",
                         "--pretrained-weights-file",
-                        "/mnt/vol/gfsfblearner-oregon/users/aimeeli/elmo/elmo_2x4096_512_2048cnn_2xhighway_weights.hdf5",
+                        "/mnt/vol/gfsfblearner-oregon/users/kartikayk/pretrained_models/elmo_2x4096_512_2048cnn_2xhighway_weights.npz",
                         "--char-cnn-output-dim",
                         "512",
                         "--cell-type",
