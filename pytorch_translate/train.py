@@ -30,7 +30,7 @@ from pytorch_translate import sequence_criterions  # noqa
 from pytorch_translate import transformer  # noqa
 from pytorch_translate import weighted_criterions  # noqa
 from pytorch_translate import (
-    average_checkpoints,
+    checkpoint,
     constants,
     data as pytorch_translate_data,
     dictionary as pytorch_translate_dictionary,
@@ -47,7 +47,6 @@ from pytorch_translate.research.knowledge_distillation import (  # noqa
     knowledge_distillation_loss,
 )
 from pytorch_translate.tasks.semi_supervised_task import PytorchTranslateSemiSupervised
-from pytorch_translate.utils import ManagedCheckpoints
 from pytorch_translate.word_prediction import word_prediction_criterion  # noqa
 from pytorch_translate.word_prediction import word_prediction_model  # noqa
 
@@ -108,7 +107,7 @@ def default_extra_state(args) -> Dict[str, Any]:
             "num_since_best": 0,
             "last_eval_step": 0,
         },
-        "last_checkpoints": ManagedCheckpoints(
+        "last_checkpoints": checkpoint.ManagedCheckpoints(
             max(args.generate_bleu_eval_avg_checkpoints, args.max_checkpoints_kept),
             # Don't auto_clear checkpoints for no_epoch_checkpoints, because
             # we are only going to reuse the same file.
@@ -130,49 +129,6 @@ def clear_per_step_extra_state(extra_state: Dict[str, Any]) -> Dict[str, Any]:
     extra_state["tune_eval"]["perplexity"] = None
     extra_state["tune_bleu"]["current"] = None
     return extra_state
-
-
-def load_existing_checkpoint(
-    checkpoint_path, trainer, restore_state=True
-) -> Tuple[bool, Optional[Dict]]:
-    loaded = False
-    extra_state = None
-
-    if not os.path.isfile(checkpoint_path):
-        print(
-            f"| No existing checkpoint at {checkpoint_path}. "
-            f"Starting training from scratch."
-        )
-        return loaded, extra_state
-
-    if restore_state:
-        extra_state = trainer.load_checkpoint(checkpoint_path)
-        if extra_state is None:
-            loaded = False
-            print(f"| Failed to load checkpoint and state from {checkpoint_path}.")
-        else:
-            loaded = True
-            print(
-                f"| Loaded checkpoint {checkpoint_path} "
-                f"(epoch {extra_state['epoch']}) with restored extra state."
-            )
-            # batch_offset being None denotes this was a checkpoint saved at
-            # the end of an epoch (after the last batch).
-            if extra_state["batch_offset"] is None:
-                trainer.lr_step(extra_state["epoch"])
-                extra_state["epoch"] += 1
-                extra_state["batch_offset"] = 0
-
-    else:
-        dummy_state = trainer.load_checkpoint(checkpoint_path, reset_optimizer=True)
-        if dummy_state is None:
-            loaded = False
-            print(f"| Failed to load checkpoint weights from {checkpoint_path}.")
-        else:
-            loaded = True
-            print(f"| Loaded checkpoint weights from {checkpoint_path}.")
-
-    return loaded, extra_state
 
 
 def validate_and_set_default_args(args):
@@ -327,7 +283,7 @@ def setup_training_state(args, trainer, task):
         print(f"| Restoring individual models from {args.multi_model_restore_files}")
         multi_model.import_individual_models(args.multi_model_restore_files, trainer)
     else:
-        loaded, loaded_extra_state = load_existing_checkpoint(
+        loaded, loaded_extra_state = checkpoint.load_existing_checkpoint(
             checkpoint_path=checkpoint_path,
             trainer=trainer,
             restore_state=restore_state,
@@ -736,59 +692,6 @@ def get_training_stats(trainer):
     return stats
 
 
-def save_checkpoint(trainer, args, extra_state):
-    epoch = extra_state["epoch"]
-    batch_offset = extra_state["batch_offset"]
-    tune_loss = extra_state["tune_eval"]["loss"]
-
-    if args.log_verbose:
-        print(
-            f"| Preparing to save checkpoints for epoch {epoch}, "
-            f"offset {batch_offset}. ",
-            flush=True,
-        )
-
-    # batch_offset being None means that we're at the end of an epoch.
-    if batch_offset is None:
-        if not args.no_epoch_checkpoints:
-            epoch_filename = os.path.join(args.save_dir, f"checkpoint{epoch}.pt")
-            trainer.save_checkpoint(epoch_filename, extra_state)
-            extra_state["last_checkpoints"].append(epoch_filename)
-
-        assert tune_loss is not None
-
-        if (
-            extra_state["checkpoint_lowest_loss"] is None
-            or tune_loss < extra_state["checkpoint_lowest_loss"]
-        ):
-            extra_state["checkpoint_lowest_loss"] = tune_loss
-            best_filename = os.path.join(args.save_dir, "checkpoint_best.pt")
-            trainer.save_checkpoint(best_filename, extra_state)
-
-    # Otherwise, we're in the middle of an epoch.
-    elif not args.no_epoch_checkpoints:
-        epoch_filename = os.path.join(
-            args.save_dir, f"checkpoint{epoch}_{batch_offset}.pt"
-        )
-        trainer.save_checkpoint(epoch_filename, extra_state)
-        extra_state["last_checkpoints"].append(epoch_filename)
-
-    last_filename = os.path.join(args.save_dir, constants.LAST_CHECKPOINT_FILENAME)
-    trainer.save_checkpoint(last_filename, extra_state)
-
-    # This ensures we'll always have at least one checkpoint in the list to use
-    # for BLEU eval, even if we're not saving epoch checkpoints.
-    if args.no_epoch_checkpoints:
-        extra_state["last_checkpoints"].append(epoch_filename)
-    if args.log_verbose:
-        print(
-            f"| Finished saving checkpoints for epoch {epoch}, "
-            f"offset {batch_offset}.",
-            flush=True,
-        )
-    return extra_state
-
-
 def eval_tune_loss(args, trainer, task, subset, extra_state):
     """Evaluate the model on the validation set and return the average loss."""
     # Initialize dataloader
@@ -880,43 +783,6 @@ def get_valid_stats(trainer):
     return stats
 
 
-def save_averaged_checkpoint(args, extra_state):
-    epoch, offset = extra_state["epoch"], extra_state["batch_offset"]
-    if not hasattr(save_averaged_checkpoint, "last_avg_checkpoints"):
-        if args.max_checkpoints_kept == 0:
-            raise argparse.ArgumentTypeError("--max-checkpoints-kept must be != 0.")
-        save_averaged_checkpoint.last_avg_checkpoints = ManagedCheckpoints(
-            max(args.max_checkpoints_kept, 1), auto_clear=args.max_checkpoints_kept > 0
-        )
-
-    last_checkpoints = extra_state["last_checkpoints"].get_last_n(
-        1 if args.no_epoch_checkpoints else args.generate_bleu_eval_avg_checkpoints
-    )
-    if args.log_verbose:
-        print(
-            f"| Reading {len(last_checkpoints)} previous "
-            f"checkpoints for averaging in epoch {epoch}, offset {offset}.",
-            flush=True,
-        )
-    averaged_state = average_checkpoints.average_checkpoints(last_checkpoints)
-    filename = os.path.join(args.save_dir, f"averaged_checkpoint{epoch}_{offset}.pt")
-    save_averaged_checkpoint.last_avg_checkpoints.append(filename)
-    if args.log_verbose:
-        print(
-            f"| Preparing to save averaged checkpoint for "
-            f"epoch {epoch}, offset {offset}.",
-            flush=True,
-        )
-    utils.torch_persistent_save(averaged_state, filename)
-    if args.log_verbose:
-        print(
-            f"| Finished saving averaged checkpoint for "
-            f"epoch {epoch}, offset {offset}.",
-            flush=True,
-        )
-    return filename
-
-
 def calculate_bleu_on_subset(args, task, epoch_str: str, offset, dataset_split):
     # This is a trick to have generate use max_sentences_valid
     max_sentences_train = args.max_sentences
@@ -967,7 +833,7 @@ def calculate_bleu_on_subset(args, task, epoch_str: str, offset, dataset_split):
 
 def evaluate_bleu(args, task, extra_state):
     epoch, offset = extra_state["epoch"], extra_state["batch_offset"]
-    filename = save_averaged_checkpoint(args, extra_state)
+    filename = checkpoint.save_averaged_checkpoint(args, extra_state)
     args.path = filename
     extra_state["tune_bleu"]["current"], translation_samples = calculate_bleu_on_subset(
         args=args,
@@ -1042,7 +908,7 @@ def save_and_eval(
     if distributed_utils.is_master(args):
         stop_due_to_tune_bleu = False
         if do_save:
-            extra_state = save_checkpoint(
+            extra_state = checkpoint.save_checkpoint(
                 trainer=trainer, args=args, extra_state=extra_state
             )
         if do_eval_bleu and not do_save:
