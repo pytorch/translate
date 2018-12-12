@@ -405,7 +405,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 self.adaptive_softmax is None
             ), "vocabulary reduction not compatible with adaptive softmax!"
             self.vocab_reduction_module = vocab_reduction.VocabReduction(
-                src_dict, dst_dict, args.vocab_reduction_params
+                src_dict, dst_dict, args.vocab_reduction_params, fp16=args.fp16
             )
 
         self.onnx_trace = False
