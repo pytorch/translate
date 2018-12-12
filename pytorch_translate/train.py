@@ -25,6 +25,7 @@ from fairseq import (
 )
 from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
+from pytorch_translate import hybrid_transformer_rnn  # noqa
 from pytorch_translate import sequence_criterions  # noqa
 from pytorch_translate import transformer  # noqa
 from pytorch_translate import weighted_criterions  # noqa

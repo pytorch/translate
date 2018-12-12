@@ -257,7 +257,9 @@ class TransformerModel(FairseqModel):
 class TransformerEncoder(FairseqEncoder):
     """Transformer encoder."""
 
-    def __init__(self, args, dictionary, embed_tokens, left_pad=True):
+    def __init__(
+        self, args, dictionary, embed_tokens, left_pad=True, proj_to_decoder=True
+    ):
         super().__init__(dictionary)
         self.dropout = args.dropout
 
@@ -284,7 +286,7 @@ class TransformerEncoder(FairseqEncoder):
         )
 
         self.output_fc = None
-        if args.encoder_embed_dim != args.decoder_embed_dim:
+        if args.encoder_embed_dim != args.decoder_embed_dim and proj_to_decoder:
             self.output_fc = fairseq_transformer.Linear(
                 embed_dim, args.decoder_embed_dim
             )

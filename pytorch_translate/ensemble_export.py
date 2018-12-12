@@ -26,6 +26,7 @@ from torch.onnx import ExportTypes, OperatorExportTypes
 from pytorch_translate import (  # noqa; noqa
     char_source_model,
     dictionary,
+    hybrid_transformer_rnn,
     rnn,
     semi_supervised,
     transformer,
@@ -82,6 +83,10 @@ def load_models_from_checkpoints(
             )
         elif architecture == "ptt_transformer":
             model = transformer.TransformerModel.build_model(
+                checkpoint_data["args"], task
+            )
+        elif architecture == "hybrid_transformer_rnn":
+            model = hybrid_transformer_rnn.HybridTransformerRNNModel.build_model(
                 checkpoint_data["args"], task
             )
         elif architecture == "semi_supervised":
@@ -468,9 +473,6 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 model.decoder._is_incremental_eval = True
                 model.eval()
 
-                # placeholder
-                incremental_state = {}
-
                 state_inputs = []
                 for _ in model.decoder.layers:
                     # (prev_key, prev_value) for self- and encoder-attention
@@ -494,6 +496,44 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
                 state_outputs.extend(attention_states)
                 beam_axis_per_state.extend([0 for _ in attention_states])
+            elif isinstance(model, hybrid_transformer_rnn.HybridTransformerRNNModel):
+                encoder_output = inputs[i]
+
+                # store cached states, use evaluation mode
+                model.decoder._is_incremental_eval = True
+                model.eval()
+
+                encoder_out = (encoder_output, None, None)
+
+                incremental_state = {}
+                num_states = (1 + model.decoder.num_layers) * 2
+                state_inputs = inputs[next_state_input : next_state_input + num_states]
+                next_state_input += num_states
+                utils.set_incremental_state(
+                    model.decoder, incremental_state, "cached_state", state_inputs
+                )
+
+                decoder_output = model.decoder(
+                    input_tokens,
+                    encoder_out,
+                    incremental_state=incremental_state,
+                    possible_translation_tokens=possible_translation_tokens,
+                    timestep=timestep,
+                )
+                logits, attn_scores, _ = decoder_output
+
+                log_probs = F.log_softmax(logits, dim=2)
+                log_probs_per_model.append(log_probs)
+                attn_weights_per_model.append(attn_scores)
+
+                next_states = utils.get_incremental_state(
+                    model.decoder, incremental_state, "cached_state"
+                )
+                state_outputs.extend(next_states)
+                # sequence RNN states have beam along axis 1
+                beam_axis_per_state.extend([1 for _ in next_states[:-2]])
+                # encoder input projections have beam along axis 0
+                beam_axis_per_state.extend([0, 0])
             else:
                 raise RuntimeError(f"Not a supported model: {type(model)}")
 

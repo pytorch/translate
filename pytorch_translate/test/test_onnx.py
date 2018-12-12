@@ -88,7 +88,7 @@ class TestONNX(unittest.TestCase):
         self._test_ensemble_encoder_export(test_args)
 
     def test_ensemble_transformer_encoder_export(self):
-        test_args = test_utils.ModelParamsDict(transformer=True)
+        test_args = test_utils.ModelParamsDict(arch="transformer")
         self._test_ensemble_encoder_export(test_args)
 
     def _test_ensemble_encoder_object_export(self, encoder_ensemble):
@@ -222,11 +222,21 @@ class TestONNX(unittest.TestCase):
         self._test_batched_beam_decoder_step(test_args)
 
     def test_batched_beam_decoder_transformer(self):
-        test_args = test_utils.ModelParamsDict(transformer=True)
+        test_args = test_utils.ModelParamsDict(arch="transformer")
         self._test_batched_beam_decoder_step(test_args)
 
     def test_batched_beam_decoder_transformer_vocab_reduction(self):
-        test_args = test_utils.ModelParamsDict(transformer=True)
+        test_args = test_utils.ModelParamsDict(arch="transformer")
+        lexical_dictionaries = test_utils.create_lexical_dictionaries()
+        test_args.vocab_reduction_params = {
+            "lexical_dictionaries": lexical_dictionaries,
+            "num_top_words": 5,
+            "max_translation_candidates_per_word": 1,
+        }
+        self._test_batched_beam_decoder_step(test_args)
+
+    def test_batched_beam_decoder_hybrid_transformer_rnn(self):
+        test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
         lexical_dictionaries = test_utils.create_lexical_dictionaries()
         test_args.vocab_reduction_params = {
             "lexical_dictionaries": lexical_dictionaries,
@@ -486,7 +496,7 @@ class TestONNX(unittest.TestCase):
             np.testing.assert_allclose(onnx_array, original_array)
 
     def test_merge_transpose_and_batchmatmul(self):
-        test_args = test_utils.ModelParamsDict(transformer=True)
+        test_args = test_utils.ModelParamsDict(arch="transformer")
         caffe2_rep = self._test_batched_beam_decoder_step(
             test_args, return_caffe2_rep=True
         )
