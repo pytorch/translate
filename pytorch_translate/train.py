@@ -151,6 +151,12 @@ def validate_and_set_default_args(args):
             else args.distributed_init_method
         )
 
+    # TODO(T37392059): this is needed so that we are more tolerant of
+    # nondeterministic NaNs that may randomly occur when training with FP16 on
+    # Volta, even when the loss is not actually exploding.
+    if args.fp16:
+        args.fp16_scale_tolerance = 0.05
+
     if not args.source_vocab_file:
         args.source_vocab_file = pytorch_translate_dictionary.default_dictionary_path(
             save_dir=args.save_dir, dialect=args.source_lang
