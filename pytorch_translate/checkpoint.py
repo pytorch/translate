@@ -10,6 +10,15 @@ from fairseq import utils
 from pytorch_translate import average_checkpoints, constants
 
 
+def save_checkpoint_atomic(trainer, final_filename, extra_state):
+    """Wrapper around trainer.save_checkpoint to make save atomic."""
+    path, filename = os.path.split(final_filename)
+    temp_filename = os.path.join(path, "." + filename + ".tmp")
+
+    trainer.save_checkpoint(temp_filename, extra_state)
+    os.rename(temp_filename, final_filename)
+
+
 def save_checkpoint(trainer, args, extra_state):
     epoch = extra_state["epoch"]
     batch_offset = extra_state["batch_offset"]
@@ -26,7 +35,7 @@ def save_checkpoint(trainer, args, extra_state):
     if batch_offset is None:
         if not args.no_epoch_checkpoints:
             epoch_filename = os.path.join(args.save_dir, f"checkpoint{epoch}.pt")
-            trainer.save_checkpoint(epoch_filename, extra_state)
+            save_checkpoint_atomic(trainer, epoch_filename, extra_state)
             extra_state["last_checkpoints"].append(epoch_filename)
 
         assert tune_loss is not None
@@ -37,18 +46,18 @@ def save_checkpoint(trainer, args, extra_state):
         ):
             extra_state["checkpoint_lowest_loss"] = tune_loss
             best_filename = os.path.join(args.save_dir, "checkpoint_best.pt")
-            trainer.save_checkpoint(best_filename, extra_state)
+            save_checkpoint_atomic(trainer, best_filename, extra_state)
 
     # Otherwise, we're in the middle of an epoch.
     elif not args.no_epoch_checkpoints:
         epoch_filename = os.path.join(
             args.save_dir, f"checkpoint{epoch}_{batch_offset}.pt"
         )
-        trainer.save_checkpoint(epoch_filename, extra_state)
+        save_checkpoint_atomic(trainer, epoch_filename, extra_state)
         extra_state["last_checkpoints"].append(epoch_filename)
 
     last_filename = os.path.join(args.save_dir, constants.LAST_CHECKPOINT_FILENAME)
-    trainer.save_checkpoint(last_filename, extra_state)
+    save_checkpoint_atomic(trainer, last_filename, extra_state)
 
     # This ensures we'll always have at least one checkpoint in the list to use
     # for BLEU eval, even if we're not saving epoch checkpoints.
