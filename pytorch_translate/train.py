@@ -500,7 +500,8 @@ def train(
                 )
 
             if (
-                extra_state["num_iterations"] % args.save_interval_updates == 0
+                args.save_interval_updates > 0
+                and extra_state["num_iterations"] % args.save_interval_updates == 0
                 and args.shrink_lr_no_best_bleu_eval > 0
                 and extra_state["tune_bleu"]["num_since_best"]
                 > args.shrink_lr_no_best_bleu_eval
