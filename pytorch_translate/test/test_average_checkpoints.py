@@ -7,7 +7,7 @@ import unittest
 
 import numpy as np
 import torch
-from pytorch_translate.average_checkpoints import average_checkpoints
+from pytorch_translate.checkpoint import average_checkpoints
 
 
 class AverageCheckpointsTest(unittest.TestCase):
