@@ -296,6 +296,7 @@ class TransformerEncoder(FairseqEncoder):
 
         # Initialize adversarial mode
         self.set_gradient_tracking_mode(False)
+        self.set_embed_noising_mode(False)
 
     def forward(self, src_tokens, src_lengths):
         # Initialize the tracker to keep track of internal variables
@@ -356,6 +357,13 @@ class TransformerEncoder(FairseqEncoder):
     def set_gradient_tracking_mode(self, mode=True):
         self.tracker.reset()
         self.track_gradients = mode
+
+    def set_embed_noising_mode(self, mode=True):
+        """This allows adversarial trainer to turn on and off embedding noising
+        layers. In regular training, this mode is off, and it is not included
+        in forward pass.
+        """
+        self.embed_noising_mode = mode
 
 
 class TransformerDecoder(FairseqIncrementalDecoder):
