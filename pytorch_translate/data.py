@@ -28,6 +28,7 @@ class MultilingualCorpusConfig(NamedTuple):
     data_file: str
     dict: pytorch_translate_dictionary.Dictionary
     oversampling: int
+    char_dict: Optional[pytorch_translate_dictionary.Dictionary] = None
 
 
 class ParallelCorpusConfig(NamedTuple):

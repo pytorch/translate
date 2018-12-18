@@ -118,10 +118,16 @@ def binarize_text_file(
 
 
 def make_multiling_corpus_configs(
-    language_ids, text_files, dictionaries, oversampling_rates=None
+    language_ids,
+    text_files,
+    dictionaries,
+    char_dictionaries=None,
+    oversampling_rates=None,
 ):
     if not oversampling_rates:
         oversampling_rates = [1] * len(language_ids)
+    if char_dictionaries is None:
+        char_dictionaries = [None] * len(language_ids)
     assert len(language_ids) == len(text_files)
     assert len(language_ids) == len(dictionaries)
     assert len(language_ids) == len(oversampling_rates)
@@ -132,10 +138,15 @@ def make_multiling_corpus_configs(
             else i + pytorch_translate_data.MULTILING_DIALECT_ID_OFFSET,
             data_file=p,
             dict=d,
+            char_dict=cd,
             oversampling=o,
         )
-        for i, p, d, o in zip(
-            language_ids, text_files, dictionaries, oversampling_rates
+        for i, p, d, cd, o in zip(
+            language_ids,
+            text_files,
+            dictionaries,
+            char_dictionaries,
+            oversampling_rates,
         )
     ]
 
@@ -146,17 +157,30 @@ def binarize_text_file_multilingual(
     append_eos: bool,
     reverse_order: bool,
     prepend_language_id: bool,
+    use_char_data: bool = False,
+    embed_bytes: bool = False,
     already_numberized: bool = False,
 ) -> str:
     output_path = maybe_generate_temp_file_path(output_path)
-    dataset = pytorch_translate_data.InMemoryNumpyDataset()
-    dataset.parse_multilingual(
-        corpus_configs,
-        reverse_order=reverse_order,
-        append_eos=append_eos,
-        prepend_language_id=prepend_language_id,
-        already_numberized=already_numberized,
-    )
+    if use_char_data:
+        dataset = char_data.InMemoryNumpyWordCharDataset()
+        dataset.parse_multilingual(
+            corpus_configs,
+            reverse_order=reverse_order,
+            append_eos=append_eos,
+            embed_bytes=embed_bytes,
+            prepend_language_id=prepend_language_id,
+            already_numberized=already_numberized,
+        )
+    else:
+        dataset = pytorch_translate_data.InMemoryNumpyDataset()
+        dataset.parse_multilingual(
+            corpus_configs,
+            append_eos=append_eos,
+            reverse_order=reverse_order,
+            prepend_language_id=prepend_language_id,
+            already_numberized=already_numberized,
+        )
     dataset.save(output_path)
     return output_path
 
