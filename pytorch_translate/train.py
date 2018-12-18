@@ -151,6 +151,12 @@ def validate_and_set_default_args(args):
             else args.distributed_init_method
         )
 
+    if args.fp16 and getattr(args, "adversary", False):
+        print(
+            "Warning: disabling fp16 training since it's not supported by AdversarialTrainer."
+        )
+        args.fp16 = False
+
     if not args.source_vocab_file:
         args.source_vocab_file = pytorch_translate_dictionary.default_dictionary_path(
             save_dir=args.save_dir, dialect=args.source_lang
