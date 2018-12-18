@@ -64,7 +64,9 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
         self.char_buffer = npz["char_buffer"]
         self.char_offsets = npz["char_offsets"]
 
-    def _sent_to_word_ids(self, sent, word_dict, reverse_order=False, append_eos=False):
+    def _sent_to_word_ids(
+        self, sent, word_dict, reverse_order, prepend_inds, append_inds
+    ):
         """
         Extract the word ids for words associated with the input sentence.
         """
@@ -72,11 +74,10 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
         if reverse_order:
             words.reverse()
         word_inds = [word_dict.index(w) for w in words]
-        if append_eos:
-            word_inds.append(word_dict.eos_index)
+        word_inds = prepend_inds + word_inds + append_inds
         return words, word_inds
 
-    def _word_to_char_ids(self, word, char_dict, embed_bytes=False):
+    def _word_to_char_ids(self, word, char_dict, embed_bytes):
         """
         Extract the char/byte ids for char/bytes associated with the input word.
         """
@@ -107,12 +108,19 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
         char_array_list = []
         char_offsets = [0]
         sizes = []
+        prepend_inds = []
+        append_inds = []
+        if append_eos:
+            append_inds.append(word_dict.eos_index)
         with open(path, "r") as f:
             for line in f:
                 words, word_inds = self._sent_to_word_ids(
-                    line, word_dict, reverse_order, append_eos
+                    sent=line,
+                    word_dict=word_dict,
+                    reverse_order=reverse_order,
+                    prepend_inds=prepend_inds,
+                    append_inds=append_inds,
                 )
-
                 word_array_list.append(np.array(word_inds, dtype=np.int32))
                 word_offsets.append(word_offsets[-1] + len(word_inds))
                 sizes.append(len(word_inds))
@@ -121,6 +129,61 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
                     char_inds = self._word_to_char_ids(word, char_dict, embed_bytes)
                     char_array_list.append(np.array(char_inds, dtype=np.int32))
                     char_offsets.append(char_offsets[-1] + len(char_inds))
+
+        self.word_buffer = np.concatenate(word_array_list)
+        self.word_offsets = np.array(word_offsets, dtype=np.int32)
+        self.char_buffer = np.concatenate(char_array_list)
+        self.char_offsets = np.array(char_offsets, dtype=np.int32)
+        self.sizes = np.array(sizes, dtype=np.int32)
+
+        del word_array_list, word_offsets, char_array_list, char_offsets, sizes
+
+    def parse_multilingual(
+        self,
+        corpora,
+        reverse_order,
+        append_eos,
+        embed_bytes,
+        prepend_language_id,
+        already_numberized,
+    ):
+        word_array_list = []
+        word_offsets = [0]
+        char_array_list = []
+        char_offsets = [0]
+        sizes = []
+        for corpus_config in corpora:
+            prepend_inds = []
+            append_inds = []
+            if append_eos:
+                append_inds.append(corpus_config.dict.eos_index)
+            if corpus_config.dialect_id is not None:
+                if prepend_language_id:
+                    prepend_inds.append(corpus_config.dialect_id)
+                else:
+                    append_inds.append(corpus_config.dialect_id)
+            with open(corpus_config.data_file, "r") as f:
+                for line in f:
+                    words, word_inds = self._sent_to_word_ids(
+                        sent=line,
+                        word_dict=corpus_config.dict,
+                        reverse_order=reverse_order,
+                        prepend_inds=prepend_inds,
+                        append_inds=append_inds,
+                    )
+
+                    word_array_list.append(np.array(word_inds, dtype=np.int32))
+                    word_offsets.append(word_offsets[-1] + len(word_inds))
+                    sizes.append(len(word_inds))
+
+                    for word in words:
+                        char_inds = self._word_to_char_ids(
+                            word=word,
+                            char_dict=corpus_config.char_dict,
+                            embed_bytes=embed_bytes,
+                        )
+                        char_array_list.append(np.array(char_inds, dtype=np.int32))
+                        char_offsets.append(char_offsets[-1] + len(char_inds))
 
         self.word_buffer = np.concatenate(word_array_list)
         self.word_offsets = np.array(word_offsets, dtype=np.int32)
