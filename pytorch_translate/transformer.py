@@ -16,20 +16,13 @@ from fairseq.models import (
 )
 from fairseq.modules import AdaptiveSoftmax, SinusoidalPositionalEmbedding
 from pytorch_translate import vocab_reduction
-from pytorch_translate.common_layers import VariableTracker
+from pytorch_translate.common_layers import (
+    TransformerEmbedding,
+    TransformerEncoderGivenEmbeddings,
+    TransformerTokenEmbedding,
+    VariableTracker,
+)
 from pytorch_translate.utils import torch_find
-
-
-def Embedding(num_embeddings, embedding_dim, padding_idx, freeze_embed=False):
-    """
-    Different weight initialization from common_layers.Embedding
-    """
-    m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
-    nn.init.normal_(m.weight, mean=0, std=embedding_dim ** -0.5)
-    nn.init.constant_(m.weight[padding_idx], 0)
-    if freeze_embed:
-        m.weight.requires_grad = False
-    return m
 
 
 @register_model("ptt_transformer")
@@ -194,7 +187,9 @@ class TransformerModel(FairseqModel):
         def build_embedding(dictionary, embed_dim, freeze, path=None):
             num_embeddings = len(dictionary)
             padding_idx = dictionary.pad()
-            emb = Embedding(num_embeddings, embed_dim, padding_idx, freeze)
+            emb = TransformerTokenEmbedding(
+                num_embeddings, embed_dim, padding_idx, freeze
+            )
             # if provided, load from preloaded dictionaries
             if path:
                 embed_dict = utils.parse_embedding(path)
@@ -261,35 +256,13 @@ class TransformerEncoder(FairseqEncoder):
         self, args, dictionary, embed_tokens, left_pad=True, proj_to_decoder=True
     ):
         super().__init__(dictionary)
-        self.dropout = args.dropout
-
-        embed_dim = embed_tokens.embedding_dim
-        self.padding_idx = embed_tokens.padding_idx
-
-        self.embed_tokens = embed_tokens
-        self.embed_scale = math.sqrt(embed_dim)
-        self.embed_positions = fairseq_transformer.PositionalEmbedding(
-            1024,
-            embed_dim,
-            self.padding_idx,
-            left_pad=left_pad,
-            learned=args.encoder_learned_pos,
-        )
-        self.all_layer_position_embed = args.all_layer_position_embed
-
-        self.layers = nn.ModuleList([])
-        self.layers.extend(
-            [
-                fairseq_transformer.TransformerEncoderLayer(args)
-                for i in range(args.encoder_layers)
-            ]
+        self.transformer_embedding = TransformerEmbedding(
+            args=args, embed_tokens=embed_tokens, left_pad=left_pad
         )
 
-        self.output_fc = None
-        if args.encoder_embed_dim != args.decoder_embed_dim and proj_to_decoder:
-            self.output_fc = fairseq_transformer.Linear(
-                embed_dim, args.decoder_embed_dim
-            )
+        self.transformer_encoder_given_embeddings = TransformerEncoderGivenEmbeddings(
+            args=args, proj_to_decoder=proj_to_decoder
+        )
 
         # Variable tracker
         self.tracker = VariableTracker()
@@ -301,35 +274,15 @@ class TransformerEncoder(FairseqEncoder):
     def forward(self, src_tokens, src_lengths):
         # Initialize the tracker to keep track of internal variables
         self.tracker.reset()
-        # Embed tokens
-        x = self.embed_tokens(src_tokens)
+        x, encoder_padding_mask, positions = self.transformer_embedding(
+            src_tokens=src_tokens, src_lengths=src_lengths
+        )
         # Track token embeddings
         self.tracker.track(x, "token_embeddings", retain_grad=self.track_gradients)
-        # Add position embeddings and dropout
-        x = self.embed_scale * x
-        positions = self.embed_positions(src_tokens)
-        if not self.all_layer_position_embed:
-            x += positions
-        else:
-            positions = positions.transpose(0, 1)
-        x = F.dropout(x, p=self.dropout, training=self.training)
 
-        # B x T x C -> T x B x C
-        x = x.transpose(0, 1)
-
-        # compute padding mask (B x T)
-        encoder_padding_mask = src_tokens.eq(self.padding_idx)
-        if not encoder_padding_mask.any():
-            encoder_padding_mask = None
-
-        # encoder layers
-        for layer in self.layers:
-            if self.all_layer_position_embed:
-                x += positions
-            x = layer(x, encoder_padding_mask)
-
-        if self.output_fc is not None:
-            x = self.output_fc(x)
+        x = self.transformer_encoder_given_embeddings(
+            x=x, positions=positions, encoder_padding_mask=encoder_padding_mask
+        )
 
         return x, src_tokens, encoder_padding_mask
 
@@ -345,13 +298,17 @@ class TransformerEncoder(FairseqEncoder):
 
     def max_positions(self):
         """Maximum input length supported by the encoder."""
-        return self.embed_positions.max_positions()
+        return self.transformer_embedding.embed_positions.max_positions()
 
     def upgrade_state_dict(self, state_dict):
-        if isinstance(self.embed_positions, SinusoidalPositionalEmbedding):
-            if "encoder.embed_positions.weights" in state_dict:
-                del state_dict["encoder.embed_positions.weights"]
-            state_dict["encoder.embed_positions._float_tensor"] = torch.FloatTensor(1)
+        if isinstance(
+            self.transformer_embedding.embed_positions, SinusoidalPositionalEmbedding
+        ):
+            if "encoder.transformer_embedding.embed_positions.weights" in state_dict:
+                del state_dict["encoder.transformer_embedding.embed_positions.weights"]
+            state_dict[
+                "encoder.transformer_embedding.embed_positions._float_tensor"
+            ] = torch.FloatTensor(1)
         return state_dict
 
     def set_gradient_tracking_mode(self, mode=True):
