@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
 import abc
+import math
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from fairseq import utils
-from fairseq.models import FairseqIncrementalDecoder
+from fairseq.models import FairseqIncrementalDecoder, transformer as fairseq_transformer
 from pytorch_translate import rnn_cell  # noqa
 from pytorch_translate import vocab_reduction
 from pytorch_translate.research.lexical_choice import lexical_translation
@@ -519,3 +520,90 @@ def build_embedding(dictionary, embed_dim, path=None):
         embed_dict = utils.parse_embedding(path)
         utils.load_embedding(embed_dict, dictionary, emb)
     return emb
+
+
+class TransformerEncoderGivenEmbeddings(nn.Module):
+    def __init__(self, args, proj_to_decoder):
+        super().__init__()
+
+        self.all_layer_position_embed = args.all_layer_position_embed
+
+        self.layers = nn.ModuleList([])
+        self.layers.extend(
+            [
+                fairseq_transformer.TransformerEncoderLayer(args)
+                for i in range(args.encoder_layers)
+            ]
+        )
+
+        self.output_fc = None
+        if args.encoder_embed_dim != args.decoder_embed_dim and proj_to_decoder:
+            self.output_fc = fairseq_transformer.Linear(
+                args.encoder_embed_dim, args.decoder_embed_dim
+            )
+
+    def forward(self, x, positions, encoder_padding_mask):
+        # encoder layers
+        for layer in self.layers:
+            if self.all_layer_position_embed:
+                x += positions
+            x = layer(x, encoder_padding_mask)
+
+        if self.output_fc is not None:
+            x = self.output_fc(x)
+
+        return x
+
+
+def TransformerTokenEmbedding(
+    num_embeddings, embedding_dim, padding_idx, freeze_embed=False
+):
+    """
+    Different weight initialization from common_layers.Embedding
+    """
+    m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
+    nn.init.normal_(m.weight, mean=0, std=embedding_dim ** -0.5)
+    nn.init.constant_(m.weight[padding_idx], 0)
+    if freeze_embed:
+        m.weight.requires_grad = False
+    return m
+
+
+class TransformerEmbedding(nn.Module):
+    def __init__(self, args, embed_tokens, left_pad):
+        super().__init__()
+        self.dropout = args.dropout
+        embed_dim = embed_tokens.embedding_dim
+        self.padding_idx = embed_tokens.padding_idx
+        self.all_layer_position_embed = args.all_layer_position_embed
+        self.embed_tokens = embed_tokens
+        self.embed_scale = math.sqrt(embed_dim)
+        self.embed_positions = fairseq_transformer.PositionalEmbedding(
+            1024,
+            embed_dim,
+            self.padding_idx,
+            left_pad=left_pad,
+            learned=args.encoder_learned_pos,
+        )
+
+    def forward(self, src_tokens, src_lengths):
+        # Embed tokens
+        x = self.embed_tokens(src_tokens)
+        # Add position embeddings and dropout
+        x = self.embed_scale * x
+        positions = self.embed_positions(src_tokens)
+        if not self.all_layer_position_embed:
+            x += positions
+        else:
+            positions = positions.transpose(0, 1)
+        x = F.dropout(x, p=self.dropout, training=self.training)
+
+        # B x T x C -> T x B x C
+        x = x.transpose(0, 1)
+
+        # compute padding mask (B x T)
+        encoder_padding_mask = src_tokens.eq(self.padding_idx)
+        if not encoder_padding_mask.any():
+            encoder_padding_mask = None
+
+        return x, encoder_padding_mask, positions

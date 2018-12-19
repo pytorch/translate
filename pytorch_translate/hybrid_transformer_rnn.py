@@ -15,6 +15,7 @@ from pytorch_translate import (
     transformer as pytorch_translate_transformer,
     vocab_reduction,
 )
+from pytorch_translate.common_layers import TransformerTokenEmbedding
 from pytorch_translate.utils import torch_find
 
 
@@ -154,7 +155,7 @@ class HybridTransformerRNNModel(FairseqModel):
         def build_embedding(dictionary, embed_dim, freeze, path=None):
             num_embeddings = len(dictionary)
             padding_idx = dictionary.pad()
-            emb = pytorch_translate_transformer.Embedding(
+            emb = TransformerTokenEmbedding(
                 num_embeddings, embed_dim, padding_idx, freeze
             )
             # if provided, load from preloaded dictionaries
