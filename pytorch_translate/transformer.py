@@ -25,6 +25,17 @@ from pytorch_translate.common_layers import (
 from pytorch_translate.utils import torch_find
 
 
+def build_embedding(dictionary, embed_dim, freeze, path=None):
+    num_embeddings = len(dictionary)
+    padding_idx = dictionary.pad()
+    emb = TransformerTokenEmbedding(num_embeddings, embed_dim, padding_idx, freeze)
+    # if provided, load from preloaded dictionaries
+    if path:
+        embed_dict = utils.parse_embedding(path)
+        utils.load_embedding(embed_dict, dictionary, emb)
+    return emb
+
+
 @register_model("ptt_transformer")
 class TransformerModel(FairseqModel):
     def __init__(self, task, encoder, decoder):
@@ -183,18 +194,6 @@ class TransformerModel(FairseqModel):
         base_architecture(args)
 
         src_dict, tgt_dict = task.source_dictionary, task.target_dictionary
-
-        def build_embedding(dictionary, embed_dim, freeze, path=None):
-            num_embeddings = len(dictionary)
-            padding_idx = dictionary.pad()
-            emb = TransformerTokenEmbedding(
-                num_embeddings, embed_dim, padding_idx, freeze
-            )
-            # if provided, load from preloaded dictionaries
-            if path:
-                embed_dict = utils.parse_embedding(path)
-                utils.load_embedding(embed_dict, dictionary, emb)
-            return emb
 
         if args.share_all_embeddings:
             if src_dict != tgt_dict:
