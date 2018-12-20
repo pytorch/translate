@@ -569,9 +569,7 @@ def train(
             trainer=trainer,
             task=task,
             extra_state=extra_state,
-            do_eval_tune_loss=True,
-            do_save=not args.no_save and not args.no_end_of_epoch_checkpoints,
-            do_eval_bleu=args.generate_bleu_eval_per_epoch,
+            end_of_epoch=True,
         )
         if distributed_utils.is_master(args) and output_queue is not None:
             output_queue.put_nowait(
