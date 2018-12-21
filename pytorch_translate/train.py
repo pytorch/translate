@@ -55,6 +55,7 @@ from pytorch_translate import semi_supervised  # noqa; noqa
 
 
 from pytorch_translate import char_source_model  # noqa; noqa
+from pytorch_translate import char_source_transformer_model  # noqa; noqa
 
 
 def get_parser_with_args(default_task="pytorch_translate"):
@@ -166,7 +167,9 @@ def validate_and_set_default_args(args):
             save_dir=args.save_dir, dialect=args.target_lang
         )
 
-    if args.arch == "char_source" and not args.char_source_vocab_file:
+    if (
+        args.arch == "char_source" or args.arch == "char_source_transformer"
+    ) and not args.char_source_vocab_file:
         args.char_source_vocab_file = pytorch_translate_dictionary.default_char_dictionary_path(
             save_dir=args.save_dir, dialect=args.source_lang
         )

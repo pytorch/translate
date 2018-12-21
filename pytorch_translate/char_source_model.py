@@ -4,19 +4,11 @@ import logging
 from ast import literal_eval
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from fairseq.models import FairseqEncoder, register_model, register_model_architecture
-from pytorch_translate import (
-    char_encoder,
-    model_constants,
-    rnn,
-    vocab_constants,
-    word_dropout,
-)
+from pytorch_translate import char_encoder, model_constants, rnn, vocab_constants
 from pytorch_translate.common_layers import VariableTracker
 from pytorch_translate.dictionary import TAGS
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
 logger = logging.getLogger(__name__)

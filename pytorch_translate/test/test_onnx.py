@@ -10,7 +10,8 @@ import onnx
 import torch
 from caffe2.python.onnx import backend as caffe2_backend
 from fairseq import models
-from pytorch_translate import char_source_model  # noqa (must be after rnn)
+from pytorch_translate import char_source_model  # noqa
+from pytorch_translate import char_source_transformer_model  # noqa
 from pytorch_translate import rnn  # noqa
 from pytorch_translate import transformer  # noqa
 from pytorch_translate.ensemble_export import (
@@ -494,6 +495,17 @@ class TestONNX(unittest.TestCase):
             original_array = original_out.detach().numpy()
             assert onnx_array.shape == original_array.shape
             np.testing.assert_allclose(onnx_array, original_array)
+
+    def test_ensemble_char_transformer_encoder_export(self):
+        test_args = test_utils.ModelParamsDict(arch="transformer")
+        test_args.arch = "char_source_transformer"
+        test_args.char_source_dict_size = 126
+        test_args.char_embed_dim = 8
+        test_args.char_cnn_params = "[(50, 1), (100,2)]"
+        test_args.char_cnn_nonlinear_fn = "relu"
+        test_args.char_cnn_num_highway_layers = 2
+        test_args.char_cnn_pool_type = "max"
+        self._test_ensemble_encoder_export_char_source(test_args)
 
     def test_merge_transpose_and_batchmatmul(self):
         test_args = test_utils.ModelParamsDict(arch="transformer")

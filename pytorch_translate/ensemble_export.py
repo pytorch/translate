@@ -25,6 +25,7 @@ from torch.onnx import ExportTypes, OperatorExportTypes
 
 from pytorch_translate import (  # noqa; noqa
     char_source_model,
+    char_source_transformer_model,
     dictionary,
     hybrid_transformer_rnn,
     rnn,
@@ -75,6 +76,10 @@ def load_models_from_checkpoints(
             model = rnn.RNNModel.build_model(checkpoint_data["args"], task)
         elif architecture == "char_source":
             model = char_source_model.CharSourceModel.build_model(
+                checkpoint_data["args"], task
+            )
+        elif architecture == "char_source_transformer":
+            model = char_source_transformer_model.CharSourceTransformerModel.build_model(
                 checkpoint_data["args"], task
             )
         elif architecture == "rnn_word_pred":
@@ -466,7 +471,9 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 state_outputs.append(next_input_feed)
                 beam_axis_per_state.append(0)
 
-            elif isinstance(model, transformer.TransformerModel):
+            elif isinstance(model, transformer.TransformerModel) or isinstance(
+                model, char_source_transformer_model.CharSourceTransformerModel
+            ):
                 encoder_output = inputs[i]
 
                 # store cached states, use evaluation mode

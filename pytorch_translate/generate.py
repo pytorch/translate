@@ -17,6 +17,7 @@ from pytorch_translate import (
     beam_decode,
     char_data,
     char_source_model,
+    char_source_transformer_model,
     data as pytorch_translate_data,
     dictionary as pytorch_translate_dictionary,
     options as pytorch_translate_options,
@@ -90,7 +91,9 @@ def build_sequence_generator(args, task, models):
     model_weights = None
     if args.model_weights:
         model_weights = [float(w.strip()) for w in args.model_weights.split(",")]
-    use_char_source = isinstance(models[0], char_source_model.CharSourceModel)
+    use_char_source = isinstance(
+        models[0], char_source_model.CharSourceModel
+    ) or isinstance(models[0], char_source_transformer_model.CharSourceTransformerModel)
     # Use a different sequence generator in the multisource setting
     if getattr(args, "source_ensembling", False):
         translator_class = multisource_decode.MultiSourceSequenceGenerator

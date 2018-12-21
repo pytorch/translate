@@ -86,8 +86,10 @@ class PytorchTranslateTask(FairseqTask):
         print(f"| [{source_lang}] dictionary: {len(source_dict)} types")
         print(f"| [{target_lang}] dictionary: {len(target_dict)} types")
 
-        use_char_source = (args.char_source_vocab_file != "") or (
-            getattr(args, "arch", "") == "char_source"
+        use_char_source = (
+            (args.char_source_vocab_file != "")
+            or (getattr(args, "arch", "") == "char_source")
+            or (getattr(args, "arch", "") == "char_source_transformer")
         )
         if use_char_source:
             char_source_dict = pytorch_translate_dictionary.Dictionary.load(
