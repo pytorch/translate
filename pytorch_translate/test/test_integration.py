@@ -405,6 +405,9 @@ class TestTranslation(unittest.TestCase):
                     ],
                 )
 
+    @unittest.skipIf(
+        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+    )
     def test_char_source_hybrid(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_char_rnn") as data_dir:
