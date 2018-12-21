@@ -942,7 +942,7 @@ class RNNEncoder(FairseqEncoder):
         embedded_words = x
 
         # Generate packed seq to deal with varying source seq length
-        packed_input, batch_sizes = pack_padded_sequence(x, src_lengths)
+        packed_input, batch_sizes, _, _ = pack_padded_sequence(x, src_lengths)
         final_hiddens, final_cells = [], []
         next_hiddens = []
         for i, rnn_layer in enumerate(self.layers):
