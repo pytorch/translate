@@ -357,6 +357,53 @@ class TestTranslation(unittest.TestCase):
                 )
                 generate_main(data_dir)
 
+    def test_char_source_hybrid(self):
+        with contextlib.redirect_stdout(StringIO()):
+            with tempfile.TemporaryDirectory("test_char_rnn") as data_dir:
+                create_dummy_data(data_dir)
+                train_translation_model(
+                    data_dir,
+                    [
+                        "--arch",
+                        "char_source_hybrid",
+                        "--char-embed-dim",
+                        "64",
+                        "--char-cnn-params",
+                        "[(50, 1), (100,2)]",
+                        "--char-cnn-nonlinear-fn",
+                        "relu",
+                        "--char-cnn-num-highway-layers",
+                        "2",
+                        "--char-source-max-vocab-size",
+                        "26",
+                        "--encoder-embed-dim",
+                        "128",
+                        "--encoder-ffn-embed-dim",
+                        "256",
+                        "--encoder-attention-heads",
+                        "4",
+                        "--encoder-layers",
+                        "3",
+                        "--decoder-embed-dim",
+                        "256",
+                        "--decoder-attention-heads",
+                        "4",
+                        "--decoder-layers",
+                        "2",
+                        "--decoder-lstm-units",
+                        "128",
+                        "--decoder-out-embed-dim",
+                        "64",
+                    ],
+                )
+                generate_main(
+                    data_dir,
+                    [
+                        "--char-source-vocab-file",
+                        os.path.join(data_dir, "char-dictionary-in.txt"),
+                    ],
+                )
+
 
 def write_dummy_file(filename, num_examples, maxlen):
     rng_state = torch.get_rng_state()

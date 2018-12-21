@@ -24,6 +24,7 @@ from fairseq import (
 )
 from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
+from pytorch_translate import char_source_hybrid  # noqa
 from pytorch_translate import hybrid_transformer_rnn  # noqa
 from pytorch_translate import sequence_criterions  # noqa
 from pytorch_translate import transformer  # noqa
@@ -166,7 +167,9 @@ def validate_and_set_default_args(args):
             save_dir=args.save_dir, dialect=args.target_lang
         )
 
-    if args.arch == "char_source" and not args.char_source_vocab_file:
+    if (
+        args.arch == "char_source" or args.arch == "char_source_hybrid"
+    ) and not args.char_source_vocab_file:
         args.char_source_vocab_file = pytorch_translate_dictionary.default_char_dictionary_path(
             save_dir=args.save_dir, dialect=args.source_lang
         )

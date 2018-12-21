@@ -10,7 +10,8 @@ import onnx
 import torch
 from caffe2.python.onnx import backend as caffe2_backend
 from fairseq import models
-from pytorch_translate import char_source_model  # noqa (must be after rnn)
+from pytorch_translate import char_source_hybrid  # noqa
+from pytorch_translate import char_source_model  # noqa
 from pytorch_translate import rnn  # noqa
 from pytorch_translate import transformer  # noqa
 from pytorch_translate.ensemble_export import (
@@ -434,6 +435,19 @@ class TestONNX(unittest.TestCase):
         test_args.char_embed_dim = 8
         test_args.char_rnn_units = 12
         test_args.char_rnn_layers = 2
+
+        self._test_ensemble_encoder_export_char_source(test_args)
+
+    def test_ensemble_encoder_export_char_cnn_hyrid(self):
+        test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
+
+        test_args.arch = "char_source_hybrid"
+        test_args.char_source_dict_size = 126
+        test_args.char_embed_dim = 8
+        test_args.char_cnn_params = "[(10, 3), (10, 5)]"
+        test_args.char_cnn_nonlinear_fn = "tanh"
+        test_args.char_cnn_pool_type = "max"
+        test_args.char_cnn_num_highway_layers = 2
 
         self._test_ensemble_encoder_export_char_source(test_args)
 
