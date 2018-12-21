@@ -24,6 +24,7 @@ from torch.onnx import ExportTypes, OperatorExportTypes
 
 
 from pytorch_translate import (  # noqa; noqa
+    char_source_hybrid,
     char_source_model,
     char_source_transformer_model,
     dictionary,
@@ -92,6 +93,10 @@ def load_models_from_checkpoints(
             )
         elif architecture == "hybrid_transformer_rnn":
             model = hybrid_transformer_rnn.HybridTransformerRNNModel.build_model(
+                checkpoint_data["args"], task
+            )
+        elif architecture == "char_source_hybrid":
+            model = char_source_hybrid.CharSourceHybridModel.build_model(
                 checkpoint_data["args"], task
             )
         elif architecture == "semi_supervised":
@@ -503,7 +508,9 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
                 state_outputs.extend(attention_states)
                 beam_axis_per_state.extend([0 for _ in attention_states])
-            elif isinstance(model, hybrid_transformer_rnn.HybridTransformerRNNModel):
+            elif isinstance(
+                model, hybrid_transformer_rnn.HybridTransformerRNNModel
+            ) or isinstance(model, char_source_hybrid.CharSourceHybridModel):
                 encoder_output = inputs[i]
 
                 # store cached states, use evaluation mode

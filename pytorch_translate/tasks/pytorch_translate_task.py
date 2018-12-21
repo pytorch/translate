@@ -90,6 +90,7 @@ class PytorchTranslateTask(FairseqTask):
             (args.char_source_vocab_file != "")
             or (getattr(args, "arch", "") == "char_source")
             or (getattr(args, "arch", "") == "char_source_transformer")
+            or getattr(args, "arch", "") == "char_source_hybrid"
         )
         if use_char_source:
             char_source_dict = pytorch_translate_dictionary.Dictionary.load(
