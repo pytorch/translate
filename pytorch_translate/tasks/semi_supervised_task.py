@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import os
 from collections import OrderedDict
 from typing import Optional
@@ -79,7 +80,7 @@ class WeightedEpochBatchIterator(iterators.EpochBatchIterator):
             prev_scheduled_epochs = 0
             dataset_weights_map = None
             for schedule in self.weights:
-                # schedule looks like (epoch, {dataset: weight})
+                # schedule looks like (num_epochs, {dataset: weight})
                 if self.epoch <= schedule[0] + prev_scheduled_epochs:
                     dataset_weights_map = schedule[1]
                     break
@@ -156,11 +157,15 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
             weight 0.5, 'src-tgt_mono' gets 0.5, the rest get 1
 
         """
+
+        # default loss_weights is equal weighting for all model keys
         self.loss_weights = [
-            (5, {"src-tgt": 1, "src-tgt_mono": 0, "tgt-src": 1, "tgt-src_mono": 0}),
-            (5, {"src-tgt": 1, "src-tgt_mono": 0.5, "tgt-src": 1, "tgt-src_mono": 0.5}),
-            (100, {"src-tgt": 1, "src-tgt_mono": 1, "tgt-src": 1, "tgt-src_mono": 1}),
+            (100, {"src-tgt": 1, "src-tgt_mono": 1, "tgt-src": 1, "tgt-src_mono": 1})
         ]
+        if hasattr(self.args, "loss_weights_json") and self.args.loss_weights_json:
+            self.loss_weights = PytorchTranslateSemiSupervised.parse_loss_weights(
+                loss_weights_json=self.args.loss_weights_json
+            )
 
     @staticmethod
     def add_args(parser):
@@ -187,6 +192,23 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
             help="Upper-bounds the number of monolingual examples to N times "
             "the amount of parallel data.",
         )
+        parser.add_argument(
+            "--loss-weights-json",
+            default="",
+            help="JSON representation of `loss_weights`:"
+            "[[num_epochs, {'model_key': weight, ...}], ...]",
+        )
+
+    @staticmethod
+    def parse_loss_weights(loss_weights_json: str):
+        # [[num_epochs, {'model_key': weight, ...}], ...]
+        loss_weights_decoded_json = json.loads(loss_weights_json.replace("'", '"'))
+        # [(num_epochs, {'model_key': weight, ...}), ...]
+        loss_weights = [
+            (num_epochs, weights_dict)
+            for num_epochs, weights_dict in loss_weights_decoded_json
+        ]
+        return loss_weights
 
     def load_monolingual_dataset(
         self, bin_path, is_source=False, num_examples_limit=None
