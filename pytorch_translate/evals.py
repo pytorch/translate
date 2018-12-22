@@ -253,20 +253,23 @@ def calculate_bleu_on_subset(args, task, epoch_str: str, offset, dataset_split):
 
 
 def save_and_eval(
-    args, trainer, task, extra_state: Dict[str, Any], end_of_epoch=False
+    args,
+    trainer,
+    task,
+    extra_state: Dict[str, Any],
+    do_eval_tune_loss: bool,
+    do_save: bool,
+    do_eval_bleu: bool,
 ) -> Tuple[Dict[str, Any], bool, Optional[list]]:
+    # Clear any remaining metrics from previous steps. This should already
+    # have been done before, but just in case - to make sure we catch
+    # any case where extra_case does not get populated correctly.
+    # extra_state = clear_per_step_extra_state(extra_state)
 
     # Under multiprocessing, each process will run eval over a different
     # shard of the tune data set and then aggregate the results across all
     # processes, so the eval stats from all processes' trainer should
     # remain synchronized.
-    is_master = distributed_utils.is_master(args)
-
-    # Tune loss
-    mid_epoch_eval_tune_loss = (args.subepoch_validate_interval > 0) and (
-        extra_state["num_iterations"] % args.subepoch_validate_interval == 0
-    )
-    do_eval_tune_loss = end_of_epoch or mid_epoch_eval_tune_loss
     stop_due_to_tune_loss = False
     if do_eval_tune_loss:
         extra_state, stop_due_to_tune_loss = eval_tune_loss(
@@ -277,55 +280,32 @@ def save_and_eval(
             extra_state=extra_state,
         )
 
-    # Save
     # Only save checkpoints and eval tune BLEU on the master - all other
     # processes will just get the results from the master.
-    mid_epoch_save = (args.save_interval_updates > 0) and (
-        extra_state["num_iterations"] % args.save_interval_updates == 0
-    )
-    end_of_epoch_save = end_of_epoch and not args.no_end_of_epoch_checkpoints
-    do_save = is_master and not args.no_save and (mid_epoch_save or end_of_epoch_save)
-
-    if do_save:
-        extra_state = checkpoint.save_checkpoint(
-            trainer=trainer, args=args, extra_state=extra_state
-        )
-
-    # Bleu eval
-    mid_epoch_bleu_eval = args.generate_bleu_eval_interval > 0 and (
-        extra_state["num_iterations"] - extra_state["tune_bleu"]["last_eval_step"]
-        >= args.generate_bleu_eval_interval
-    )
-    end_of_epoch_bleu_eval = end_of_epoch and args.generate_bleu_eval_per_epoch
-    # We can only do BLEU eval when we have a new checkpoint to load.
-    do_eval_bleu = (
-        is_master and do_save and (mid_epoch_bleu_eval or end_of_epoch_bleu_eval)
-    )
-
-    if mid_epoch_bleu_eval or end_of_epoch_bleu_eval:
-        extra_state["tune_bleu"]["last_eval_step"] = extra_state["num_iterations"]
-
-    if do_eval_bleu and not do_save:
-        raise ValueError(
-            "do_save should always be true when do_eval_bleu is true "
-            "since a new BLEU eval can only be done when there's a new "
-            "checkpoint."
-        )
-
+    master_extra_state = None
+    master_stop_training = None
     translation_samples = None
-    stop_due_to_tune_bleu = False
-    if do_eval_bleu:
-        extra_state, stop_due_to_tune_bleu, translation_samples = evaluate_bleu(
-            args=args, task=task, extra_state=extra_state
-        )
+    if distributed_utils.is_master(args):
+        stop_due_to_tune_bleu = False
+        if do_save:
+            extra_state = checkpoint.save_checkpoint(
+                trainer=trainer, args=args, extra_state=extra_state
+            )
+        if do_eval_bleu and not do_save:
+            raise ValueError(
+                "do_save should always be true when do_eval_bleu is true "
+                "since a new BLEU eval can only be done when there's a new "
+                "checkpoint."
+            )
+        if do_eval_bleu:
+            extra_state, stop_due_to_tune_bleu, translation_samples = evaluate_bleu(
+                args=args, task=task, extra_state=extra_state
+            )
+        master_extra_state = extra_state
+        master_stop_training = stop_due_to_tune_loss or stop_due_to_tune_bleu
 
     # We don't all_gather the translation_samples since the sample sentences
     # could be pretty long, and only the master uses it anyway.
-    master_extra_state = None
-    master_stop_training = None
-    if is_master:
-        master_extra_state = extra_state
-        master_stop_training = stop_due_to_tune_loss or stop_due_to_tune_bleu
     extra_state, stop_training = pytorch_translate_utils.all_gather_from_master(
         args=args, data=[master_extra_state, master_stop_training]
     )
