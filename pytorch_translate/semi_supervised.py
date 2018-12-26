@@ -9,7 +9,7 @@ from fairseq.models import (
     register_model,
     register_model_architecture,
 )
-from pytorch_translate import common_layers, constants
+from pytorch_translate import common_layers, constants, utils
 from pytorch_translate.rnn import RNNModel, base_architecture
 from pytorch_translate.tasks.semi_supervised_task import PytorchTranslateSemiSupervised
 
@@ -54,6 +54,17 @@ class SemiSupervisedModel(FairseqMultiModel):
             "--share-decoders",
             action="store_true",
             help="share decoders across languages",
+        )
+        parser.add_argument(
+            "--remove-vr-if-same-lang-at-enc-and-dec",
+            type=utils.bool_flag,
+            nargs="?",
+            const=True,
+            default=True,
+            help="Whether to remove vocab reduction in the decoder for src-src "
+            "and tgt-tgt models. Note this should be True unless you use a "
+            "joint vocab AND your lexical dictionaries are built to "
+            "accommodate the same language at source and target.",
         )
 
     @classmethod
@@ -102,6 +113,8 @@ class SemiSupervisedModel(FairseqMultiModel):
             return lang_encoders[lang]
 
         def get_decoder(lang_pair, shared_decoder_embed_tokens=None):
+            if args.share_decoders:
+                args.remove_vr_if_same_lang_at_enc_and_dec = False
             """
             Fetch decoder for the input `lang_pair`, which denotes the target
             language of the model
@@ -113,7 +126,10 @@ class SemiSupervisedModel(FairseqMultiModel):
                 # hack to prevent VR for denoising autoencoder. We remove vocab
                 # reduction params if we have lang-lang_any_suffix
                 args_maybe_modified = copy.deepcopy(args)
-                if source_lang == target_lang:
+                if (
+                    source_lang == target_lang
+                    and not args.remove_vr_if_same_lang_at_enc_and_dec
+                ):
                     args_maybe_modified.vocab_reduction_params = None
 
                 lang_decoders[target_lang] = RNNModel.build_decoder(
