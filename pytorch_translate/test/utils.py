@@ -2,14 +2,17 @@
 
 import codecs
 import tempfile
+from typing import Any, Dict, Tuple
 
 import numpy as np
 import torch
 from fairseq import data
+from fairseq.trainer import Trainer
 from pytorch_translate import (
     dictionary as pytorch_translate_dictionary,
     vocab_constants,
 )
+from pytorch_translate.tasks import pytorch_translate_task as tasks
 
 
 class ModelParamsDict:
@@ -330,3 +333,16 @@ def create_vocab_reduction_expected_array(
     expected_translation_candidates[104][0] = 102
 
     return expected_translation_candidates
+
+
+def gpu_train_step(test_args: ModelParamsDict) -> Tuple[Trainer, Dict[Any, Any]]:
+    """Sets up inputs from test_args then executes a single train step. A train
+    step always requires a GPU."""
+    samples, src_dict, tgt_dict = prepare_inputs(test_args)
+    task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
+    model = task.build_model(test_args)
+    criterion = task.build_criterion(test_args)
+    sample = next(samples)
+    trainer = Trainer(test_args, task, model, criterion, dummy_batch=sample)
+    logging_dict = trainer.train_step([sample])
+    return trainer, logging_dict
