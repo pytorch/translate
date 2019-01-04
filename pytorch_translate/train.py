@@ -437,8 +437,6 @@ def train(
         prune_masks = create_prune_masks(args, trainer)
         apply_prune_masks(prune_masks, trainer)
 
-    # this will track whether we store at least one result in the output queue
-    empty_queue = True
     while lr > args.min_lr and extra_state["epoch"] <= max_epoch:
         """Train the model for one epoch."""
 
@@ -534,7 +532,6 @@ def train(
                         },
                     )
                 )
-                empty_queue = False
 
             if (
                 do_eval_bleu
@@ -598,34 +595,6 @@ def train(
         extra_state["epoch"] += 1
         extra_state["batch_offset"] = 0
         starting_offset = 0
-
-    # we want to save at least one datapoint in the output queue
-    if empty_queue:
-        (
-            extra_state,
-            stop_training_end_of_epoch,
-            translation_samples,
-        ) = evals.save_and_eval(
-            args=args,
-            trainer=trainer,
-            task=task,
-            extra_state=extra_state,
-            do_eval_tune_loss=True,
-            do_save=not args.no_save and not args.no_end_of_epoch_checkpoints,
-            do_eval_bleu=args.generate_bleu_eval_per_epoch,
-        )
-        if distributed_utils.is_master(args) and output_queue is not None:
-            output_queue.put_nowait(
-                (
-                    trainer.get_num_updates(),
-                    {
-                        "train_ppl": train_stats["ppl"],
-                        "tune_ppl": extra_state["tune_eval"]["perplexity"],
-                        "tune_bleu": extra_state["tune_bleu"]["current"],
-                        "translation_samples": translation_samples,
-                    },
-                )
-            )
 
     train_meter.stop()
     print(f"| done training in {train_meter.sum:.1f} seconds")
