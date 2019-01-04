@@ -8,7 +8,7 @@ from pytorch_translate.dictionary import TAGS
 
 
 class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
-    """analogous to fairseq.data.IndexedInMemoryDataset"""
+    """analogous to fairseq.data.IndexedCachedDataset"""
 
     def __init__(self):
         """Initialize empty dataset"""

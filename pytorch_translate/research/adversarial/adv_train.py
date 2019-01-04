@@ -286,6 +286,7 @@ def setup_training(args):
         seed=args.seed,
         num_shards=args.distributed_world_size,
         shard_id=args.distributed_rank,
+        num_workers=args.num_workers,
     )
     epoch = extra_state["epoch"]
     if extra_state["batch_offset"] == 0:
@@ -643,6 +644,7 @@ def validate(args, trainer, task, subset, extra_state):
         seed=args.seed,
         num_shards=args.distributed_world_size,
         shard_id=args.distributed_rank,
+        num_workers=args.num_workers,
     ).next_epoch_itr(shuffle=False)
     progress = progress_bar.build_progress_bar(
         args, itr, epoch, prefix=f"valid on '{subset}' subset", no_progress_bar="simple"

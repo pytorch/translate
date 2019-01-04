@@ -38,7 +38,7 @@ class ParallelCorpusConfig(NamedTuple):
 
 
 class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
-    """analogous to fairseq.data.indexed_dataset.IndexedInMemoryDataset"""
+    """analogous to fairseq.data.indexed_dataset.IndexedCachedDataset"""
 
     def __init__(self):
         """Initialize empty dataset"""

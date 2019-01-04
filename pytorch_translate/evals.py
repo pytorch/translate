@@ -99,6 +99,7 @@ def eval_tune_loss(args, trainer, task, subset, extra_state):
         seed=args.seed,
         num_shards=args.distributed_world_size,
         shard_id=args.distributed_rank,
+        num_workers=args.num_workers,
     ).next_epoch_itr(shuffle=False)
     progress = progress_bar.build_progress_bar(
         args=args,

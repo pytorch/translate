@@ -197,6 +197,7 @@ def create_iterator(args, trainer, task, adv_split):
         required_batch_size_multiple=8,
         num_shards=args.num_shards,
         shard_id=args.shard_id,
+        num_workers=args.num_workers,
     ).next_epoch_itr(shuffle=False)
 
 
