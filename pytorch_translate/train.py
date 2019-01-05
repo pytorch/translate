@@ -5,6 +5,7 @@ import collections
 import math
 import multiprocessing.queues as mp_queues
 import os
+import queue
 import random
 import time
 from typing import Any, Callable, Dict, Optional, Tuple
@@ -729,9 +730,20 @@ def main(args, trainer_class=Trainer, **train_step_kwargs):
     if args.distributed_world_size == 1:
         single_process_main(args, trainer_class, **train_step_kwargs)
     else:
-        spawn_context, _ = multi_process_main(args=args, start_rank=0)
-        while not spawn_context.join():
-            pass
+        spawn_context, output_queue = multi_process_main(args=args, start_rank=0)
+
+        while not spawn_context.join(timeout=30):
+            # Periodically clears the output queue to ensure that the processes
+            # don't deadlock due to queue buffer being full. This is also
+            # necessary to ensure that processes join correctly, since a process
+            # may not terminate until all items it put on the queue have been
+            # consumed (per
+            # https://docs.python.org/3/library/multiprocessing.html#all-start-methods).
+            try:
+                while True:
+                    output_queue.get_nowait()
+            except queue.Empty:
+                pass
 
 
 if __name__ == "__main__":
