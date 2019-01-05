@@ -40,6 +40,7 @@ class WeightedEpochBatchIterator(iterators.EpochBatchIterator):
         seed=1,
         num_shards=1,
         shard_id=0,
+        num_workers=0,
         weights=None,
     ):
         """
@@ -52,14 +53,25 @@ class WeightedEpochBatchIterator(iterators.EpochBatchIterator):
             batch_sampler (~torch.utils.data.Sampler): an iterator over batches of
                 indices
             seed (int, optional): seed for random number generator for
-                reproducibility. Default: ``1``
+                reproducibility (default: 1).
             num_shards (int, optional): shard the data iterator into N
-                shards. Default: ``1``
+                shards (default: 1).
             shard_id (int, optional): which shard of the data iterator to
-                return. Default: ``0``
+                return (default: 0).
+            num_workers (int, optional): how many subprocesses to use for data
+                loading. 0 means the data will be loaded in the main process
+                (default: 0).
             weights: is of the format [(epoch, {dataset: weight})]
         """
-        super().__init__(dataset, collate_fn, batch_sampler, seed, num_shards, shard_id)
+        super().__init__(
+            dataset=dataset,
+            collate_fn=collate_fn,
+            batch_sampler=batch_sampler,
+            seed=seed,
+            num_shards=num_shards,
+            shard_id=shard_id,
+            num_workers=num_workers,
+        )
         self.weights = weights
 
     def next_epoch_itr(self, shuffle=True, fix_batches_to_gpus=False):
@@ -506,6 +518,7 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
         seed=1,
         num_shards=1,
         shard_id=0,
+        num_workers=0,
     ):
         assert isinstance(dataset, FairseqDataset)
 
@@ -538,6 +551,7 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
             seed=seed,
             num_shards=num_shards,
             shard_id=shard_id,
+            num_workers=num_workers,
             weights=self.loss_weights,
         )
 
@@ -552,6 +566,7 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
         seed=1,
         num_shards=1,
         shard_id=0,
+        num_workers=0,
     ):
         return super(PytorchTranslateSemiSupervised, self).get_batch_iterator(
             dataset=dataset,
@@ -563,6 +578,7 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
             seed=seed,
             num_shards=num_shards,
             shard_id=shard_id,
+            num_workers=num_workers,
         )
 
     @property

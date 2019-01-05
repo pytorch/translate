@@ -347,6 +347,7 @@ def build_trainer(args, task, model, criterion, trainer_class):
         seed=args.seed,
         num_shards=args.distributed_world_size,
         shard_id=args.distributed_rank,
+        num_workers=args.num_workers,
     )
     epoch = extra_state["epoch"]
     if extra_state["batch_offset"] == 0:

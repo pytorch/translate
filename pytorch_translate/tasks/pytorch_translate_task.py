@@ -264,6 +264,7 @@ class PytorchTranslateTask(FairseqTask):
         seed=1,
         num_shards=1,
         shard_id=0,
+        num_workers=0,
     ):
         return self.get_batch_iterator(
             dataset=dataset,
@@ -275,6 +276,7 @@ class PytorchTranslateTask(FairseqTask):
             seed=seed,
             num_shards=num_shards,
             shard_id=shard_id,
+            num_workers=num_workers,
         )
 
     @property

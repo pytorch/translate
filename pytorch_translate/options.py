@@ -18,6 +18,13 @@ def add_dataset_args(parser, train=False, gen=False):
         "This is not needed but kept for backward compatibility",
     )
     group.add_argument(
+        "--num-workers",
+        default=0,
+        type=int,
+        metavar="N",
+        help="how many subprocesses to use for data loading",
+    )
+    group.add_argument(
         "--skip-invalid-size-inputs-valid-test",
         action="store_true",
         help="Ignore too long or too short lines in valid and test set",
