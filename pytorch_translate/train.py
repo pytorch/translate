@@ -471,39 +471,17 @@ def train(
                 # ignore the first mini-batch in words-per-second calculation
                 trainer.get_meter("wps").reset()
 
-            num_iterations = extra_state["num_iterations"]
-            do_eval_tune_loss = (
-                args.subepoch_validate_interval > 0
-                and num_iterations % args.subepoch_validate_interval == 0
-            )
-            do_save = (
-                not args.no_save
-                and args.save_interval_updates > 0
-                and num_iterations % args.save_interval_updates == 0
-            )
-            do_eval_bleu = (
-                # We can only do BLEU eval when we have a new checkpoint to load.
-                do_save
-                and args.generate_bleu_eval_interval > 0
-                and num_iterations - extra_state["tune_bleu"]["last_eval_step"]
-                >= args.generate_bleu_eval_interval
-            )
-            if do_eval_bleu:
-                extra_state["tune_bleu"]["last_eval_step"] = num_iterations
-
+            # Clear any remaining metrics from previous steps. This should already
+            # have been done before, but just in case - to make sure we catch
+            # any case where extra_case does not get populated correctly.
+            extra_state = clear_per_step_extra_state(extra_state)
             extra_state["batch_offset"] = i + 1
             (
                 extra_state,
                 stop_training_mid_epoch,
                 translation_samples,
             ) = evals.save_and_eval(
-                args=args,
-                trainer=trainer,
-                task=task,
-                extra_state=extra_state,
-                do_eval_tune_loss=do_eval_tune_loss,
-                do_save=do_save,
-                do_eval_bleu=do_eval_bleu,
+                args=args, trainer=trainer, task=task, extra_state=extra_state
             )
 
             # This should come after save_and_eval. Even if log_output is None,
@@ -535,7 +513,8 @@ def train(
                 )
 
             if (
-                do_eval_bleu
+                args.save_interval_updates > 0
+                and extra_state["num_iterations"] % args.save_interval_updates == 0
                 and args.shrink_lr_no_best_bleu_eval > 0
                 and extra_state["tune_bleu"]["num_since_best"]
                 > args.shrink_lr_no_best_bleu_eval
@@ -572,9 +551,7 @@ def train(
                 trainer=trainer,
                 task=task,
                 extra_state=extra_state,
-                do_eval_tune_loss=True,
-                do_save=not args.no_save and not args.no_end_of_epoch_checkpoints,
-                do_eval_bleu=args.generate_bleu_eval_per_epoch,
+                end_of_epoch=True,
             )
             if distributed_utils.is_master(args) and output_queue is not None:
                 output_queue.put_nowait(
