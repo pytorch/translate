@@ -88,6 +88,7 @@ class ModelParamsDict:
         self.seed = 1
         self.left_pad_source = "True"
         self.fp16 = False
+        self.cpu = None
         # Modified params
         for param, value in kwargs.items():
             assert hasattr(
