@@ -299,15 +299,6 @@ def setup_training_state(args, trainer, task):
         )
         if loaded_extra_state:
             extra_state.update(loaded_extra_state)
-        if loaded and distributed_utils.is_master(args):
-            args.path = checkpoint_path
-            evals.calculate_bleu_on_subset(
-                args=args,
-                task=task,
-                epoch_str="initial loaded checkpoint",
-                offset=None,
-                dataset_split=args.valid_subset,
-            )
     print(f"| extra_state: {extra_state}")
     return extra_state
 
