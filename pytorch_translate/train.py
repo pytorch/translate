@@ -2,6 +2,7 @@
 
 import argparse
 import collections
+import faulthandler
 import math
 import multiprocessing.queues as mp_queues
 import os
@@ -643,6 +644,12 @@ def multi_process_train(
     trainer_class=None,
     train_step_kwargs=None,
 ):
+    # Enable faulthandler for better Python tracebacks upon segfaults under
+    # multiprocessing. Without this, the stack trace only shows the
+    # SpawnContext.join() call, rather than the actual line where the child
+    # process segfaulted.
+    faulthandler.enable(all_threads=True)
+
     if init_fn:
         init_fn()
     args.device_id = device_id
