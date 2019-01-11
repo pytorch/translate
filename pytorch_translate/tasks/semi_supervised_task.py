@@ -197,6 +197,18 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
             "training examples.",
         )
         parser.add_argument(
+            "--train-mono-source-text-file",
+            default="",
+            help="Path for the text file containing monolingual source "
+            "training examples.",
+        )
+        parser.add_argument(
+            "--train-mono-target-text-file",
+            default="",
+            help="Path for the text file containing monolingual target "
+            "training examples.",
+        )
+        parser.add_argument(
             "--monolingual-ratio",
             default=None,
             type=float,
