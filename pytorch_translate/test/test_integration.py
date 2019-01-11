@@ -455,6 +455,48 @@ class TestTranslation(unittest.TestCase):
                     ],
                 )
 
+    @unittest.skipIf(
+        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+    )
+    def test_semisupervised(self):
+        with contextlib.redirect_stdout(StringIO()):
+            with tempfile.TemporaryDirectory("test_rnn") as data_dir:
+                create_dummy_data(data_dir)
+                train_translation_model(
+                    data_dir,
+                    [
+                        "--task",
+                        "pytorch_translate_semi_supervised",
+                        "--train-mono-source-text-file",
+                        os.path.join(data_dir, "train.in"),
+                        "--train-mono-target-text-file",
+                        os.path.join(data_dir, "train.out"),
+                        "--arch",
+                        "semi_supervised",
+                        "--cell-type",
+                        "lstm",
+                        "--sequence-lstm",
+                        "--reverse-source",
+                        "--encoder-bidirectional",
+                        "--encoder-layers",
+                        "2",
+                        "--encoder-embed-dim",
+                        "256",
+                        "--encoder-hidden-dim",
+                        "512",
+                        "--decoder-layers",
+                        "2",
+                        "--decoder-embed-dim",
+                        "256",
+                        "--decoder-hidden-dim",
+                        "512",
+                        "--decoder-out-embed-dim",
+                        "256",
+                        "--attention-type",
+                        "dot",
+                    ],
+                )
+
 
 def write_dummy_file(filename, num_examples, maxlen):
     rng_state = torch.get_rng_state()
