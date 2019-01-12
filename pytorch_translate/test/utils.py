@@ -70,6 +70,7 @@ class ModelParamsDict:
             self.decoder_tie_embeddings = False
             self.language_model_only = False
         # Training params
+        self.unk_only_char_encoding = False
         self.criterion = "cross_entropy"
         self.lr = [0.1]
         self.optimizer = "sgd"

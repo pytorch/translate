@@ -94,6 +94,19 @@ def add_args(parser):
         default="",
         help=("Weights file for loading pretrained weights"),
     )
+    parser.add_argument(
+        "--unk-only-char-encoding",
+        type=utils.bool_flag,
+        nargs="?",
+        const=True,
+        default=False,
+        help=(
+            "Boolean flag. When True, taking words embeddings"
+            "for in-vocab tokens and char encoder's outputs for oov tokens"
+            "When False, concatenating words embeddings and char encoder's outputs"
+            "for all tokens."
+        ),
+    )
 
 
 class HighwayLayer(nn.Module):

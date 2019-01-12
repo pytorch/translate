@@ -55,6 +55,7 @@ class CharSourceModel(rnn.RNNModel):
             encoder = CharCNNEncoder(
                 src_dict,
                 num_chars=num_chars,
+                unk_only_char_encoding=args.unk_only_char_encoding,
                 embed_dim=args.char_embed_dim,
                 token_embed_dim=args.encoder_embed_dim,
                 freeze_embed=args.encoder_freeze_embed,
@@ -78,6 +79,10 @@ class CharSourceModel(rnn.RNNModel):
                 weights_file=getattr(args, "pretrained_weights_file", ""),
             )
         else:
+            assert (
+                args.unk_only_char_encoding is False
+            ), "unk_only_char_encoding should be False when using CharRNNEncoder"
+
             encoder = CharRNNEncoder(
                 src_dict,
                 num_chars=args.char_source_dict_size,
@@ -239,6 +244,7 @@ class CharCNNEncoder(FairseqEncoder):
         self,
         dictionary,
         num_chars=50,
+        unk_only_char_encoding=False,
         embed_dim=32,
         token_embed_dim=256,
         freeze_embed=False,
@@ -280,6 +286,7 @@ class CharCNNEncoder(FairseqEncoder):
         self.embed_tokens = None
         num_tokens = len(dictionary)
         self.padding_idx = dictionary.pad()
+        self.unk_idx = dictionary.unk()
         if token_embed_dim > 0:
             self.embed_tokens = rnn.Embedding(
                 num_embeddings=num_tokens,
@@ -293,7 +300,17 @@ class CharCNNEncoder(FairseqEncoder):
             if char_cnn_output_dim != -1
             else sum(out_dim for (out_dim, _) in convolutions_params)
         )
-        self.word_dim = self.word_dim + token_embed_dim
+        self.token_embed_dim = token_embed_dim
+
+        self.unk_only_char_encoding = unk_only_char_encoding
+        if self.unk_only_char_encoding:
+            assert char_cnn_output_dim == token_embed_dim, (
+                "char_cnn_output_dim (%d) must equal to token_embed_dim (%d)"
+                % (char_cnn_output_dim, token_embed_dim)
+            )
+            self.word_dim = token_embed_dim
+        else:
+            self.word_dim = self.word_dim + token_embed_dim
 
         self.bilstm = rnn.BiLSTM(
             num_layers=num_layers,
@@ -328,18 +345,45 @@ class CharCNNEncoder(FairseqEncoder):
         # char_inds has shape (batch_size, max_words_per_sent, max_word_len)
         bsz, seqlen, maxchars = char_inds.size()
         # char_cnn_encoder takes input (max_word_length, total_words)
-        char_inds_flat = char_inds.view(-1, maxchars).t()
+        char_inds_flat = char_inds.view(-1, maxchars)  # .t()
         # output (total_words, encoder_dim)
-        char_cnn_output = self.char_cnn_encoder(char_inds_flat)
-        x = char_cnn_output.view(bsz, seqlen, char_cnn_output.shape[-1])
-        x = x.transpose(0, 1)  # (seqlen, bsz, char_cnn_output_dim)
+        if self.unk_only_char_encoding:
+            assert (
+                self.embed_tokens is not None
+            ), "token_embed_dim should > 0 when unk_only_char_encoding is true!"
+
+            unk_masks = (src_tokens == self.unk_idx).view(-1)
+            unk_indices = torch.nonzero(unk_masks).squeeze()
+            if unk_indices.dim() > 0 and unk_indices.size(0) > 0:
+                char_inds_flat = torch.index_select(char_inds_flat, 0, unk_indices)
+                char_inds_flat = char_inds_flat.view(-1, maxchars)
+            else:
+                char_inds_flat = None
+
+        if char_inds_flat is not None:
+            # (bsz * seqlen, encoder_dim)
+            char_cnn_output = self.char_cnn_encoder(char_inds_flat.t())
+            x = char_cnn_output
+        else:  # charCNN is not needed
+            x = None
 
         if self.embed_tokens is not None:
+            # (bsz, seqlen, token_embed_dim)
             embedded_tokens = self.embed_tokens(src_tokens)
-            # (seqlen, bsz, token_embed_dim)
-            embedded_tokens = embedded_tokens.transpose(0, 1)
-            # (seqlen, bsz, total_word_embed_dim)
-            x = torch.cat([x, embedded_tokens], dim=2)
+            # (bsz * seqlen, token_embed_dim)
+            embedded_tokens = embedded_tokens.view(-1, self.token_embed_dim)
+            if self.unk_only_char_encoding:  # charCNN for UNK words only
+                if x is not None:
+                    x = embedded_tokens.index_copy(0, unk_indices, x)
+                else:  # no UNK, so charCNN is not needed
+                    x = embedded_tokens
+            else:  # charCNN for all words
+                x = torch.cat([x, embedded_tokens], dim=1)
+
+        # (bsz, seqlen, x.shape[-1])
+        x = x.view(bsz, seqlen, x.shape[-1])
+        # (seqlen, bsz, x.shape[-1])
+        x = x.transpose(0, 1)
 
         self.tracker.track(x, "token_embeddings", retain_grad=self.track_gradients)
         if self.dropout_in != 0:

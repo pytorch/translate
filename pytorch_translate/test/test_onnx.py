@@ -420,6 +420,30 @@ class TestONNX(unittest.TestCase):
 
         self._test_ensemble_encoder_export_char_source(test_args)
 
+    def test_ensemble_encoder_export_unk_only_char_cnn_vocab_reduction(self):
+        test_args = test_utils.ModelParamsDict(
+            encoder_bidirectional=True, sequence_lstm=True
+        )
+        lexical_dictionaries = test_utils.create_lexical_dictionaries()
+        test_args.vocab_reduction_params = {
+            "lexical_dictionaries": lexical_dictionaries,
+            "num_top_words": 5,
+            "max_translation_candidates_per_word": 1,
+        }
+
+        test_args.arch = "char_source"
+        test_args.char_source_dict_size = 126
+        test_args.char_embed_dim = 8
+        test_args.char_cnn_params = "[(50, 1), (76, 2), (130, 3)]"
+        test_args.char_cnn_nonlinear_fn = "relu"
+        test_args.char_cnn_pool_type = "max"
+        test_args.char_cnn_num_highway_layers = 2
+        test_args.char_cnn_output_dim = 64
+        test_args.encoder_embed_dim = 64
+        test_args.unk_only_char_encoding = True
+
+        self._test_ensemble_encoder_export_char_source(test_args)
+
     def test_ensemble_encoder_export_char_rnn_vocab_reduction(self):
         test_args = test_utils.ModelParamsDict(
             encoder_bidirectional=True, sequence_lstm=True
