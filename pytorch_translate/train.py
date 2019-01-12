@@ -531,33 +531,31 @@ def train(
             trainer=trainer, progress=progress, extra_meters=extra_meters
         )
 
-        # Run a training step if not stopping mid-epoch.
-        if not stop_training_mid_epoch:
-            # batch_offset being None denotes the end of an epoch.
-            extra_state["batch_offset"] = None
-            (
-                extra_state,
-                stop_training_end_of_epoch,
-                translation_samples,
-            ) = evals.save_and_eval(
-                args=args,
-                trainer=trainer,
-                task=task,
-                extra_state=extra_state,
-                end_of_epoch=True,
-            )
-            if distributed_utils.is_master(args) and output_queue is not None:
-                output_queue.put_nowait(
-                    (
-                        trainer.get_num_updates(),
-                        {
-                            "train_ppl": train_stats["ppl"],
-                            "tune_ppl": extra_state["tune_eval"]["perplexity"],
-                            "tune_bleu": extra_state["tune_bleu"]["current"],
-                            "translation_samples": translation_samples,
-                        },
-                    )
+        # batch_offset being None denotes the end of an epoch.
+        extra_state["batch_offset"] = None
+        (
+            extra_state,
+            stop_training_end_of_epoch,
+            translation_samples,
+        ) = evals.save_and_eval(
+            args=args,
+            trainer=trainer,
+            task=task,
+            extra_state=extra_state,
+            end_of_epoch=True,
+        )
+        if distributed_utils.is_master(args) and output_queue is not None:
+            output_queue.put_nowait(
+                (
+                    trainer.get_num_updates(),
+                    {
+                        "train_ppl": train_stats["ppl"],
+                        "tune_ppl": extra_state["tune_eval"]["perplexity"],
+                        "tune_bleu": extra_state["tune_bleu"]["current"],
+                        "translation_samples": translation_samples,
+                    },
                 )
+            )
 
         if stop_training_mid_epoch or stop_training_end_of_epoch:
             break
