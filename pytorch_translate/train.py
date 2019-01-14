@@ -500,6 +500,9 @@ def train(
                             "train_ppl": train_stats["ppl"],
                             "tune_ppl": extra_state["tune_eval"]["perplexity"],
                             "tune_bleu": extra_state["tune_bleu"]["current"],
+                            # We only report wps at the end of an epoch, since
+                            # the meter gets reset at the start of every epoch.
+                            "wps": None,
                             "translation_samples": translation_samples,
                         },
                     )
@@ -552,6 +555,7 @@ def train(
                         "train_ppl": train_stats["ppl"],
                         "tune_ppl": extra_state["tune_eval"]["perplexity"],
                         "tune_bleu": extra_state["tune_bleu"]["current"],
+                        "wps": train_stats["wps"],
                         "translation_samples": translation_samples,
                     },
                 )
