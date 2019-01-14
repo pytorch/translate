@@ -161,7 +161,7 @@ def save_averaged_checkpoint(args, extra_state):
             f"epoch {epoch}, offset {offset}.",
             flush=True,
         )
-    return filename
+    return filename, averaged_state
 
 
 def load_existing_checkpoint(

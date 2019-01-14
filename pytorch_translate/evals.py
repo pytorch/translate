@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-import collections
 import math
 import os
 import shutil
+from collections import OrderedDict, defaultdict
 from typing import Any, Dict, Optional, Tuple
 
 from fairseq import distributed_utils, progress_bar, utils
@@ -41,7 +41,7 @@ def log_end_epoch_stats(trainer, progress, extra_meters):
 
 
 def get_training_stats(trainer):
-    stats = collections.OrderedDict()
+    stats = OrderedDict()
     stats["loss"] = f"{trainer.get_meter('train_loss').avg:.3f}"
     if trainer.get_meter("train_nll_loss").count > 0:
         nll_loss = trainer.get_meter("train_nll_loss").avg
@@ -66,7 +66,7 @@ def get_training_stats(trainer):
 
 
 def get_valid_stats(trainer):
-    stats = collections.OrderedDict()
+    stats = OrderedDict()
     stats["valid_loss"] = trainer.get_meter("valid_loss").avg
     if trainer.get_meter("valid_nll_loss").count > 0:
         nll_loss = trainer.get_meter("valid_nll_loss").avg
@@ -115,7 +115,7 @@ def eval_tune_loss(args, trainer, task, subset, extra_state):
         if meter is not None:
             meter.reset()
 
-    extra_meters = collections.defaultdict(lambda: AverageMeter())
+    extra_meters = defaultdict(lambda: AverageMeter())
     for sample in progress:
         log_output = trainer.valid_step(sample)
 
@@ -164,16 +164,17 @@ def eval_tune_loss(args, trainer, task, subset, extra_state):
     return extra_state, stop_due_to_tune_loss
 
 
-def evaluate_bleu(args, task, extra_state):
+def evaluate_bleu(args, task, extra_state, trainer):
     epoch, offset = extra_state["epoch"], extra_state["batch_offset"]
-    filename = checkpoint.save_averaged_checkpoint(args, extra_state)
-    args.path = filename
+    filename, averaged_state = checkpoint.save_averaged_checkpoint(args, extra_state)
     extra_state["tune_bleu"]["current"], translation_samples = calculate_bleu_on_subset(
         args=args,
         task=task,
         epoch_str=f"{epoch:03d}",
         offset=offset,
         dataset_split=args.valid_subset,
+        trainer=trainer,
+        model_params=averaged_state["model"],
     )
 
     if (
@@ -205,7 +206,22 @@ def evaluate_bleu(args, task, extra_state):
     return extra_state, stop_due_to_tune_bleu, translation_samples
 
 
-def calculate_bleu_on_subset(args, task, epoch_str: str, offset, dataset_split):
+def calculate_bleu_on_subset(
+    args,
+    task,
+    epoch_str: str,
+    offset,
+    dataset_split,
+    trainer,
+    model_params: OrderedDict,
+):
+    # This function constructs a new model object based on the weights to
+    # prevent users from accidentally passing in the model from the trainer,
+    # since after calling make_generation_fast_(), the model would no longer be
+    # suitable for continuing training.
+    model = task.build_model(args)
+    model.load_state_dict(model_params)
+
     # This is a trick to have generate use max_sentences_valid
     max_sentences_train = args.max_sentences
     args.max_sentences = args.max_sentences_valid
@@ -229,15 +245,10 @@ def calculate_bleu_on_subset(args, task, epoch_str: str, offset, dataset_split):
         task.score_aggregator if hasattr(task, "score_aggregator") else sum
     )
     scores = []
-    ensemble_models, _ = utils.load_ensemble_for_inference(args.path.split(":"), task)
     for dataset, lang_pair in zip(datasets, lang_pairs):
         # Generate score
         scorer, num_sentences, gen_timer, translation_samples = generate.generate_score(
-            args=args,
-            task=task,
-            dataset=dataset,
-            models=ensemble_models,
-            lang_pair=lang_pair,
+            args=args, task=task, dataset=dataset, models=[model], lang_pair=lang_pair
         )
         scores.append(scorer.score())
         print(
@@ -316,7 +327,7 @@ def save_and_eval(
     stop_due_to_tune_bleu = False
     if do_eval_bleu:
         extra_state, stop_due_to_tune_bleu, translation_samples = evaluate_bleu(
-            args=args, task=task, extra_state=extra_state
+            args=args, task=task, extra_state=extra_state, trainer=trainer
         )
 
     # We don't all_gather the translation_samples since the sample sentences
