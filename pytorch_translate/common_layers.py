@@ -526,8 +526,6 @@ class TransformerEncoderGivenEmbeddings(nn.Module):
     def __init__(self, args, proj_to_decoder):
         super().__init__()
 
-        self.all_layer_position_embed = args.all_layer_position_embed
-
         self.layers = nn.ModuleList([])
         self.layers.extend(
             [
@@ -545,8 +543,6 @@ class TransformerEncoderGivenEmbeddings(nn.Module):
     def forward(self, x, positions, encoder_padding_mask):
         # encoder layers
         for layer in self.layers:
-            if self.all_layer_position_embed:
-                x += positions
             x = layer(x, encoder_padding_mask)
 
         if self.output_fc is not None:
@@ -575,7 +571,6 @@ class TransformerEmbedding(nn.Module):
         self.dropout = args.dropout
         embed_dim = embed_tokens.embedding_dim
         self.padding_idx = embed_tokens.padding_idx
-        self.all_layer_position_embed = args.all_layer_position_embed
         self.embed_tokens = embed_tokens
         self.embed_scale = math.sqrt(embed_dim)
         self.embed_positions = fairseq_transformer.PositionalEmbedding(
@@ -592,10 +587,7 @@ class TransformerEmbedding(nn.Module):
         # Add position embeddings and dropout
         x = self.embed_scale * x
         positions = self.embed_positions(src_tokens)
-        if not self.all_layer_position_embed:
-            x += positions
-        else:
-            positions = positions.transpose(0, 1)
+        x += positions
         x = F.dropout(x, p=self.dropout, training=self.training)
 
         # B x T x C -> T x B x C

@@ -133,12 +133,6 @@ class HybridTransformerRNNModel(FairseqModel):
             metavar="N",
             help="decoder output embedding dimension",
         )
-        parser.add_argument(
-            "--all-layer-position-embed",
-            default=False,
-            action="store_true",
-            help="Add position embedding to each layer input",
-        )
 
         # Args for vocab reduction
         vocab_reduction.add_args(parser)
@@ -424,5 +418,4 @@ def base_architecture(args):
     args.attention_dropout = getattr(args, "attention_dropout", 0.0)
     args.relu_dropout = getattr(args, "relu_dropout", 0.0)
     args.dropout = getattr(args, "dropout", 0.1)
-    args.all_layer_position_embed = getattr(args, "all_layer_position_embed", False)
     vocab_reduction.set_arg_defaults(args)
