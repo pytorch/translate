@@ -273,7 +273,6 @@ class CharCNNEncoder(FairseqEncoder):
             left_pad=left_pad,
             learned=args.encoder_learned_pos,
         )
-        self.all_layer_position_embed = args.all_layer_position_embed
 
         self.transformer_encoder_given_embeddings = TransformerEncoderGivenEmbeddings(
             args=args, proj_to_decoder=True
@@ -330,10 +329,7 @@ class CharCNNEncoder(FairseqEncoder):
         if self.word_to_transformer_embed is not None:
             x = self.word_to_transformer_embed(x)
         positions = self.embed_positions(src_tokens)
-        if not self.all_layer_position_embed:
-            x += positions
-        else:
-            positions = positions.transpose(0, 1)
+        x += positions
         x = F.dropout(x, p=self.dropout, training=self.training)
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
