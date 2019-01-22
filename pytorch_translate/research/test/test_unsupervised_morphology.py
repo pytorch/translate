@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import math
 import unittest
 from unittest.mock import Mock, patch
 
@@ -26,7 +27,7 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             assert "689" not in morph_hmm_model.morph_emit_probs["stem"]
             assert len(morph_hmm_model.morph_emit_probs["suffix"]) == 29
             assert "1" not in morph_hmm_model.morph_emit_probs["suffix"]
-            assert morph_hmm_model.morph_emit_probs["stem"]["1234"] == 1.0 / 42
+            assert morph_hmm_model.morph_emit_probs["stem"]["1234"] == 1.1 / (42 * 1.1)
 
             assert morph_hmm_model.affix_trans_probs["START"]["START"] == 0
             assert morph_hmm_model.affix_trans_probs["START"]["prefix"] == 0.5
@@ -53,3 +54,65 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             assert morph_hmm_model.affix_trans_probs["END"]["stem"] == 0
             assert morph_hmm_model.affix_trans_probs["END"]["suffix"] == 0
             assert morph_hmm_model.affix_trans_probs["END"]["END"] == 0
+
+    def test_emission_probs(self):
+        morph_hmm_model = unsupervised_morphology.MorphologyHMMParams()
+        with patch("builtins.open") as mock_open:
+            txt_content = [
+                "123 124 234 345",
+                "112 122 123 345",
+                "123456789",
+                "123456 456789",
+            ]
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+            morph_hmm_model.init_params_from_data("no_exist_file.txt")
+
+            assert morph_hmm_model.emission_prob("stem", "1234") == 1.1 / (42 * 1.1)
+            assert morph_hmm_model.emission_prob("suffix", "1") == 0.1 / (29 * 1.1)
+            assert morph_hmm_model.emission_prob("END", "1") == 0
+
+    def test_emission_log_probs(self):
+        morph_hmm_model = unsupervised_morphology.MorphologyHMMParams()
+        with patch("builtins.open") as mock_open:
+            txt_content = [
+                "123 124 234 345",
+                "112 122 123 345",
+                "123456789",
+                "123456 456789",
+            ]
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+            morph_hmm_model.init_params_from_data("no_exist_file.txt")
+
+            assert morph_hmm_model.emission_log_probs("stem", "1234") == math.log(
+                1.1 / (42 * 1.1)
+            )
+            assert morph_hmm_model.emission_log_probs("suffix", "1") == math.log(
+                0.1 / (29 * 1.1)
+            )
+            assert (
+                morph_hmm_model.emission_log_probs("END", "1")
+                == morph_hmm_model.SMALL_CONST
+            )
+
+    def test_transition_log_probs(self):
+        morph_hmm_model = unsupervised_morphology.MorphologyHMMParams()
+        with patch("builtins.open") as mock_open:
+            txt_content = [
+                "123 124 234 345",
+                "112 122 123 345",
+                "123456789",
+                "123456 456789",
+            ]
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+            morph_hmm_model.init_params_from_data("no_exist_file.txt")
+
+            assert morph_hmm_model.transition_log_prob("stem", "END") == math.log(
+                1.0 / 3
+            )
+            assert (
+                morph_hmm_model.transition_log_prob("suffix", "START")
+                == morph_hmm_model.SMALL_CONST
+            )

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
+import math
 from collections import Counter
 
 
 class MorphologyHMMParams(object):
-    def __init__(self):
+    def __init__(self, smoothing_const=0.1):
         """
         This class contains HMM probabilities for the morphological model.
         The model has transition probabilities of affix classes, and
@@ -14,6 +15,9 @@ class MorphologyHMMParams(object):
         Example of emission probabilities: e(ing | suffix).
         We also have two registered affixes for showing the START and END of
         words.
+        Args:
+            smoothing_const: for smoothing the categorical distribution. This is
+            mostly useful for unseen observations outside training.
         """
         self.morph_emit_probs = {"prefix": {}, "stem": {}, "suffix": {}}
         self.affix_trans_probs = {
@@ -24,6 +28,8 @@ class MorphologyHMMParams(object):
             "END": {},
         }
         self.word_counts = Counter()
+        self.smoothing_const = smoothing_const
+        self.SMALL_CONST = -10000
 
     def init_params_from_data(self, input_file_path):
         """
@@ -62,7 +68,9 @@ class MorphologyHMMParams(object):
         for affix in self.morph_emit_probs.keys():
             num_morphs = len(self.morph_emit_probs[affix])
             for morph in self.morph_emit_probs[affix].keys():
-                self.morph_emit_probs[affix][morph] = 1.0 / num_morphs
+                self.morph_emit_probs[affix][morph] = (1.0 + self.smoothing_const) / (
+                    num_morphs * (1 + self.smoothing_const)
+                )
 
         # Initializing the transition probabilities. Here we force some trivial
         # rules such as not having a suffix right after a prefix.
@@ -91,3 +99,32 @@ class MorphologyHMMParams(object):
         self.affix_trans_probs["END"]["stem"] = 0
         self.affix_trans_probs["END"]["suffix"] = 0
         self.affix_trans_probs["END"]["END"] = 0
+
+    def transition_log_prob(self, prev_affix, current_affix):
+        """
+        For parameter estimation of the forward-backward algorithm, we still need
+        the actual probability values. However, in decoding, working in log-scale
+        is more efficient.
+        """
+        if self.affix_trans_probs[prev_affix][current_affix] == 0:
+            return self.SMALL_CONST
+        return math.log(self.affix_trans_probs[prev_affix][current_affix])
+
+    def emission_prob(self, affix, morpheme):
+        """
+        If a morpheme is not seen, we return the default smoothed probability.
+        Note that we assume the probabilities for the seen morphemes are already
+        smoothed.
+        """
+        if affix in {"START", "END"}:
+            return 0
+        if morpheme in self.morph_emit_probs[affix]:
+            return self.morph_emit_probs[affix][morpheme]
+        else:
+            num_morphs = len(self.morph_emit_probs[affix])
+            return self.smoothing_const / (num_morphs * (1 + self.smoothing_const))
+
+    def emission_log_probs(self, affix, morpheme):
+        if affix in {"START", "END"}:
+            return self.SMALL_CONST
+        return math.log(self.emission_prob(affix, morpheme))
