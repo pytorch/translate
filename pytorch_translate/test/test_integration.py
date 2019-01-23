@@ -497,6 +497,53 @@ class TestTranslation(unittest.TestCase):
                     ],
                 )
 
+    @unittest.skipIf(
+        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+    )
+    def test_word_prediction(self):
+        """ Tests a word prediction model, which will use a learned vocab
+        reduction via the word prediction model. It uses a custom criterion
+        (word_prediction) on top of label_smoothed_cross_entropy so we pass the
+        corresponding word_prediction criterion flag in during training.
+        """
+        with contextlib.redirect_stdout(StringIO()):
+            with tempfile.TemporaryDirectory("test_word_pred") as data_dir:
+                create_dummy_data(data_dir)
+                train_translation_model(
+                    data_dir=data_dir,
+                    extra_flags=[
+                        "--arch",
+                        "rnn_word_pred",
+                        "--predictor-hidden-dim",
+                        "32",
+                        "--topk-labels-per-source-token",
+                        "5",
+                        "--cell-type",
+                        "lstm",
+                        "--sequence-lstm",
+                        "--reverse-source",
+                        "--encoder-bidirectional",
+                        "--encoder-layers",
+                        "2",
+                        "--encoder-embed-dim",
+                        "256",
+                        "--encoder-hidden-dim",
+                        "512",
+                        "--decoder-layers",
+                        "2",
+                        "--decoder-embed-dim",
+                        "256",
+                        "--decoder-hidden-dim",
+                        "512",
+                        "--decoder-out-embed-dim",
+                        "256",
+                        "--attention-type",
+                        "dot",
+                    ],
+                    criterion=["--criterion", "word_prediction"],
+                )
+                generate_main(data_dir)
+
 
 def write_dummy_file(filename, num_examples, maxlen):
     rng_state = torch.get_rng_state()
@@ -537,7 +584,7 @@ def create_dummy_multilingual_data(data_dir, num_examples=100, maxlen=5):
         _create_dummy_data(f"tune.{langpair}.{tgt}")
 
 
-def train_translation_model(data_dir, extra_flags):
+def train_translation_model(data_dir, extra_flags, criterion=None):
     parser = train.get_parser_with_args()
     args = options.parse_args_and_arch(
         parser,
@@ -571,8 +618,6 @@ def train_translation_model(data_dir, extra_flags):
             "--clip-norm",
             "5.0",
             "--sentence-avg",
-            "--criterion",
-            "label_smoothed_cross_entropy",
             "--label-smoothing",
             "0.1",
             "--beam",
@@ -596,7 +641,8 @@ def train_translation_model(data_dir, extra_flags):
             "--target-lang",
             "out",
         ]
-        + (extra_flags or []),
+        + (extra_flags or [])
+        + (criterion or ["--criterion", "label_smoothed_cross_entropy"]),
     )
     train.validate_and_set_default_args(args)
     train.main(args)
