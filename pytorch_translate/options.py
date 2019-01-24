@@ -624,6 +624,20 @@ def expand_generation_args(group, train=False):
             "floats with length equal to the number of models in the ensemble."
         ),
     )
+    group.add_argument(
+        "--report-oracle-bleu",
+        type=utils.bool_flag,
+        nargs="?",
+        const=True,
+        default=False,
+        help=(
+            "During evaluation, determine best among top-k outputs (where k "
+            "is controlled by --nbest) for each sentence by smoothed "
+            "sentence-level BLEU and report overall BLEU score for these "
+            "sentences."
+        ),
+    )
+
     # These arguments are only used during training
     if train:
         group.add_argument(

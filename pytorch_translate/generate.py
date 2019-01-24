@@ -84,6 +84,7 @@ class TranslationInfo(NamedTuple):
     target_str: str
     hypo_str: str
     hypo_score: float
+    best_hypo_tokens: Optional[torch.Tensor]
 
 
 def build_sequence_generator(args, task, models):
@@ -170,6 +171,10 @@ def _generate_score(models, args, task, dataset, optimize=True):
     scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
     itr = get_eval_itr(args, models, task, dataset)
 
+    oracle_scorer = None
+    if args.report_oracle_bleu:
+        oracle_scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
+
     num_sentences = 0
     translation_samples = []
     with progress_bar.build_progress_bar(args, itr) as t:
@@ -191,6 +196,9 @@ def _generate_score(models, args, task, dataset, optimize=True):
             args, task, dataset, translations, align_dict
         ):
             scorer.add(trans_info.target_tokens, trans_info.hypo_tokens)
+            if oracle_scorer is not None:
+                oracle_scorer.add(trans_info.target_tokens, trans_info.best_hypo_tokens)
+
             translated_sentences[trans_info.sample_id] = trans_info.hypo_str
             translated_scores[trans_info.sample_id] = trans_info.hypo_score
             translation_samples.append(
@@ -219,7 +227,44 @@ def _generate_score(models, args, task, dataset, optimize=True):
             for hypo_score in translated_scores:
                 print(np.exp(hypo_score), file=out_file)
 
+    if oracle_scorer is not None:
+        print(f"| Oracle BLEU (best hypo in beam): {oracle_scorer.result_string()}")
+
     return scorer, num_sentences, gen_timer, translation_samples
+
+
+def smoothed_sentence_bleu(task, target_tokens, hypo_tokens):
+    """
+    Implements "Smoothing 3" method from Chen and Cherry. "A Systematic
+    Comparison of Smoothing Techniques for Sentence-Level BLEU".
+    http://acl2014.org/acl2014/W14-33/pdf/W14-3346.pdf
+    """
+    dst_dict = task.target_dictionary
+    scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
+    scorer.add(target_tokens, hypo_tokens)
+
+    invcnt = 1
+    ratios = []
+    for (match, count) in [
+        (scorer.stat.match1, scorer.stat.count1),
+        (scorer.stat.match2, scorer.stat.count2),
+        (scorer.stat.match3, scorer.stat.count3),
+        (scorer.stat.match4, scorer.stat.count4),
+    ]:
+        if count == 0:
+            # disregard n-grams for values of n larger than reference length
+            continue
+        if match == 0:
+            invcnt *= 2
+            match = 1.0 / invcnt
+        ratios.append(match / count)
+
+    brevity_penalty = np.min(
+        [1, np.exp(1 - (scorer.stat.reflen / scorer.stat.predlen))]
+    )
+    geometric_mean = np.exp(np.log(ratios).mean())
+    smoothed_bleu = brevity_penalty * geometric_mean
+    return smoothed_bleu
 
 
 def _iter_first_best_bilingual(args, task, dataset, translations, align_dict):
@@ -257,6 +302,10 @@ def _iter_first_best_bilingual(args, task, dataset, translations, align_dict):
             print(f"S-{sample_id}\t{src_str}")
             print(f"T-{sample_id}\t{target_str}")
 
+        # used only for oracle evaluation (args.report_oracle_bleu)
+        best_hypo_tokens = None
+        best_hypo_score = 0
+
         # Process top predictions
         for i, hypo in enumerate(hypos[: min(len(hypos), args.nbest)]):
             hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
@@ -277,6 +326,12 @@ def _iter_first_best_bilingual(args, task, dataset, translations, align_dict):
                     )
                 )
 
+            if args.report_oracle_bleu:
+                score = smoothed_sentence_bleu(task, target_tokens, hypo_tokens)
+                if score > best_hypo_score:
+                    best_hypo_tokens = hypo_tokens
+                    best_hypo_score = score
+
             if i == 0:
                 if align_dict is not None or args.remove_bpe is not None:
                     # Convert back to tokens for evaluation with unk replacement
@@ -294,17 +349,19 @@ def _iter_first_best_bilingual(args, task, dataset, translations, align_dict):
                 hypo_score = (
                     hypo["score"] / len(hypo_tokens) if len(hypo_tokens) > 0 else 0.0
                 )
+                top_hypo_tokens = hypo_tokens
 
-                yield TranslationInfo(
-                    sample_id=sample_id,
-                    src_tokens=src_tokens,
-                    target_tokens=target_tokens,
-                    hypo_tokens=hypo_tokens,
-                    src_str=src_str,
-                    target_str=target_str,
-                    hypo_str=hypo_str,
-                    hypo_score=hypo_score,
-                )
+        yield TranslationInfo(
+            sample_id=sample_id,
+            src_tokens=src_tokens,
+            target_tokens=target_tokens,
+            hypo_tokens=top_hypo_tokens,
+            src_str=src_str,
+            target_str=target_str,
+            hypo_str=hypo_str,
+            hypo_score=hypo_score,
+            best_hypo_tokens=best_hypo_tokens,
+        )
 
 
 def _iter_first_best_multilingual(args, task, dataset, translations, align_dict):
@@ -339,6 +396,10 @@ def _iter_first_best_multilingual(args, task, dataset, translations, align_dict)
             print(f"S-{sample_id}\tsrc_lang={src_lang_id}\t{src_str}")
             print(f"T-{sample_id}\ttrg_lang={target_lang_id}\t{target_str}")
 
+        # used only for oracle evaluation (args.report_oracle_bleu)
+        best_hypo_tokens = None
+        best_hypo_score = 0
+
         # Process top predictions
         for i, hypo in enumerate(hypos[: min(len(hypos), args.nbest)]):
             hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
@@ -359,6 +420,12 @@ def _iter_first_best_multilingual(args, task, dataset, translations, align_dict)
                     )
                 )
 
+            if args.report_oracle_bleu:
+                score = smoothed_sentence_bleu(task, target_tokens, hypo_tokens)
+                if score > best_hypo_score:
+                    best_hypo_tokens = hypo_tokens
+                    best_hypo_score = score
+
             # Score only the top hypothesis
             if i == 0:
                 if align_dict is not None or args.remove_bpe is not None:
@@ -368,17 +435,19 @@ def _iter_first_best_multilingual(args, task, dataset, translations, align_dict)
                         target_str, target_dict, add_if_not_exist=True
                     )
                 hypo_score = hypo["score"] / len(hypo_tokens)
+                top_hypo_tokens = hypo_tokens
 
-                yield TranslationInfo(
-                    sample_id=sample_id,
-                    src_tokens=src_tokens,
-                    target_tokens=target_tokens,
-                    hypo_tokens=hypo_tokens,
-                    src_str=src_str,
-                    target_str=target_str,
-                    hypo_str=hypo_str,
-                    hypo_score=hypo_score,
-                )
+        yield TranslationInfo(
+            sample_id=sample_id,
+            src_tokens=src_tokens,
+            target_tokens=target_tokens,
+            hypo_tokens=top_hypo_tokens,
+            src_str=src_str,
+            target_str=target_str,
+            hypo_str=hypo_str,
+            hypo_score=hypo_score,
+            best_hypo_tokens=best_hypo_tokens,
+        )
 
 
 def add_args(parser):
