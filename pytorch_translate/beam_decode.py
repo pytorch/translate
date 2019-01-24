@@ -7,7 +7,7 @@ from fairseq import search, utils
 from fairseq.models import FairseqIncrementalDecoder
 
 
-class SequenceGenerator(torch.nn.Module):
+class SequenceGenerator(object):
     def __init__(
         self,
         models,
