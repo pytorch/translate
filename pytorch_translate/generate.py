@@ -76,10 +76,10 @@ def generate_score(
 
 
 class TranslationInfo(NamedTuple):
-    sample_id: int
-    src_tokens: str
-    target_tokens: str
-    hypo_tokens: str
+    sample_id: torch.Tensor
+    src_tokens: torch.Tensor
+    target_tokens: torch.Tensor
+    hypo_tokens: torch.Tensor
     src_str: str
     target_str: str
     hypo_str: str
