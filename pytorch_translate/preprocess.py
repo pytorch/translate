@@ -48,15 +48,16 @@ def validate_args(args):
         "eval_source_text_file",
         "eval_target_text_file",
     ):
-        file = getattr(args, file_type)
-        if file and not os.path.isfile(file):
+        text_file = getattr(args, file_type)
+        if text_file and not os.path.isfile(text_file):
             raise ValueError(
-                f"Please specify an existing text file for --{file_type}={file}"
+                f"Please specify an existing text file for "
+                f"--{file_type}={text_file}"
             )
 
     for file_type in ("source_vocab_file", "target_vocab_file"):
-        file = getattr(args, file_type)
-        if not file:
+        vocab_file = getattr(args, file_type)
+        if not vocab_file:
             raise ValueError(
                 f"--{file_type} must be specified - even if you don't have "
                 f"a vocab file, you must still specify a location "
