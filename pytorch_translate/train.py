@@ -321,14 +321,11 @@ def build_trainer(args, task, model, criterion, trainer_class):
 
     print(
         f"| training on {args.distributed_world_size} total GPUs "
-        f"({torch.cuda.device_count()} GPUs locally on this machine)."
-    )
-    print(
+        f"({torch.cuda.device_count()} GPUs locally on this machine).\n"
         f"| max tokens per GPU = {args.max_tokens} and \
         max sentences per GPU = {args.max_sentences}",
         flush=True,
     )
-    extra_state = setup_training_state(args, trainer, task)
 
     epoch_itr = task.get_batch_iterator(
         dataset=task.dataset(args.train_subset),
@@ -342,27 +339,21 @@ def build_trainer(args, task, model, criterion, trainer_class):
         shard_id=args.distributed_rank,
         num_workers=args.num_workers,
     )
-    epoch = extra_state["epoch"]
-    if extra_state["batch_offset"] == 0:
-        epoch -= 1  # this will be incremented when we call epoch_itr.next_epoch_itr()
-    epoch_itr.load_state_dict(
-        {"epoch": epoch, "iterations_in_epoch": extra_state["batch_offset"]}
-    )
-    return trainer, extra_state, epoch_itr
+    return trainer, epoch_itr
 
 
 def setup_training(args, trainer_class=None):
     """ Perform several steps:
     - build model using provided criterion and task
     - load data
-    - build trainer, and set up training state
+    - build trainer
     """
     task, model, criterion = setup_training_model(args)
 
     if trainer_class is None:
         trainer_class = Trainer
 
-    trainer, extra_state, epoch_itr = build_trainer(
+    trainer, epoch_itr = build_trainer(
         args=args,
         task=task,
         model=model,
@@ -370,7 +361,7 @@ def setup_training(args, trainer_class=None):
         trainer_class=trainer_class,
     )
 
-    return extra_state, trainer, task, epoch_itr
+    return trainer, task, epoch_itr
 
 
 def create_prune_masks(args, trainer):
@@ -657,9 +648,23 @@ def multi_process_train(
     args.device_id = device_id
     args.distributed_rank = start_rank + device_id
     torch.cuda.set_device(args.device_id)
+
+    trainer, task, epoch_itr = setup_training(args, trainer_class)
+
+    # Distributed_init does initialization and works as a barrier.
+    # Therefore, any expensive data preprocessing should happen before.
     if args.distributed_world_size > 1:
         args.distributed_rank = distributed_utils.distributed_init(args)
-    extra_state, trainer, task, epoch_itr = setup_training(args, trainer_class)
+
+    extra_state = setup_training_state(args, trainer, task)
+
+    epoch = extra_state["epoch"]
+    if extra_state["batch_offset"] == 0:
+        epoch -= 1  # this will be incremented when we call epoch_itr.next_epoch_itr()
+    epoch_itr.load_state_dict(
+        {"epoch": epoch, "iterations_in_epoch": extra_state["batch_offset"]}
+    )
+
     train(
         args=args,
         extra_state=extra_state,
