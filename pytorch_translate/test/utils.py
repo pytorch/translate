@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import codecs
+import os
+import random
 import tempfile
 from typing import Any, Dict, Tuple
 
@@ -348,3 +350,42 @@ def gpu_train_step(test_args: ModelParamsDict) -> Tuple[Trainer, Dict[Any, Any]]
     trainer = Trainer(test_args, task, model, criterion, dummy_batch=sample)
     logging_dict = trainer.train_step([sample])
     return trainer, logging_dict
+
+
+def write_dummy_file(filename, num_examples, maxlen):
+    rng_state = torch.get_rng_state()
+    torch.manual_seed(0)
+    data = torch.rand(num_examples * maxlen)
+    data = 97 + torch.floor(26 * data).int()
+    with open(filename, "w") as h:
+        offset = 0
+        for _ in range(num_examples):
+            ex_len = random.randint(1, maxlen)
+            ex_str = " ".join(map(chr, data[offset : offset + ex_len]))
+            print(ex_str, file=h)
+            offset += ex_len
+    torch.set_rng_state(rng_state)
+
+
+def create_dummy_data(data_dir, num_examples=100, maxlen=5):
+    def _create_dummy_data(filename):
+        write_dummy_file(os.path.join(data_dir, filename), num_examples, maxlen)
+
+    _create_dummy_data("train.in")
+    _create_dummy_data("train.out")
+    _create_dummy_data("valid.in")
+    _create_dummy_data("valid.out")
+    _create_dummy_data("test.in")
+    _create_dummy_data("test.out")
+
+
+def create_dummy_multilingual_data(data_dir, num_examples=100, maxlen=5):
+    def _create_dummy_data(filename):
+        write_dummy_file(os.path.join(data_dir, filename), num_examples, maxlen)
+
+    for src, tgt in [("xh", "en"), ("zu", "en")]:
+        langpair = src + tgt
+        _create_dummy_data(f"train.{langpair}.{src}")
+        _create_dummy_data(f"train.{langpair}.{tgt}")
+        _create_dummy_data(f"tune.{langpair}.{src}")
+        _create_dummy_data(f"tune.{langpair}.{tgt}")
