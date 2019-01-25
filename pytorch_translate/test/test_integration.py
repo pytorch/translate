@@ -14,7 +14,7 @@ from pytorch_translate import generate, train
 
 class TestTranslation(unittest.TestCase):
     @unittest.skipIf(
-        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+        torch.cuda.device_count() < 1, "Test only supports GPU training."
     )
     def test_rnn(self):
         with contextlib.redirect_stdout(StringIO()):
@@ -51,7 +51,7 @@ class TestTranslation(unittest.TestCase):
                 generate_main(data_dir)
 
     @unittest.skipIf(
-        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+        torch.cuda.device_count() < 1, "Test only supports GPU training."
     )
     def test_rnn_fp16(self):
         with contextlib.redirect_stdout(StringIO()):
@@ -89,7 +89,7 @@ class TestTranslation(unittest.TestCase):
                 generate_main(data_dir)
 
     @unittest.skipIf(
-        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+        torch.cuda.device_count() < 1, "Test only supports GPU training."
     )
     def test_char_rnn(self):
         with contextlib.redirect_stdout(StringIO()):
@@ -146,7 +146,7 @@ class TestTranslation(unittest.TestCase):
                 )
 
     @unittest.skipIf(
-        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+        torch.cuda.device_count() < 1, "Test only supports GPU training."
     )
     def test_pretrained_char_model(self):
         with contextlib.redirect_stdout(StringIO()):
@@ -209,7 +209,7 @@ class TestTranslation(unittest.TestCase):
                 )
 
     @unittest.skipIf(
-        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+        torch.cuda.device_count() < 1, "Test only supports GPU training."
     )
     def test_multilingual(self):
         with contextlib.redirect_stdout(StringIO()):
@@ -326,7 +326,7 @@ class TestTranslation(unittest.TestCase):
                     )
 
     @unittest.skipIf(
-        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+        torch.cuda.device_count() < 1, "Test only supports GPU training."
     )
     def test_transformer(self):
         with contextlib.redirect_stdout(StringIO()):
@@ -358,7 +358,41 @@ class TestTranslation(unittest.TestCase):
                 generate_main(data_dir)
 
     @unittest.skipIf(
-        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+        torch.cuda.device_count() < 2, "Test only supports multi-GPU training."
+    )
+    def test_transformer_multigpu(self):
+        with contextlib.redirect_stdout(StringIO()):
+            with tempfile.TemporaryDirectory("test_transformer") as data_dir:
+                create_dummy_data(data_dir)
+                train_translation_model(
+                    data_dir,
+                    [
+                        "--arch",
+                        "ptt_transformer",
+                        "--encoder-embed-dim",
+                        "256",
+                        "--encoder-ffn-embed-dim",
+                        "512",
+                        "--encoder-attention-heads",
+                        "4",
+                        "--encoder-layers",
+                        "3",
+                        "--decoder-embed-dim",
+                        "256",
+                        "--decoder-ffn-embed-dim",
+                        "512",
+                        "--decoder-attention-heads",
+                        "4",
+                        "--decoder-layers",
+                        "3",
+                        "--distributed-world-size",
+                        str(torch.cuda.device_count()),
+                    ],
+                )
+                generate_main(data_dir)
+
+    @unittest.skipIf(
+        torch.cuda.device_count() < 1, "Test only supports GPU training."
     )
     def test_char_transformer(self):
         with contextlib.redirect_stdout(StringIO()):
@@ -406,7 +440,7 @@ class TestTranslation(unittest.TestCase):
                 )
 
     @unittest.skipIf(
-        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+        torch.cuda.device_count() < 1, "Test only supports GPU training."
     )
     def test_char_source_hybrid(self):
         with contextlib.redirect_stdout(StringIO()):
@@ -456,7 +490,7 @@ class TestTranslation(unittest.TestCase):
                 )
 
     @unittest.skipIf(
-        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
+        torch.cuda.device_count() < 1, "Test only supports GPU training."
     )
     def test_semisupervised(self):
         with contextlib.redirect_stdout(StringIO()):
@@ -635,6 +669,8 @@ def train_translation_model(data_dir, extra_flags, criterion=None):
             "1",
             "--no-progress-bar",
             "--distributed-world-size",
+            "1",
+            "--local-num-gpus",
             "1",
             "--source-lang",
             "in",
