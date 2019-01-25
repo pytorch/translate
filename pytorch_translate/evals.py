@@ -313,7 +313,7 @@ def save_and_eval(
         is_master and do_save and (mid_epoch_bleu_eval or end_of_epoch_bleu_eval)
     )
 
-    if mid_epoch_bleu_eval or end_of_epoch_bleu_eval:
+    if mid_epoch_bleu_eval and do_eval_bleu:
         extra_state["tune_bleu"]["last_eval_step"] = extra_state["num_iterations"]
 
     if do_eval_bleu and not do_save:
