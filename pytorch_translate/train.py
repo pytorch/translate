@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 import argparse
+import builtins as __builtin__
 import collections
+import datetime
 import faulthandler
 import math
 import multiprocessing.queues as mp_queues
@@ -254,7 +256,7 @@ def setup_training_model(args):
     return task, model, criterion
 
 
-def setup_training_state(args, trainer, task):
+def setup_training_state(args, trainer, task, epoch_itr):
     """Set up the directory for saving checkpoints.
     Load pretrained model if specified."""
     os.makedirs(args.save_dir, exist_ok=True)
@@ -301,7 +303,15 @@ def setup_training_state(args, trainer, task):
         if loaded_extra_state:
             extra_state.update(loaded_extra_state)
     print(f"| extra_state: {extra_state}")
-    return extra_state
+
+    epoch = extra_state["epoch"]
+    if extra_state["batch_offset"] == 0:
+        epoch -= 1  # this will be incremented when we call epoch_itr.next_epoch_itr()
+    epoch_itr.load_state_dict(
+        {"epoch": epoch, "iterations_in_epoch": extra_state["batch_offset"]}
+    )
+
+    return extra_state, epoch_itr
 
 
 def build_trainer(args, task, model, criterion, trainer_class):
@@ -348,6 +358,20 @@ def setup_training(args, trainer_class=None):
     - load data
     - build trainer
     """
+
+    # Overrides the default print() to always prepend the timestamp for more
+    # informative logging.
+    builtin_print = __builtin__.print
+
+    def print(*args, **kwargs):
+        builtin_print(
+            f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}]",
+            *args,
+            **kwargs,
+        )
+
+    __builtin__.print = print
+
     task, model, criterion = setup_training_model(args)
 
     if trainer_class is None:
@@ -617,7 +641,10 @@ def setup_epoch(args, epoch_itr, trainer):
 def single_process_main(args, trainer_class=Trainer, **train_step_kwargs):
     """Train the model for multiple epochs."""
     pytorch_translate_options.print_args(args)
-    extra_state, trainer, task, epoch_itr = setup_training(args, trainer_class)
+    trainer, task, epoch_itr = setup_training(args, trainer_class)
+    extra_state, epoch_itr = setup_training_state(
+        args=args, trainer=trainer, task=task, epoch_itr=epoch_itr
+    )
     train(
         args=args,
         extra_state=extra_state,
@@ -650,19 +677,12 @@ def multi_process_train(
     torch.cuda.set_device(args.device_id)
 
     trainer, task, epoch_itr = setup_training(args, trainer_class)
-
     # Distributed_init does initialization and works as a barrier.
     # Therefore, any expensive data preprocessing should happen before.
     if args.distributed_world_size > 1:
         args.distributed_rank = distributed_utils.distributed_init(args)
-
-    extra_state = setup_training_state(args, trainer, task)
-
-    epoch = extra_state["epoch"]
-    if extra_state["batch_offset"] == 0:
-        epoch -= 1  # this will be incremented when we call epoch_itr.next_epoch_itr()
-    epoch_itr.load_state_dict(
-        {"epoch": epoch, "iterations_in_epoch": extra_state["batch_offset"]}
+    extra_state, epoch_itr = setup_training_state(
+        args=args, trainer=trainer, task=task, epoch_itr=epoch_itr
     )
 
     train(
