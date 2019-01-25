@@ -10,6 +10,10 @@ from io import StringIO
 import torch
 from fairseq import options
 from pytorch_translate import generate, train
+from pytorch_translate.test.utils import (
+    create_dummy_data,
+    create_dummy_multilingual_data,
+)
 
 
 class TestTranslation(unittest.TestCase):
@@ -577,45 +581,6 @@ class TestTranslation(unittest.TestCase):
                     criterion=["--criterion", "word_prediction"],
                 )
                 generate_main(data_dir)
-
-
-def write_dummy_file(filename, num_examples, maxlen):
-    rng_state = torch.get_rng_state()
-    torch.manual_seed(0)
-    data = torch.rand(num_examples * maxlen)
-    data = 97 + torch.floor(26 * data).int()
-    with open(filename, "w") as h:
-        offset = 0
-        for _ in range(num_examples):
-            ex_len = random.randint(1, maxlen)
-            ex_str = " ".join(map(chr, data[offset : offset + ex_len]))
-            print(ex_str, file=h)
-            offset += ex_len
-    torch.set_rng_state(rng_state)
-
-
-def create_dummy_data(data_dir, num_examples=100, maxlen=5):
-    def _create_dummy_data(filename):
-        write_dummy_file(os.path.join(data_dir, filename), num_examples, maxlen)
-
-    _create_dummy_data("train.in")
-    _create_dummy_data("train.out")
-    _create_dummy_data("valid.in")
-    _create_dummy_data("valid.out")
-    _create_dummy_data("test.in")
-    _create_dummy_data("test.out")
-
-
-def create_dummy_multilingual_data(data_dir, num_examples=100, maxlen=5):
-    def _create_dummy_data(filename):
-        write_dummy_file(os.path.join(data_dir, filename), num_examples, maxlen)
-
-    for src, tgt in [("xh", "en"), ("zu", "en")]:
-        langpair = src + tgt
-        _create_dummy_data(f"train.{langpair}.{src}")
-        _create_dummy_data(f"train.{langpair}.{tgt}")
-        _create_dummy_data(f"tune.{langpair}.{src}")
-        _create_dummy_data(f"tune.{langpair}.{tgt}")
 
 
 def train_translation_model(data_dir, extra_flags, criterion=None):
