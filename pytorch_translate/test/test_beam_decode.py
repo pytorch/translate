@@ -5,9 +5,9 @@ from typing import Any, List
 
 import numpy as np
 import torch
-from pytorch_translate import char_source_model  # noqa (must be after rnn)
+from pytorch_translate import char_source_model  # noqa
 from pytorch_translate import rnn  # noqa
-from pytorch_translate import beam_decode
+from pytorch_translate import beam_decode, generate
 from pytorch_translate.tasks import pytorch_translate_task as tasks
 from pytorch_translate.test import utils as test_utils
 
@@ -106,3 +106,34 @@ class TestBeamDecode(unittest.TestCase):
         np.testing.assert_allclose(
             actual=avg_probs[1], desired=np.array(avg_probs_ref), atol=1e-5
         )
+
+    def test_smoothed_sentence_bleu(self):
+        """
+        Testing calculation of smoothed_sentence_bleu() function.
+        Inputs:
+            target_tokens: [11, 12, 13, 14, 15]
+            hypo_tokens: [11, 12, 14, 15]
+            actual precision:
+                unigram: 4/4 = 1
+                bigram:  2/3 = 0.667
+                trigram: 0/2 = 0
+                4-gram:  0/1 = 0
+            smoothed precision:
+                unigram: 4/4    = 1
+                bigram:  2/3    = 0.667
+                trigram: 0.5/2  = 0.25
+                4-gram:  0.25/1 = 0.25
+            smoothed geom. mean: (1 * 2/3 * 1/4 * 1/4) ^ (1/4) = 0.4518
+            brevity penalty: e ^ (1 - 5/4) = 0.7788
+        Desired Output:
+            0.4518 * 0.7788 = 0.35186
+        """
+        test_args = test_utils.ModelParamsDict()
+        _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
+        target_tokens = torch.IntTensor([11, 12, 13, 14, 15])
+        hypo_tokens = torch.IntTensor([11, 12, 14, 15])
+        smoothed_bleu = generate.smoothed_sentence_bleu(
+            task, target_tokens, hypo_tokens
+        )
+        np.testing.assert_almost_equal(smoothed_bleu, 0.35186, decimal=5)
