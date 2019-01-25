@@ -19,7 +19,6 @@ from pytorch_translate import (
     dictionary as pytorch_translate_dictionary,
     utils as pytorch_translate_utils,
     vocab_reduction,
-    word_dropout,
 )
 from pytorch_translate.common_layers import (
     ContextEmbedding,
@@ -424,8 +423,6 @@ class RNNModel(FairseqModel):
 
         # Args for vocab reduction
         vocab_reduction.add_args(parser)
-        # Args for word dropout
-        word_dropout.add_args(parser)
 
     @staticmethod
     def build_single_encoder(args, src_dict):
@@ -447,7 +444,6 @@ class RNNModel(FairseqModel):
             dropout_out=args.encoder_dropout_out,
             residual_level=args.residual_level,
             bidirectional=bool(args.encoder_bidirectional),
-            word_dropout_params=args.word_dropout_params,
             pretrained_embed=args.encoder_pretrained_embed,
             left_pad=args.left_pad_source,
             encoder_context_embed=args.encoder_context_embed,
@@ -690,7 +686,6 @@ class LSTMSequenceEncoder(FairseqEncoder):
         residual_level=None,
         bidirectional=False,
         pretrained_embed=None,
-        word_dropout_params=None,
         left_pad=True,
         encoder_context_embed=False,
     ):
@@ -734,16 +729,6 @@ class LSTMSequenceEncoder(FairseqEncoder):
             residual_level=residual_level,
         )
 
-        self.word_dropout_module = None
-        if (
-            word_dropout_params
-            and word_dropout_params["word_dropout_freq_threshold"] is not None
-            and word_dropout_params["word_dropout_freq_threshold"] > 0
-        ):
-            self.word_dropout_module = word_dropout.WordDropout(
-                dictionary, word_dropout_params
-            )
-
         # Variable tracker
         self.tracker = VariableTracker()
 
@@ -761,9 +746,6 @@ class LSTMSequenceEncoder(FairseqEncoder):
         # If we're generating adversarial examples we need to keep track of
         # some internal variables
         self.tracker.reset()
-
-        if self.word_dropout_module is not None:
-            src_tokens = self.word_dropout_module(src_tokens)
 
         bsz, seqlen = src_tokens.size()
 
@@ -852,7 +834,6 @@ class RNNEncoder(FairseqEncoder):
     def __init__(
         self,
         dictionary,
-        word_dropout_params=None,
         embed_dim=512,
         freeze_embed=False,
         normalize_embed=False,
@@ -911,15 +892,6 @@ class RNNEncoder(FairseqEncoder):
             )
 
         self.num_layers = len(self.layers)
-        self.word_dropout_module = None
-        if (
-            word_dropout_params
-            and word_dropout_params["word_dropout_freq_threshold"] is not None
-            and word_dropout_params["word_dropout_freq_threshold"] > 0
-        ):
-            self.word_dropout_module = word_dropout.WordDropout(
-                dictionary, word_dropout_params
-            )
 
     def forward(self, src_tokens, src_lengths):
         if self.left_pad:
@@ -927,8 +899,6 @@ class RNNEncoder(FairseqEncoder):
             src_tokens = utils.convert_padding_direction(
                 src_tokens, self.padding_idx, left_to_right=True
             )
-        if self.word_dropout_module is not None:
-            src_tokens = self.word_dropout_module(src_tokens)
         bsz, seqlen = src_tokens.size()
 
         # embed tokens
@@ -1451,7 +1421,6 @@ def base_architecture(args):
     args.cell_type = getattr(args, "cell_type", "lstm")
     args.ngram_activation_type = getattr(args, "ngram_activation_type", "relu")
     vocab_reduction.set_arg_defaults(args)
-    word_dropout.set_arg_defaults(args)
     args.sequence_lstm = getattr(args, "sequence_lstm", False)
     args.decoder_tie_embeddings = getattr(args, "decoder_tie_embeddings", False)
     args.encoder_pretrained_embed = getattr(args, "encoder_pretrained_embed", None)
