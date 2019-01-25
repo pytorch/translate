@@ -23,7 +23,6 @@ from pytorch_translate import (
     transformer as pytorch_translate_transformer,
     utils,
     vocab_constants,
-    word_dropout,
 )
 from pytorch_translate.common_layers import (
     TransformerEncoderGivenEmbeddings,
