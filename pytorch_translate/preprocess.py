@@ -219,7 +219,10 @@ def preprocess_corpora(args):
         )
         # Binarize additional monolingual corpora for the semisupervised translation
         # task
-        if args.task == constants.SEMI_SUPERVISED_TASK:
+        if (
+            args.task == constants.SEMI_SUPERVISED_TASK
+            or args.task == constants.DENOISING_AUTOENCODER_TASK
+        ):
             args.train_mono_source_binary_path = maybe_generate_temp_file_path(
                 output_path=getattr(args, "train_mono_source_binary_path", None)
             )
