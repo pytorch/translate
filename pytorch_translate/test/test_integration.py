@@ -17,9 +17,7 @@ from pytorch_translate.test.utils import (
 
 
 class TestTranslation(unittest.TestCase):
-    @unittest.skipIf(
-        torch.cuda.device_count() < 1, "Test only supports GPU training."
-    )
+    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_rnn(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_rnn") as data_dir:
@@ -54,9 +52,7 @@ class TestTranslation(unittest.TestCase):
                 )
                 generate_main(data_dir)
 
-    @unittest.skipIf(
-        torch.cuda.device_count() < 1, "Test only supports GPU training."
-    )
+    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_rnn_fp16(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_rnn_fp16") as data_dir:
@@ -92,9 +88,7 @@ class TestTranslation(unittest.TestCase):
                 )
                 generate_main(data_dir)
 
-    @unittest.skipIf(
-        torch.cuda.device_count() < 1, "Test only supports GPU training."
-    )
+    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_char_rnn(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_char_rnn") as data_dir:
@@ -149,9 +143,7 @@ class TestTranslation(unittest.TestCase):
                     ],
                 )
 
-    @unittest.skipIf(
-        torch.cuda.device_count() < 1, "Test only supports GPU training."
-    )
+    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_pretrained_char_model(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_pretrained_char_model") as data_dir:
@@ -212,9 +204,7 @@ class TestTranslation(unittest.TestCase):
                     ],
                 )
 
-    @unittest.skipIf(
-        torch.cuda.device_count() < 1, "Test only supports GPU training."
-    )
+    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_multilingual(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_multilingual") as data_dir:
@@ -329,9 +319,7 @@ class TestTranslation(unittest.TestCase):
                         ],
                     )
 
-    @unittest.skipIf(
-        torch.cuda.device_count() < 1, "Test only supports GPU training."
-    )
+    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_transformer(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_transformer") as data_dir:
@@ -395,9 +383,7 @@ class TestTranslation(unittest.TestCase):
                 )
                 generate_main(data_dir)
 
-    @unittest.skipIf(
-        torch.cuda.device_count() < 1, "Test only supports GPU training."
-    )
+    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_char_transformer(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_char_transformer") as data_dir:
@@ -443,9 +429,7 @@ class TestTranslation(unittest.TestCase):
                     ],
                 )
 
-    @unittest.skipIf(
-        torch.cuda.device_count() < 1, "Test only supports GPU training."
-    )
+    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_char_source_hybrid(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_char_rnn") as data_dir:
@@ -493,10 +477,12 @@ class TestTranslation(unittest.TestCase):
                     ],
                 )
 
-    @unittest.skipIf(
-        torch.cuda.device_count() < 1, "Test only supports GPU training."
-    )
+    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_semisupervised(self):
+        """
+        Tests semi_supervised task. Important flags: `--train-mono-*-text-file`,
+        `--task`, and `--arch`.
+        """
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_rnn") as data_dir:
                 create_dummy_data(data_dir)
@@ -511,6 +497,52 @@ class TestTranslation(unittest.TestCase):
                         os.path.join(data_dir, "train.out"),
                         "--arch",
                         "semi_supervised",
+                        "--cell-type",
+                        "lstm",
+                        "--sequence-lstm",
+                        "--reverse-source",
+                        "--encoder-bidirectional",
+                        "--encoder-layers",
+                        "2",
+                        "--encoder-embed-dim",
+                        "256",
+                        "--encoder-hidden-dim",
+                        "512",
+                        "--decoder-layers",
+                        "2",
+                        "--decoder-embed-dim",
+                        "256",
+                        "--decoder-hidden-dim",
+                        "512",
+                        "--decoder-out-embed-dim",
+                        "256",
+                        "--attention-type",
+                        "dot",
+                    ],
+                )
+
+    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
+    def test_denoising_autoencoder(self):
+        """
+        Tests denoising autoencoder task. Important flags:
+        `--train-mono-*-text-file`, `--task`, `--arch`, and
+        `--denoising-target-mono`.
+        """
+        with contextlib.redirect_stdout(StringIO()):
+            with tempfile.TemporaryDirectory("test_rnn") as data_dir:
+                create_dummy_data(data_dir)
+                train_translation_model(
+                    data_dir,
+                    [
+                        "--task",
+                        "pytorch_translate_denoising_autoencoder",
+                        "--train-mono-source-text-file",
+                        os.path.join(data_dir, "train.in"),
+                        "--train-mono-target-text-file",
+                        os.path.join(data_dir, "train.out"),
+                        "--arch",
+                        "semi_supervised",
+                        "--denoising-target-mono",
                         "--cell-type",
                         "lstm",
                         "--sequence-lstm",
