@@ -86,7 +86,6 @@ class ModelParamsDict:
         self.clip_norm = 5.0
         self.batch_size = 4
         self.vocab_reduction_params = None
-        self.word_dropout_params = None
         self.distributed_world_size = 1
         self.seed = 1
         self.left_pad_source = "True"

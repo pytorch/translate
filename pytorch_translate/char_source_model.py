@@ -71,7 +71,6 @@ class CharSourceModel(rnn.RNNModel):
                 dropout_out=args.encoder_dropout_out,
                 residual_level=args.residual_level,
                 bidirectional=bool(args.encoder_bidirectional),
-                word_dropout_params=args.word_dropout_params,
                 use_pretrained_weights=getattr(args, "use_pretrained_weights", False),
                 finetune_pretrained_weights=getattr(
                     args, "finetune_pretrained_weights", False
@@ -260,7 +259,6 @@ class CharCNNEncoder(FairseqEncoder):
         dropout_out=0.1,
         residual_level=None,
         bidirectional=False,
-        word_dropout_params=None,
         use_pretrained_weights=False,
         finetune_pretrained_weights=False,
         weights_file=None,
