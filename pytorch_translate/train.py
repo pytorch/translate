@@ -202,8 +202,9 @@ def validate_and_set_default_args(args):
 def setup_training_model(args):
     """Parse args, load dataset, and build model with criterion."""
     if not torch.cuda.is_available():
-        raise NotImplementedError("Training on CPU is not supported")
-    torch.cuda.set_device(args.device_id)
+        print("Warning: training without CUDA is likely to be slow!")
+    else:
+        torch.cuda.set_device(args.device_id)
     torch.manual_seed(args.seed)
 
     # Setup task and load dataset
