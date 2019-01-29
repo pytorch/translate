@@ -13,7 +13,6 @@ from pytorch_translate.test import utils as test_utils
 
 
 class TestBeamDecode(unittest.TestCase):
-    @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
     def test_basic_generate(self):
         test_args = test_utils.ModelParamsDict()
         _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
@@ -25,7 +24,6 @@ class TestBeamDecode(unittest.TestCase):
         encoder_input = {"src_tokens": src_tokens, "src_lengths": src_lengths}
         translator.generate(encoder_input, maxlen=7)
 
-    @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
     def test_char_rnn_generate(self):
         test_args = test_utils.ModelParamsDict(sequence_lstm=True)
         test_args.arch = "char_source"
@@ -52,7 +50,6 @@ class TestBeamDecode(unittest.TestCase):
         }
         translator.generate(encoder_input, maxlen=7)
 
-    @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
     def test_gather_probs_with_vr(self):
         """ Tests gather_probs when there is vocab reduction """
         all_translation_tokens: List[Any] = [
@@ -60,10 +57,8 @@ class TestBeamDecode(unittest.TestCase):
             torch.LongTensor([0, 3, 5]),
         ]
         all_probs: List[Any] = [
-            torch.FloatTensor(
-                [[0.25, 0.25, 0.25, 0.25], [0.25, 0.25, 0.25, 0.25]]
-            ).cuda(),
-            torch.FloatTensor([[0.4, 0.5, 0.1], [0.4, 0.5, 0.1]]).cuda(),
+            torch.FloatTensor([[0.25, 0.25, 0.25, 0.25], [0.25, 0.25, 0.25, 0.25]]),
+            torch.FloatTensor([[0.4, 0.5, 0.1], [0.4, 0.5, 0.1]]),
         ]
         avg_probs, possible_translation_tokens = beam_decode.SequenceGenerator.gather_probs(
             all_translation_tokens=all_translation_tokens, all_probs=all_probs
@@ -86,7 +81,6 @@ class TestBeamDecode(unittest.TestCase):
             desired=np.array(possible_translation_tokens_ref),
         )
 
-    @unittest.skipIf(torch.cuda.device_count() < 1, "No GPU available for test.")
     def test_gather_probs_without_vr(self):
         """ Tests gather_probs when there is no vocab reduction """
         all_probs: List[Any] = [

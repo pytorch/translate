@@ -17,7 +17,6 @@ from pytorch_translate.test.utils import (
 
 
 class TestTranslation(unittest.TestCase):
-    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_rnn(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_rnn") as data_dir:
@@ -35,17 +34,17 @@ class TestTranslation(unittest.TestCase):
                         "--encoder-layers",
                         "2",
                         "--encoder-embed-dim",
-                        "256",
+                        "8",
                         "--encoder-hidden-dim",
-                        "512",
+                        "16",
                         "--decoder-layers",
                         "2",
                         "--decoder-embed-dim",
-                        "256",
+                        "8",
                         "--decoder-hidden-dim",
-                        "512",
+                        "16",
                         "--decoder-out-embed-dim",
-                        "256",
+                        "8",
                         "--attention-type",
                         "dot",
                     ],
@@ -71,24 +70,23 @@ class TestTranslation(unittest.TestCase):
                         "--encoder-layers",
                         "2",
                         "--encoder-embed-dim",
-                        "256",
+                        "8",
                         "--encoder-hidden-dim",
-                        "512",
+                        "16",
                         "--decoder-layers",
                         "2",
                         "--decoder-embed-dim",
-                        "256",
+                        "8",
                         "--decoder-hidden-dim",
-                        "512",
+                        "16",
                         "--decoder-out-embed-dim",
-                        "256",
+                        "8",
                         "--attention-type",
                         "dot",
                     ],
                 )
                 generate_main(data_dir)
 
-    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_char_rnn(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_char_rnn") as data_dir:
@@ -99,9 +97,9 @@ class TestTranslation(unittest.TestCase):
                         "--arch",
                         "char_source",
                         "--char-embed-dim",
-                        "64",
+                        "4",
                         "--char-rnn-units",
-                        "128",
+                        "8",
                         "--char-rnn-layers",
                         "1",
                         "--char-source-max-vocab-size",
@@ -120,17 +118,17 @@ class TestTranslation(unittest.TestCase):
                         "--encoder-layers",
                         "2",
                         "--encoder-embed-dim",
-                        "64",
+                        "8",
                         "--encoder-hidden-dim",
-                        "256",
+                        "16",
                         "--decoder-layers",
                         "2",
                         "--decoder-embed-dim",
-                        "256",
+                        "8",
                         "--decoder-hidden-dim",
-                        "256",
+                        "16",
                         "--decoder-out-embed-dim",
-                        "256",
+                        "8",
                         "--attention-type",
                         "dot",
                     ],
@@ -143,7 +141,6 @@ class TestTranslation(unittest.TestCase):
                     ],
                 )
 
-    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_pretrained_char_model(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_pretrained_char_model") as data_dir:
@@ -204,7 +201,6 @@ class TestTranslation(unittest.TestCase):
                     ],
                 )
 
-    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_multilingual(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_multilingual") as data_dir:
@@ -224,17 +220,17 @@ class TestTranslation(unittest.TestCase):
                         "--encoder-layers",
                         "2",
                         "--encoder-embed-dim",
-                        "256",
+                        "8",
                         "--encoder-hidden-dim",
-                        "512",
+                        "16",
                         "--decoder-layers",
                         "2",
                         "--decoder-embed-dim",
-                        "256",
+                        "8",
                         "--decoder-hidden-dim",
-                        "512",
+                        "16",
                         "--decoder-out-embed-dim",
-                        "256",
+                        "8",
                         "--attention-type",
                         "dot",
                         "--multiling-encoder-lang",
@@ -319,7 +315,6 @@ class TestTranslation(unittest.TestCase):
                         ],
                     )
 
-    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_transformer(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_transformer") as data_dir:
@@ -330,17 +325,17 @@ class TestTranslation(unittest.TestCase):
                         "--arch",
                         "ptt_transformer",
                         "--encoder-embed-dim",
-                        "256",
+                        "8",
                         "--encoder-ffn-embed-dim",
-                        "512",
+                        "16",
                         "--encoder-attention-heads",
                         "4",
                         "--encoder-layers",
                         "3",
                         "--decoder-embed-dim",
-                        "256",
+                        "8",
                         "--decoder-ffn-embed-dim",
-                        "512",
+                        "16",
                         "--decoder-attention-heads",
                         "4",
                         "--decoder-layers",
@@ -383,7 +378,6 @@ class TestTranslation(unittest.TestCase):
                 )
                 generate_main(data_dir)
 
-    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_char_transformer(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_char_transformer") as data_dir:
@@ -394,9 +388,9 @@ class TestTranslation(unittest.TestCase):
                         "--arch",
                         "char_source_transformer",
                         "--char-embed-dim",
-                        "64",
+                        "4",
                         "--char-cnn-params",
-                        "[(50, 1), (100,2)]",
+                        "[(10, 1), (20, 2)]",
                         "--char-cnn-nonlinear-fn",
                         "relu",
                         "--char-cnn-num-highway-layers",
@@ -404,17 +398,17 @@ class TestTranslation(unittest.TestCase):
                         "--char-source-max-vocab-size",
                         "26",
                         "--encoder-embed-dim",
-                        "256",
+                        "8",
                         "--encoder-ffn-embed-dim",
-                        "512",
+                        "16",
                         "--encoder-attention-heads",
                         "4",
                         "--encoder-layers",
                         "3",
                         "--decoder-embed-dim",
-                        "256",
+                        "8",
                         "--decoder-ffn-embed-dim",
-                        "512",
+                        "16",
                         "--decoder-attention-heads",
                         "4",
                         "--decoder-layers",
@@ -429,7 +423,6 @@ class TestTranslation(unittest.TestCase):
                     ],
                 )
 
-    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_char_source_hybrid(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_char_rnn") as data_dir:
@@ -440,9 +433,9 @@ class TestTranslation(unittest.TestCase):
                         "--arch",
                         "char_source_hybrid",
                         "--char-embed-dim",
-                        "64",
+                        "4",
                         "--char-cnn-params",
-                        "[(50, 1), (100,2)]",
+                        "[(10, 1), (20,2)]",
                         "--char-cnn-nonlinear-fn",
                         "relu",
                         "--char-cnn-num-highway-layers",
@@ -450,23 +443,23 @@ class TestTranslation(unittest.TestCase):
                         "--char-source-max-vocab-size",
                         "26",
                         "--encoder-embed-dim",
-                        "128",
+                        "8",
                         "--encoder-ffn-embed-dim",
-                        "256",
+                        "16",
                         "--encoder-attention-heads",
                         "4",
                         "--encoder-layers",
                         "3",
                         "--decoder-embed-dim",
-                        "256",
+                        "8",
                         "--decoder-attention-heads",
                         "4",
                         "--decoder-layers",
                         "2",
                         "--decoder-lstm-units",
-                        "128",
+                        "16",
                         "--decoder-out-embed-dim",
-                        "64",
+                        "8",
                     ],
                 )
                 generate_main(
@@ -477,7 +470,6 @@ class TestTranslation(unittest.TestCase):
                     ],
                 )
 
-    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_semisupervised(self):
         """
         Tests semi_supervised task. Important flags: `--train-mono-*-text-file`,
@@ -505,23 +497,22 @@ class TestTranslation(unittest.TestCase):
                         "--encoder-layers",
                         "2",
                         "--encoder-embed-dim",
-                        "256",
+                        "8",
                         "--encoder-hidden-dim",
-                        "512",
+                        "16",
                         "--decoder-layers",
                         "2",
                         "--decoder-embed-dim",
-                        "256",
+                        "8",
                         "--decoder-hidden-dim",
-                        "512",
+                        "16",
                         "--decoder-out-embed-dim",
-                        "256",
+                        "8",
                         "--attention-type",
                         "dot",
                     ],
                 )
 
-    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
     def test_denoising_autoencoder(self):
         """
         Tests denoising autoencoder task. Important flags:
@@ -551,25 +542,22 @@ class TestTranslation(unittest.TestCase):
                         "--encoder-layers",
                         "2",
                         "--encoder-embed-dim",
-                        "256",
+                        "8",
                         "--encoder-hidden-dim",
-                        "512",
+                        "16",
                         "--decoder-layers",
                         "2",
                         "--decoder-embed-dim",
-                        "256",
+                        "8",
                         "--decoder-hidden-dim",
-                        "512",
+                        "16",
                         "--decoder-out-embed-dim",
-                        "256",
+                        "8",
                         "--attention-type",
                         "dot",
                     ],
                 )
 
-    @unittest.skipIf(
-        torch.cuda.device_count() != 1, "Test only supports single-GPU training."
-    )
     def test_word_prediction(self):
         """ Tests a word prediction model, which will use a learned vocab
         reduction via the word prediction model. It uses a custom criterion
@@ -596,17 +584,17 @@ class TestTranslation(unittest.TestCase):
                         "--encoder-layers",
                         "2",
                         "--encoder-embed-dim",
-                        "256",
+                        "8",
                         "--encoder-hidden-dim",
-                        "512",
+                        "16",
                         "--decoder-layers",
                         "2",
                         "--decoder-embed-dim",
-                        "256",
+                        "8",
                         "--decoder-hidden-dim",
-                        "512",
+                        "16",
                         "--decoder-out-embed-dim",
-                        "256",
+                        "8",
                         "--attention-type",
                         "dot",
                     ],
@@ -666,8 +654,6 @@ def train_translation_model(data_dir, extra_flags, criterion=None):
             "1",
             "--no-progress-bar",
             "--distributed-world-size",
-            "1",
-            "--local-num-gpus",
             "1",
             "--source-lang",
             "in",
