@@ -116,3 +116,40 @@ class TestUnsupervisedMorphology(unittest.TestCase):
                 morph_hmm_model.transition_log_prob("suffix", "START")
                 == morph_hmm_model.SMALL_CONST
             )
+
+    def test_segment_viterbi_no_smoothing(self):
+        morph_hmm_model = unsupervised_morphology.MorphologyHMMParams(
+            smoothing_const=0.0
+        )
+        with patch("builtins.open") as mock_open:
+            txt_content = [
+                "123 124 234 345",
+                "112 122 123 345",
+                "123456789",
+                "123456 456789",
+            ]
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+            morph_hmm_model.init_params_from_data("no_exist_file.txt")
+
+            segmentor = unsupervised_morphology.MorphologySegmentor(morph_hmm_model)
+            assert segmentor.segment_viterbi("123123789") == (
+                ["prefix", "prefix", "stem"],
+                [0, 3, 6, 9],
+            )
+
+    def test_segment_viterbi_w_smoothing(self):
+        morph_hmm_model = unsupervised_morphology.MorphologyHMMParams()
+        with patch("builtins.open") as mock_open:
+            txt_content = [
+                "123 124 234 345",
+                "112 122 123 345",
+                "123456789",
+                "123456 456789",
+            ]
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+            morph_hmm_model.init_params_from_data("no_exist_file.txt")
+
+            segmentor = unsupervised_morphology.MorphologySegmentor(morph_hmm_model)
+            assert segmentor.segment_viterbi("123123789") == (["stem"], [0, 9])
