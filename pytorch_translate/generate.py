@@ -188,11 +188,8 @@ def _generate_score(models, args, task, dataset, optimize=True):
             timer=gen_timer,
             prefix_size=1 if pytorch_translate_data.is_multilingual(args) else 0,
         )
-        if pytorch_translate_data.is_multilingual(args):
-            first_best_translations = _iter_first_best_multilingual
-        else:
-            first_best_translations = _iter_first_best_bilingual
-        for trans_info in first_best_translations(
+
+        for trans_info in _iter_translations(
             args, task, dataset, translations, align_dict
         ):
             scorer.add(trans_info.target_tokens, trans_info.hypo_tokens)
@@ -267,12 +264,14 @@ def smoothed_sentence_bleu(task, target_tokens, hypo_tokens):
     return smoothed_bleu
 
 
-def _iter_first_best_bilingual(args, task, dataset, translations, align_dict):
-    """Iterate over first best translations.
+def _iter_translations(args, task, dataset, translations, align_dict):
+    """Iterate over translations.
 
-    This is a generator function which yields information about the first best
-    translations in `translations`. It also prints the n-best translations
-    to stdout.
+    This is a generator function which wraps the beam-search sequence generator,
+    performing such work on the output as converting token indices to
+    strings, printing output where applicable (not args.quiet), collecting
+    oracle translations where applicable, and removing language-ID tokens
+    for multilingual translation.
 
     Args:
         args: Command-line arguments.
@@ -285,16 +284,40 @@ def _iter_first_best_bilingual(args, task, dataset, translations, align_dict):
     Yields:
         For each sentence in `translations`, yields a TranslationInfo.
     """
+    is_multilingual = pytorch_translate_data.is_multilingual(args)
+
     for sample_id, src_tokens, target_tokens, hypos in translations:
         # Process input and ground truth
         target_tokens = target_tokens.int().cpu()
+
+        if is_multilingual:
+            src_lang_id = (
+                src_tokens[-1] - pytorch_translate_data.MULTILING_DIALECT_ID_OFFSET
+            )
+            target_lang_id = (
+                target_tokens[0] - pytorch_translate_data.MULTILING_DIALECT_ID_OFFSET
+            )
+
+            # remove language ID tokens
+            src_tokens = src_tokens[:-1]
+            target_tokens = target_tokens[1:]
+
+            # Select dictionaries
+            src_dict = task.source_dictionaries[task.get_encoder_lang_code(src_lang_id)]
+            target_dict = task.target_dictionaries[
+                task.get_decoder_lang_code(target_lang_id)
+            ]
+        else:
+            src_dict = task.source_dictionary
+            target_dict = task.target_dictionary
+
         # Either retrieve the original sentences or regenerate them from tokens.
         if align_dict is not None:
             src_str = dataset.src.get_original_text(sample_id)
             target_str = dataset.tgt.get_original_text(sample_id)
         else:
-            src_str = task.source_dictionary.string(src_tokens, args.remove_bpe)
-            target_str = task.target_dictionary.string(
+            src_str = src_dict.string(src_tokens, args.remove_bpe)
+            target_str = target_dict.string(
                 target_tokens, args.remove_bpe, escape_unk=True
             )
 
@@ -345,96 +368,11 @@ def _iter_first_best_bilingual(args, task, dataset, translations, align_dict):
                 # However, as I tried, whether normalize_scores is set or not,
                 # the returned scores are the same (to be investigated).
                 # Here, the probs are normalized by hypo length so the value
-                # is big enough to be used as weights in
+                # is big enough to be used as weights for backtranslations in
+                # dual learning.
                 hypo_score = (
                     hypo["score"] / len(hypo_tokens) if len(hypo_tokens) > 0 else 0.0
                 )
-                top_hypo_tokens = hypo_tokens
-
-        yield TranslationInfo(
-            sample_id=sample_id,
-            src_tokens=src_tokens,
-            target_tokens=target_tokens,
-            hypo_tokens=top_hypo_tokens,
-            src_str=src_str,
-            target_str=target_str,
-            hypo_str=hypo_str,
-            hypo_score=hypo_score,
-            best_hypo_tokens=best_hypo_tokens,
-        )
-
-
-def _iter_first_best_multilingual(args, task, dataset, translations, align_dict):
-    """Like _iter_first_best_bilingual but for multilingual NMT."""
-    src_dicts = task.source_dictionaries
-    target_dicts = task.target_dictionaries
-    for sample_id, src_tokens, target_tokens, hypos in translations:
-        # Process input and ground truth
-        target_tokens = target_tokens.int().cpu()
-        src_lang_id = (
-            src_tokens[-1] - pytorch_translate_data.MULTILING_DIALECT_ID_OFFSET
-        )
-        target_lang_id = (
-            target_tokens[0] - pytorch_translate_data.MULTILING_DIALECT_ID_OFFSET
-        )
-        src_tokens = src_tokens[:-1]
-        target_tokens = target_tokens[1:]
-        # Select dictionaries
-        src_dict = src_dicts[task.get_encoder_lang_code(src_lang_id)]
-        target_dict = target_dicts[task.get_decoder_lang_code(target_lang_id)]
-        # Either retrieve the original sentences or regenerate them from tokens.
-        if align_dict is not None:
-            src_str = dataset.src.get_original_text(sample_id)
-            target_str = dataset.tgt.get_original_text(sample_id)
-        else:
-            src_str = src_dict.string(src_tokens, args.remove_bpe)
-            target_str = target_dict.string(
-                target_tokens, args.remove_bpe, escape_unk=True
-            )
-
-        if not args.quiet:
-            print(f"S-{sample_id}\tsrc_lang={src_lang_id}\t{src_str}")
-            print(f"T-{sample_id}\ttrg_lang={target_lang_id}\t{target_str}")
-
-        # used only for oracle evaluation (args.report_oracle_bleu)
-        best_hypo_tokens = None
-        best_hypo_score = 0
-
-        # Process top predictions
-        for i, hypo in enumerate(hypos[: min(len(hypos), args.nbest)]):
-            hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
-                hypo_tokens=hypo["tokens"].int().cpu()[1:],
-                src_str=src_str,
-                alignment=hypo["alignment"].int().cpu()[1:],
-                align_dict=align_dict,
-                tgt_dict=target_dict,
-                remove_bpe=args.remove_bpe,
-            )
-
-            if not args.quiet:
-                print(f"H-{sample_id}\t{hypo['score']}\t{hypo_str}")
-                print(
-                    "A-{}\t{}".format(
-                        sample_id,
-                        " ".join(map(lambda x: str(utils.item(x)), alignment)),
-                    )
-                )
-
-            if args.report_oracle_bleu:
-                score = smoothed_sentence_bleu(task, target_tokens, hypo_tokens)
-                if score > best_hypo_score:
-                    best_hypo_tokens = hypo_tokens
-                    best_hypo_score = score
-
-            # Score only the top hypothesis
-            if i == 0:
-                if align_dict is not None or args.remove_bpe is not None:
-                    # Convert back to tokens for evaluation with unk replacement
-                    # and/or without BPE
-                    target_tokens = tokenizer.Tokenizer.tokenize(
-                        target_str, target_dict, add_if_not_exist=True
-                    )
-                hypo_score = hypo["score"] / len(hypo_tokens)
                 top_hypo_tokens = hypo_tokens
 
         yield TranslationInfo(
