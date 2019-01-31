@@ -252,7 +252,7 @@ def smoothed_sentence_bleu(task, target_tokens, hypo_tokens):
         (scorer.stat.match4, scorer.stat.count4),
     ]:
         if count == 0:
-            # disregard n-grams for values of n larger than reference length
+            # disregard n-grams for values of n larger than hypothesis length
             continue
         if match == 0:
             invcnt *= 2
