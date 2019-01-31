@@ -166,30 +166,34 @@ class MorphologySegmentor(object):
         pi = self.initialize_prob_values(n)
         back_pointer = [{} for _ in range(n + 1)]
 
-        for i in range(n):  # loop over starting indices of morphemes
-            for j in range(i + 1, n + 1):  # loop over end indices of morphemes
-                for v in {"prefix", "stem", "suffix"}:  # loop over possible tags
-                    for w in {"START", "prefix", "stem", "suffix"}:
+        for start in range(n):  # loop over starting indices of morphemes.
+            for end in range(start + 1, n + 1):  # loop over end indices of morphemes.
+                for cur_tag in ["prefix", "stem", "suffix"]:  # loop over possible tags.
+                    for prev_tag in ["START", "prefix", "stem", "suffix"]:
                         # loop over possible previous tags
-                        t = self.params.transition_log_prob(w, v)
-                        e = self.params.emission_log_probs(v, word[i:j])
-                        log_prob = pi[i][w] + t + e
-                        if log_prob > pi[j][v]:
-                            pi[j][v] = log_prob
+                        t = self.params.transition_log_prob(prev_tag, cur_tag)
+                        e = self.params.emission_log_probs(cur_tag, word[start:end])
+                        log_prob = pi[start][prev_tag] + t + e
+                        if log_prob > pi[end][cur_tag]:
+                            pi[end][cur_tag] = log_prob
                             # Saving backpointer for previous tag and index.
-                            back_pointer[j][v] = w, i
+                            back_pointer[end][cur_tag] = prev_tag, start
 
         # finalizing the best segmentation.
         best_score = n * self.params.SMALL_CONST
         best_bp = None
         indices = [n]  # backtracking indices for segmentation.
         labels = []  # backtracking labels for segmentation.
-        for v in {"prefix", "stem", "suffix"}:
-            t = self.params.transition_log_prob(v, "END")
-            log_prob = pi[n][v] + t
+        for last_tag in {"prefix", "stem", "suffix"}:
+            t = self.params.transition_log_prob(last_tag, "END")
+            log_prob = pi[n][last_tag] + t
             if log_prob > best_score:
                 best_score = log_prob
-                best_bp = back_pointer[n][v][1], v, back_pointer[n][v][0]
+                best_bp = (
+                    back_pointer[n][last_tag][1],
+                    last_tag,
+                    back_pointer[n][last_tag][0],
+                )
 
         indices.append(best_bp[0])
         labels.append(best_bp[1])
@@ -203,13 +207,36 @@ class MorphologySegmentor(object):
             last_label = labels[-1]
             if last_index == 0:
                 break
-            w, i = back_pointer[last_index][last_label]
-            indices.append(i)
-            if i == 0:
+            prev_tag, start_index = back_pointer[last_index][last_label]
+            indices.append(start_index)
+            if start_index == 0:
                 break
-            labels.append(w)
+            labels.append(prev_tag)
 
         # We should now reverse the backtracked list.
         indices.reverse()
         labels.reverse()
         return labels, indices
+
+    def segment_word(self, word, add_affix_symbols=False):
+        """
+        This method segments words based on the Viterbi algorithm. Given an input
+        string, the algorithm segments that word to one or more substrings.
+
+        Args:
+            add_affix_symbols: if True, put a + after prefixes, and before affixes.
+            Example: pretokenize --> pre+ token +ize
+        """
+        labels, indices = self.segment_viterbi(word)
+        outputs = []
+        for i in range(len(labels)):
+            substr = word[indices[i] : indices[i + 1]]
+            label = labels[i]
+            if add_affix_symbols:
+                if label == "prefix":
+                    substr = substr + "+"
+                elif label == "suffix":
+                    substr = "+" + substr
+            outputs.append(substr)
+
+        return " ".join(outputs)
