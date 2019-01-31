@@ -374,6 +374,8 @@ class TestTranslation(unittest.TestCase):
                         "3",
                         "--distributed-world-size",
                         str(torch.cuda.device_count()),
+                        "--local-num-gpus",
+                        str(torch.cuda.device_count()),
                     ],
                 )
                 generate_main(data_dir)
@@ -655,6 +657,8 @@ def train_translation_model(data_dir, extra_flags, criterion=None):
             "--no-progress-bar",
             "--distributed-world-size",
             "1",
+            "--local-num-gpus",
+            "1" if torch.cuda.device_count() >= 1 else "0",
             "--source-lang",
             "in",
             "--target-lang",
