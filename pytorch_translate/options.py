@@ -637,6 +637,15 @@ def expand_generation_args(group, train=False):
             "sentences."
         ),
     )
+    group.add_argument(
+        "--output-hypos-binary-path",
+        default=None,
+        type=str,
+        help=(
+            "Optional filename to save output hypotheses (binary format "
+            "and EOS-terminated, suitable for use as training targets)"
+        ),
+    )
 
     # These arguments are only used during training
     if train:
