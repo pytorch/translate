@@ -246,7 +246,7 @@ class TransformerEncoder(FairseqEncoder):
     """Transformer encoder."""
 
     def __init__(
-        self, args, dictionary, embed_tokens, left_pad=True, proj_to_decoder=True
+        self, args, dictionary, embed_tokens, left_pad=False, proj_to_decoder=True
     ):
         super().__init__(dictionary)
         self.transformer_embedding = TransformerEmbedding(

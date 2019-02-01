@@ -33,10 +33,10 @@ class PytorchTranslateTask(FairseqTask):
         )
         parser.add_argument(
             "--left-pad-source",
-            default="True",
-            type=str,
+            default=False,
+            type=bool,
             metavar="BOOL",
-            help="pad the source on the left (default: True)",
+            help="pad the source on the left (default: False)",
         )
         parser.add_argument(
             "--max-source-positions",
@@ -61,7 +61,7 @@ class PytorchTranslateTask(FairseqTask):
 
     def build_model(self, args):
         # set defaults for old model checkpoints
-        args.left_pad_source = getattr(args, "left_pad_source", True)
+        args.left_pad_source = getattr(args, "left_pad_source", False)
         return super().build_model(args)
 
     @classmethod
@@ -151,6 +151,7 @@ class PytorchTranslateTask(FairseqTask):
                 tgt_sizes=dst_dataset.sizes,
                 tgt_dict=self.target_dictionary,
                 weights=weights_dataset,
+                left_pad_source=False,
             )
 
         if self.args.log_verbose:
@@ -212,6 +213,7 @@ class PytorchTranslateTask(FairseqTask):
                 dst_dataset,
                 dst_dataset.sizes,
                 self.target_dictionary,
+                left_pad_source=False,
             )
 
         print(f"| {split} {len(self.datasets[split])} examples")
