@@ -7,6 +7,13 @@ from unittest.mock import Mock, patch
 from pytorch_translate.research.unsupervised_morphology import unsupervised_morphology
 
 
+def get_all_substrings(string):
+    length = len(string)
+    for i in range(length):
+        for j in range(i + 1, length + 1):
+            yield (string[i:j])
+
+
 class TestUnsupervisedMorphology(unittest.TestCase):
     def test_morph_init(self):
         morph_hmm_model = unsupervised_morphology.MorphologyHMMParams()
@@ -178,3 +185,132 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             assert segmentor.segment_word("123") == segmentor.segment_word(
                 "123", add_affix_symbols=True
             )
+
+    def check_emission_after_forward_backward(
+        self, str, e, expected_prefixes, expected_stems, expected_suffixes
+    ):
+        for str in get_all_substrings(str):
+            if str in expected_prefixes:
+                assert e[("prefix", str)] > 0
+            else:
+                assert e[("prefix", str)] == 0
+
+            if str in expected_stems:
+                assert e[("stem", str)] > 0
+            else:
+                assert e[("stem", str)] == 0
+
+            if str in expected_suffixes:
+                assert e[("suffix", str)] > 0
+            else:
+                assert e[("suffix", str)] == 0
+
+            assert e[("START", str)] == 0
+            assert e[("END", str)] == 0
+
+    def test_forward_backward(self):
+        with patch("builtins.open") as mock_open:
+            txt_content = ["123 12123"]
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+            unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
+                "no_exist_file.txt", smoothing_const=0.0
+            )
+            e, t = unsupervised_model.forward_backward("123")
+
+            # checking emission parameters
+            expected_prefixes = {"1"}
+            expected_stems = {"12", "123", "23"}
+            expected_suffixes = {"3"}
+            self.check_emission_after_forward_backward(
+                "123", e, expected_prefixes, expected_stems, expected_suffixes
+            )
+
+            assert t[("START", "START")] == 0
+            assert t[("START", "END")] == 0
+            assert t[("START", "prefix")] > 0
+            assert t[("START", "stem")] > 0
+            assert t[("START", "suffix")] == 0
+            assert t[("END", "START")] == 0
+            assert t[("END", "END")] == 0
+            assert t[("END", "prefix")] == 0
+            assert t[("END", "stem")] == 0
+            assert t[("END", "suffix")] == 0
+            assert t[("prefix", "START")] == 0
+            assert t[("prefix", "END")] == 0
+            assert t[("prefix", "prefix")] == 0
+            assert t[("prefix", "stem")] > 0
+            assert t[("prefix", "suffix")] == 0
+            assert t[("stem", "START")] == 0
+            assert t[("stem", "END")] > 0
+            assert t[("stem", "prefix")] == 0
+            assert t[("stem", "stem")] == 0
+            assert t[("stem", "suffix")] > 0
+            assert t[("suffix", "START")] == 0
+            assert t[("suffix", "END")] > 0
+            assert t[("suffix", "prefix")] == 0
+            assert t[("suffix", "stem")] == 0
+            assert t[("suffix", "suffix")] == 0
+
+        def test_forward_backward_with_smoothing(self):
+            """
+            Making sure that the algorithm works end-to-end.
+            """
+            with patch("builtins.open") as mock_open:
+                txt_content = ["123 12123"]
+                mock_open.return_value.__enter__ = mock_open
+                mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+                unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
+                    "no_exist_file.txt", smoothing_const=0.0
+                )
+            unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
+                "no_exist_file.txt", smoothing_const=0.1
+            )
+            e, t = unsupervised_model.forward_backward("123")
+
+    def test_forward_backward_long_str(self):
+        with patch("builtins.open") as mock_open:
+            txt_content = [
+                "123 124 234 345",
+                "112 122 123 345",
+                "123456789",
+                "123456 456789",
+            ]
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+            unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
+                "no_exist_file.txt", smoothing_const=0.0
+            )
+            e, t = unsupervised_model.forward_backward("1232345")
+            expected_prefixes = {"1", "12", "123", "2", "23", "3"}
+            expected_stems = {"12", "123", "23", "234", "2345", "345", "45", "34"}
+            expected_suffixes = {"2", "3", "4", "5", "34", "45", "345"}
+            self.check_emission_after_forward_backward(
+                "1232345", e, expected_prefixes, expected_stems, expected_suffixes
+            )
+
+            assert t[("START", "START")] == 0
+            assert t[("START", "END")] == 0
+            assert t[("START", "prefix")] > 0
+            assert t[("START", "stem")] > 0
+            assert t[("START", "suffix")] == 0
+            assert t[("END", "START")] == 0
+            assert t[("END", "END")] == 0
+            assert t[("END", "prefix")] == 0
+            assert t[("END", "stem")] == 0
+            assert t[("END", "suffix")] == 0
+            assert t[("prefix", "START")] == 0
+            assert t[("prefix", "END")] == 0
+            assert t[("prefix", "prefix")] > 0
+            assert t[("prefix", "stem")] > 0
+            assert t[("prefix", "suffix")] == 0
+            assert t[("stem", "START")] == 0
+            assert t[("stem", "END")] > 0
+            assert t[("stem", "prefix")] == 0
+            assert t[("stem", "stem")] > 0
+            assert t[("stem", "suffix")] > 0
+            assert t[("suffix", "START")] == 0
+            assert t[("suffix", "END")] > 0
+            assert t[("suffix", "prefix")] == 0
+            assert t[("suffix", "stem")] == 0
+            assert t[("suffix", "suffix")] > 0
