@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import math
-from collections import Counter
+from collections import Counter, defaultdict
 
 
 class MorphologyHMMParams(object):
@@ -240,3 +240,136 @@ class MorphologySegmentor(object):
             outputs.append(substr)
 
         return " ".join(outputs)
+
+
+class UnsupervisedMorphology(object):
+    def __init__(self, input_file, smoothing_const=0.1):
+        self.params = MorphologyHMMParams(smoothing_const)
+        self.params.init_params_from_data(input_file)
+
+    @staticmethod
+    def init_forward_values(n):
+        forward_values = [{} for _ in range(n + 1)]
+        forward_values[0]["START"] = 1.0
+        forward_values[0]["prefix"] = 0
+        forward_values[0]["stem"] = 0
+        forward_values[0]["suffix"] = 0
+        forward_values[0]["END"] = 0
+        for i in range(1, len(forward_values)):
+            for cur_tag in ["START", "prefix", "stem", "suffix", "END"]:
+                forward_values[i][cur_tag] = 0
+        return forward_values
+
+    @staticmethod
+    def init_backward_values(n):
+        backward_values = [{} for _ in range(n + 1)]
+
+        backward_values[n]["END"] = 1.0
+
+        for i in range(0, len(backward_values)):
+            for cur_tag in ["START", "prefix", "stem", "suffix", "END"]:
+                backward_values[i][cur_tag] = 0
+        return backward_values
+
+    def forward(self, word):
+        """
+        For the forward pass in the forward-backward algorithm.
+        The forward pass is very similar to the Viterbi algorithm. The main difference
+        is that here we use summation instead of argmax.
+        """
+        n = len(word)
+        forward_values = UnsupervisedMorphology.init_forward_values(n)
+        for start in range(n):
+            for end in range(start + 1, n + 1):
+                for cur_tag in ["prefix", "stem", "suffix"]:
+                    for prev_tag in ["START", "prefix", "stem", "suffix"]:
+                        t = self.params.affix_trans_probs[prev_tag][cur_tag]
+                        e = self.params.emission_prob(cur_tag, word[start:end])
+                        forward_values[end][cur_tag] += (
+                            forward_values[start][prev_tag] * t * e
+                        )
+        return forward_values
+
+    def backward(self, word):
+        """
+        For the backward pass in the forward-backward algorithm.
+        """
+        n = len(word)
+        backward_values = UnsupervisedMorphology.init_backward_values(n)
+
+        # Here we initialize the backward pass of the valid morpheme classes equal
+        # to their transition to the END state.
+        for cur_tag in ["prefix", "stem", "suffix"]:
+            t = self.params.affix_trans_probs[cur_tag]["END"]
+            backward_values[n][cur_tag] = t
+
+        # Here we do regular summation over all possible paths leading to a specific
+        # morpheme class.
+        for start in range(n - 1, -1, -1):
+            for end in range(start + 1, n + 1):
+                for cur_tag in ["prefix", "stem", "suffix"]:
+                    for next_tag in ["prefix", "stem", "suffix"]:
+                        t = self.params.affix_trans_probs[cur_tag][next_tag]
+                        e = self.params.emission_prob(next_tag, word[start:end])
+                        backward_values[start][cur_tag] += (
+                            backward_values[end][next_tag] * t * e
+                        )
+        return backward_values
+
+    def forward_backward(self, word):
+        """
+        The forward-backward algorithm is a dynamic programming algorithm that
+        enumerates all possible observations in a sequence and returns the
+        probability of the every parameter. These probabilities can be used in
+        the expectation-maximization (EM) algorithm for estimating the expected
+        values for each observation in the data. Here is the implementation of the
+        FB algorithm for the segment HMM model. This algorithm, especially the
+        forward pass, is analogous to the Viterbi algorithm: the FB algorithm is
+        an instance of the sum-product algorithm while the Viterbi algorithm is
+        an instance of the max-product algorithm.
+        A pseudo-code of forward-backward algorithm for the vanilla HMM can be
+        found here:
+        http://www.cs.columbia.edu/~mcollins/courses/6998-2012/lectures/lec6.3.pdf
+        """
+        n = len(word)
+        forward_values = self.forward(word)
+        backward_values = self.backward(word)
+
+        emission_expectations = defaultdict(float)
+        transition_expectations = defaultdict(float)
+
+        for prev_tag in ["prefix", "stem", "suffix"]:
+            transition_expectations[(prev_tag, "END")] += (
+                forward_values[n][prev_tag]
+                * self.params.affix_trans_probs[prev_tag]["END"]
+            )
+        denominator = sum(
+            [
+                transition_expectations[(prev_tag, "END")]
+                for prev_tag in ["prefix", "stem", "suffix"]
+            ]
+        )
+        for prev_tag in ["prefix", "stem", "suffix"]:
+            transition_expectations[(prev_tag, "END")] /= denominator
+
+        for start in range(n):
+            for end in range(start + 1, n + 1):
+                substr = word[start:end]
+                for prev_tag in ["START", "prefix", "stem", "suffix"]:
+                    for cur_tag in ["prefix", "stem", "suffix"]:
+                        t = self.params.affix_trans_probs[prev_tag][cur_tag]
+                        e = self.params.emission_prob(cur_tag, substr)
+                        emission_expectations[(cur_tag, substr)] += (
+                            forward_values[start][prev_tag]
+                            * t
+                            * e
+                            * backward_values[end][cur_tag]
+                        ) / denominator
+                        transition_expectations[(prev_tag, cur_tag)] += (
+                            forward_values[start][prev_tag]
+                            * t
+                            * e
+                            * backward_values[end][cur_tag]
+                        ) / denominator
+
+        return emission_expectations, transition_expectations
