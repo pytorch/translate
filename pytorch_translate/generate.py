@@ -165,6 +165,7 @@ def _generate_score(models, args, task, dataset, optimize=True):
     # and zero probs scores
     translated_sentences = [""] * len(dataset)
     translated_scores = [0.0] * len(dataset)
+    translated_token_arrays = [None] * len(dataset)
 
     # Generate and compute BLEU score
     dst_dict = task.target_dictionary
@@ -198,6 +199,7 @@ def _generate_score(models, args, task, dataset, optimize=True):
 
             translated_sentences[trans_info.sample_id] = trans_info.hypo_str
             translated_scores[trans_info.sample_id] = trans_info.hypo_score
+            translated_token_arrays[trans_info.sample_id] = trans_info.hypo_tokens
             translation_samples.append(
                 collections.OrderedDict(
                     {
@@ -211,6 +213,12 @@ def _generate_score(models, args, task, dataset, optimize=True):
             wps_meter.update(trans_info.src_tokens.size(0))
             t.log({"wps": round(wps_meter.avg)})
             num_sentences += 1
+
+    # If applicable, save translation tokens to binary output file
+    if getattr(args, "output_hypos_binary_path", False):
+        output_dataset = pytorch_translate_data.InMemoryNumpyDataset()
+        output_dataset.load_from_sequences(translated_token_arrays)
+        output_dataset.save(args.output_hypos_binary_path)
 
     # If applicable, save the translations to the output file
     # For eg. external evaluation

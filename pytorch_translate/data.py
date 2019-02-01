@@ -188,6 +188,27 @@ class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
         del offsets
         del sizes
 
+    def load_from_sequences(self, sequences):
+        """
+        Load data set from a list of sequences, each a list or numpy array of
+        indices. Note that this method removes all sentences which have been
+        previously added to the data set.
+        """
+        array_list = []
+        offsets = [0]
+        sizes = []
+        for inds in sequences:
+            array_list.append(np.array(inds, dtype=np.int32))
+            offsets.append(offsets[-1] + len(inds))
+            sizes.append(len(inds))
+
+        self.buffer = np.concatenate(array_list)
+        self.offsets = np.array(offsets, dtype=np.int32)
+        self.sizes = np.array(sizes, dtype=np.int32)
+        del array_list
+        del offsets
+        del sizes
+
     @staticmethod
     def create_from_file(path, num_examples_limit: Optional[int] = None):
         result = InMemoryNumpyDataset()
