@@ -73,6 +73,7 @@ class SequenceGenerator(object):
             self.model_weights = [1.0 / len(models)] * len(models)
         self.use_char_source = use_char_source
 
+        self.search = search.BeamSearch(tgt_dict)
         assert sampling_topk < 0 or sampling, "--sampling-topk requires --sampling"
         if sampling:
             self.search = search.Sampling(tgt_dict, sampling_topk, sampling_temperature)
@@ -325,17 +326,7 @@ class SequenceGenerator(object):
                 tokens[:, : step + 1], encoder_outs, incremental_states
             )
 
-            if step == 0:
-                # at the first step all hypotheses are equally likely, so use
-                # only the first beam
-                logprobs = logprobs.unfold(0, 1, beam_size).squeeze(2).contiguous()
-                scores = scores.type_as(logprobs)
-                scores_buf = scores_buf.type_as(logprobs)
-            else:
-                # make probs contain cumulative scores for each hypothesis
-                logprobs.add_(scores[:, step - 1].view(-1, 1))
             logprobs[:, self.pad] = -math.inf  # never select pad
-
             # apply unk reward
             if possible_translation_tokens is None:
                 # No vocab reduction, so unk is represented by self.unk at
@@ -369,6 +360,9 @@ class SequenceGenerator(object):
             cand_beams = buffer("cand_beams")
             eos_bbsz_idx = buffer("eos_bbsz_idx")
             eos_scores = buffer("eos_scores", type_of=scores)
+            scores = scores.type_as(logprobs)
+            scores_buf = scores_buf.type_as(logprobs)
+
             if step < maxlen:
                 if prefix_tokens is not None and step < prefix_tokens.size(1):
                     logprobs_slice = logprobs.view(bsz, -1, logprobs.size(-1))[:, 0, :]
@@ -380,25 +374,15 @@ class SequenceGenerator(object):
                     )
                     cand_beams.resize_as_(cand_indices).fill_(0)
                 else:
-                    # take the best 2 x beam_size predictions. We'll choose the first
-                    # beam_size of these which don't predict eos to continue with.
-                    torch.topk(
-                        logprobs.view(bsz, -1),
-                        k=min(
-                            cand_size, logprobs.view(bsz, -1).size(1) - 1
-                        ),  # -1 so we never select pad
-                        out=(cand_scores, cand_indices),
-                    )
-
                     possible_tokens_size = self.vocab_size
                     if possible_translation_tokens is not None:
                         possible_tokens_size = possible_translation_tokens.size(0)
-                    # cand_indices has values in [0, vocab_size * beam_size]
-                    # the following does euclidean division bu vocab_size
-                    # to retrieve the beam and word id of each candidate
-                    torch.div(cand_indices, possible_tokens_size, out=cand_beams)
-                    cand_indices.fmod_(possible_tokens_size)
-                    # Handle vocab reduction
+                    cand_scores, cand_indices, cand_beams = self.search.step(
+                        step,
+                        logprobs.view(bsz, -1, possible_tokens_size),
+                        scores.view(bsz, beam_size, -1)[:, :, :step],
+                    )
+                    # vocabulary reduction
                     if possible_translation_tokens is not None:
                         possible_translation_tokens = possible_translation_tokens.view(
                             1, possible_tokens_size
@@ -412,6 +396,7 @@ class SequenceGenerator(object):
             else:
                 # finalize all active hypotheses once we hit maxlen
                 # pick the hypothesis with the highest log prob of EOS right now
+                logprobs.add_(scores[:, step - 1].view(-1, 1))
                 torch.sort(
                     logprobs[:, self.eos],
                     descending=True,
