@@ -88,7 +88,7 @@ class ModelParamsDict:
         self.vocab_reduction_params = None
         self.distributed_world_size = 1
         self.seed = 1
-        self.left_pad_source = "True"
+        self.left_pad_source = "False"
         self.fp16 = False
         self.cpu = None
         # Modified params
