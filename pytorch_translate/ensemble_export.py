@@ -10,6 +10,7 @@ import numpy as np
 import onnx
 import torch
 import torch.jit
+import torch.jit.quantized
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.onnx.operators
@@ -815,6 +816,7 @@ class BeamSearch(torch.jit.ScriptModule):
         beam_size=1,
         word_reward=0,
         unk_reward=0,
+        quantize=False,
     ):
         super().__init__()
         self.models = model_list
@@ -824,6 +826,9 @@ class BeamSearch(torch.jit.ScriptModule):
         self.unk_reward = unk_reward
 
         encoder_ens = EncoderEnsemble(self.models)
+        if quantize:
+            encoder_ens = torch.jit.quantized.quantize_linear_modules(encoder_ens)
+            encoder_ens = torch.jit.quantized.quantize_rnn_cell_modules(encoder_ens)
         example_encoder_outs = encoder_ens(src_tokens, src_lengths)
         self.encoder_ens = torch.jit.trace(
             encoder_ens, (src_tokens, src_lengths), _force_outplace=True
@@ -836,6 +841,9 @@ class BeamSearch(torch.jit.ScriptModule):
             unk_reward,
             tile_internal=False,
         )
+        if quantize:
+            decoder_ens = torch.jit.quantized.quantize_linear_modules(decoder_ens)
+            decoder_ens = torch.jit.quantized.quantize_rnn_cell_modules(decoder_ens)
         decoder_ens_tile = DecoderBatchedStepEnsemble(
             self.models,
             tgt_dict,
@@ -844,6 +852,13 @@ class BeamSearch(torch.jit.ScriptModule):
             unk_reward,
             tile_internal=True,
         )
+        if quantize:
+            decoder_ens_tile = torch.jit.quantized.quantize_linear_modules(
+                decoder_ens_tile
+            )
+            decoder_ens_tile = torch.jit.quantized.quantize_rnn_cell_modules(
+                decoder_ens_tile
+            )
         prev_token = torch.LongTensor([0])
         prev_scores = torch.FloatTensor([0.0])
         ts = torch.LongTensor([0])
@@ -997,6 +1012,7 @@ class BeamSearch(torch.jit.ScriptModule):
             beam_size=beam_size,
             word_reward=word_reward,
             unk_reward=unk_reward,
+            quantize=True,
         )
 
     def save_to_db(self, output_path):
@@ -1018,7 +1034,13 @@ class BeamSearch(torch.jit.ScriptModule):
         )
 
     def save_to_pytorch(self, output_path):
+        self.apply(
+            lambda s: s._get_method("_pack")() if s._has_method("_pack") else None
+        )
         torch.jit.save(self, output_path)
+        self.apply(
+            lambda s: s._get_method("_unpack")() if s._has_method("_unpack") else None
+        )
 
 
 class KnownOutputDecoderStepEnsemble(nn.Module):
