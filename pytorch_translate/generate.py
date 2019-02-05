@@ -118,6 +118,8 @@ def build_sequence_generator(args, task, models):
         word_reward=args.word_reward,
         model_weights=model_weights,
         use_char_source=use_char_source,
+        diverse_beam_groups=args.diverse_beam_groups,
+        diverse_beam_strength=args.diverse_beam_strength,
     )
     if use_cuda:
         translator.cuda()

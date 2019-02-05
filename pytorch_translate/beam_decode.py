@@ -24,6 +24,8 @@ class SequenceGenerator(object):
         word_reward=0,
         model_weights=None,
         use_char_source=False,
+        diverse_beam_groups=-1,
+        diverse_beam_strength=0.5,
         sampling=False,
         sampling_topk=-1,
         sampling_temperature=1,
@@ -46,6 +48,10 @@ class SequenceGenerator(object):
                 `models` with ensemble interpolation weights.
             use_char_source: if True, encoder inputs consist of (src_tokens,
                 src_lengths, char_inds, word_lengths)
+            diverse_beam_groups: number of groups for Diverse Beam Search
+                (-1 by default is vanilla beam search)
+            diverse_beam_strength: strength of diversity penalty for Diverse
+                Beam Search.
         """
         self.models = models
         self.pad = tgt_dict.pad()
@@ -72,11 +78,15 @@ class SequenceGenerator(object):
         else:
             self.model_weights = [1.0 / len(models)] * len(models)
         self.use_char_source = use_char_source
-
-        self.search = search.BeamSearch(tgt_dict)
         assert sampling_topk < 0 or sampling, "--sampling-topk requires --sampling"
         if sampling:
             self.search = search.Sampling(tgt_dict, sampling_topk, sampling_temperature)
+        elif diverse_beam_groups > 0:
+            self.search = search.DiverseBeamSearch(
+                tgt_dict, diverse_beam_groups, diverse_beam_strength
+            )
+        else:
+            self.search = search.BeamSearch(tgt_dict)
 
     def cuda(self):
         for model in self.models:
