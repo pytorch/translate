@@ -2,6 +2,8 @@
 
 import math
 from collections import Counter, defaultdict
+from itertools import chain, zip_longest
+from multiprocessing import Pool
 
 
 class MorphologyHMMParams(object):
@@ -373,3 +375,145 @@ class UnsupervisedMorphology(object):
                         ) / denominator
 
         return emission_expectations, transition_expectations
+
+    @staticmethod
+    def group_to(max_size, iterable):
+        return list(zip_longest(*[iter(iterable)] * max_size, fillvalue=None))
+
+    def expectation_substep(self, words):
+        """
+        This method is subprocess for the expectation method.
+        """
+        emissions, transitions, freqs = [], [], []
+
+        for (word, freq) in words:
+            e, t = self.forward_backward(word)
+            emissions.append(e)
+            transitions.append(t)
+            freqs.append(freq)
+
+        emission_expectations = defaultdict(float)
+        transition_expectations = defaultdict(float)
+
+        for e_key in set(chain(*[list(e.keys()) for e in emissions])):
+            emission_expectations[e_key] = sum(
+                e[e_key] * freqs[i] for i, e in enumerate(emissions)
+            )
+        for t_key in set(chain(*[list(t.keys()) for t in transitions])):
+            transition_expectations[t_key] = sum(
+                t[t_key] * freqs[i] for i, e in enumerate(transitions)
+            )
+        return emission_expectations, transition_expectations
+
+    def expectation(self, pool, train_words_chunks):
+        """
+        This method runs the expectation step with a chunked list of training words.
+        Args:
+            pool: Pool object for multi-threading.
+            train_words_chunks: a list of word+frequency-lists (chunked for
+                    multi-threading).
+        """
+        expectations = pool.map(self.expectation_substep, train_words_chunks)
+
+        emission_expectations = {"prefix": {}, "stem": {}, "suffix": {}}
+        transition_expectations = {
+            "prefix": {},
+            "stem": {},
+            "suffix": {},
+            "START": {},
+            "END": {},
+        }
+
+        for e_key in set(chain(*[list(e[0].keys()) for e in expectations])):
+            emission_expectations[e_key[0]][e_key[1]] = sum(
+                e[0][e_key] for e in expectations
+            )
+        for t_key in set(chain(*[list(t[1].keys()) for t in expectations])):
+            transition_expectations[t_key[0]][t_key[1]] = sum(
+                t[1][t_key] for t in expectations
+            )
+
+        emission_denoms = {
+            e: sum(v for v in emission_expectations[e].values())
+            for e in emission_expectations.keys()
+        }
+        transition_denoms = {
+            t: sum(v for v in transition_expectations[t].values())
+            for t in transition_expectations.keys()
+        }
+        return (
+            emission_expectations,
+            emission_denoms,
+            transition_expectations,
+            transition_denoms,
+        )
+
+    def maximization(
+        self,
+        emission_expectations,
+        emission_denoms,
+        transition_expectations,
+        transition_denoms,
+    ):
+        """
+        Runs the maximization algorithm.
+        Args:
+            emission_expectations: the expected counts for each affix-morpheme pair.
+            emission_denoms: the sum-expected count of each morpheme class.
+            transition_expectations: the expected counts for each affix-affix pair
+                for transition.
+            transition_denoms: the sum-expected count of each morpheme class as
+                conditional in transition.
+        """
+        smoothing_const = self.params.smoothing_const
+        for morpheme_class in self.params.morph_emit_probs.keys():
+            num_morphs = len(self.params.morph_emit_probs[morpheme_class])
+            d = emission_denoms[morpheme_class]
+            for morpheme in self.params.morph_emit_probs[morpheme_class].keys():
+                e = emission_expectations[morpheme_class][morpheme]
+                if d > 0 or smoothing_const > 0:
+                    self.params.morph_emit_probs[morpheme_class][morpheme] = (
+                        e + smoothing_const
+                    ) / ((num_morphs * smoothing_const) + d)
+                else:  # for cases of underflowing
+                    self.params.morph_emit_probs[morpheme_class][morpheme] = (
+                        1.0 / num_morphs
+                    )
+
+        for m1 in self.params.affix_trans_probs.keys():
+            if m1 == "END":
+                continue  # "END" has zero probs for all.
+            for m2 in self.params.affix_trans_probs[m1].keys():
+                if m2 in transition_expectations[m1]:
+                    if transition_denoms[m1] > 0:
+                        self.params.affix_trans_probs[m1][m2] = (
+                            transition_expectations[m1][m2] / transition_denoms[m1]
+                        )
+                    else:  # for cases of underflow.
+                        self.params.affix_trans_probs[m1][m2] = 1.0 / len(
+                            self.params.affix_trans_probs[m1]
+                        )
+                else:
+                    self.params.affix_trans_probs[m1][m2] = 0.0
+
+    def expectation_maximization(self, num_iters, num_cpus=10):
+        """
+        Runs the EM algorithm.
+        Args:
+            num_iters: Number of EM epochs.
+            num_cpus: Number of cpus for parallel executation of the E step.
+        """
+        pool = Pool(num_cpus)
+        train_words = [
+            (word, self.params.word_counts[word])
+            for word in self.params.word_counts.keys()
+        ]
+        chunk_size = math.ceil(float(len(train_words)) / num_cpus)
+        train_words_chunks = UnsupervisedMorphology.group_to(chunk_size, train_words)
+        for epoch in range(num_iters):
+            print("starting epoch %i" % epoch)
+            print("starting expectation step")
+            ee, ed, te, td = self.expectation(pool, train_words_chunks)
+            print("starting maximization step")
+            self.maximization(ee, ed, te, td)
+            print("updated parameters after maximization")

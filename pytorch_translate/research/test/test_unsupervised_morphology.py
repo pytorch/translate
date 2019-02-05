@@ -314,3 +314,30 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             assert t[("suffix", "prefix")] == 0
             assert t[("suffix", "stem")] == 0
             assert t[("suffix", "suffix")] > 0
+
+    def test_EM(self):
+        with patch("builtins.open") as mock_open:
+            txt_content = [
+                "work",
+                "works",
+                "worked",
+                "working",
+                "go",
+                "goes",
+                "gone",
+                "going",
+                "do",
+                "does",
+                "did",
+                "doing",
+                "see",
+                "saw",
+                "seen",
+                "seeing",
+            ]
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+            unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
+                "no_exist_file.txt", smoothing_const=0.0
+            )
+            unsupervised_model.expectation_maximization(100, 10)
