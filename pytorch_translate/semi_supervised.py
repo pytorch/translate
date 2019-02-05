@@ -10,8 +10,6 @@ from fairseq.models import (
     register_model_architecture,
 )
 from pytorch_translate import common_layers, constants, utils
-from pytorch_translate.rnn import RNNModel, base_architecture
-from pytorch_translate.tasks.semi_supervised_task import PytorchTranslateSemiSupervised
 
 
 @register_model("semi_supervised")
@@ -22,19 +20,17 @@ class SemiSupervisedModel(FairseqMultiModel):
     def __init__(self, task, encoders, decoders):
         super().__init__(encoders, decoders)
         self.task = task
-
-        # TODO(T35638969): pass this class into super (FairseqMultiModel)
         self.models = nn.ModuleDict(
             # Need to use RNNModel since FairseqModel doesn't define get_targets
-            {key: RNNModel(task, encoders[key], decoders[key]) for key in self.keys}
+            {
+                key: self.single_model_cls(task, encoders[key], decoders[key])
+                for key in self.keys
+            }
         )
 
     @staticmethod
     def add_args(parser):
         """Add model-specific arguments to the parser."""
-        # TODO(T35638969): Generalize this to be able to use other model classes
-        # like Transformer
-        RNNModel.add_args(parser)
         parser.add_argument(
             "--share-encoder-embeddings",
             action="store_true",
@@ -67,11 +63,16 @@ class SemiSupervisedModel(FairseqMultiModel):
             "accommodate the same language at source and target.",
         )
 
+    @staticmethod
+    def set_semi_supervised_arch_args(args):
+        args.share_encoder_embeddings = getattr(args, "share_encoder_embeddings", False)
+        args.share_decoder_embeddings = getattr(args, "share_decoder_embeddings", False)
+        args.share_encoders = getattr(args, "share_encoders", False)
+        args.share_decoders = getattr(args, "share_decoders", False)
+
     @classmethod
     def build_model(cls, args, task):
         """Build a new model instance."""
-        assert isinstance(task, PytorchTranslateSemiSupervised)
-
         if not hasattr(args, "max_source_positions"):
             args.max_source_positions = 1024
         if not hasattr(args, "max_target_positions"):
@@ -100,16 +101,12 @@ class SemiSupervisedModel(FairseqMultiModel):
                 lang = lang[: -(len(f"_{constants.MONOLINGUAL_DATA_IDENTIFIER}"))]
             return lang
 
-        """
-        TODO(T35638969): Generalize this to be able to use other model classes
-        like Transformer TransformerModel does not currently have build_encoder
-        and build_decoder methods
-        """
-
         def get_encoder(lang):
             lang = strip_suffix(lang)
             if lang not in lang_encoders:
-                lang_encoders[lang] = RNNModel.build_encoder(args, task.dicts[lang])
+                lang_encoders[lang] = cls.single_model_cls.build_encoder(
+                    args, task.dicts[lang]
+                )
             return lang_encoders[lang]
 
         def get_decoder(lang_pair, shared_decoder_embed_tokens=None):
@@ -132,7 +129,7 @@ class SemiSupervisedModel(FairseqMultiModel):
                 ):
                     args_maybe_modified.vocab_reduction_params = None
 
-                lang_decoders[target_lang] = RNNModel.build_decoder(
+                lang_decoders[target_lang] = cls.single_model_cls.build_decoder(
                     args_maybe_modified,
                     task.dicts[source_lang],
                     task.dicts[target_lang],
@@ -168,13 +165,4 @@ class SemiSupervisedModel(FairseqMultiModel):
                 )
             )
 
-        return SemiSupervisedModel(task, encoders, decoders)
-
-
-@register_model_architecture("semi_supervised", "semi_supervised")
-def semi_supervised(args):
-    base_architecture(args)
-    args.share_encoder_embeddings = getattr(args, "share_encoder_embeddings", False)
-    args.share_decoder_embeddings = getattr(args, "share_decoder_embeddings", False)
-    args.share_encoders = getattr(args, "share_encoders", False)
-    args.share_decoders = getattr(args, "share_decoders", False)
+        return cls(task, encoders, decoders)
