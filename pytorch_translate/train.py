@@ -90,11 +90,6 @@ def default_extra_state(args) -> Dict[str, Any]:
         "epoch": 1,
         "batch_offset": 0,
         "start_time": time.time(),
-        # We have both checkpoint_lowest_loss and tune_eval.lowest_loss since we
-        # may have seen a lower loss during validation and updated
-        # tune_eval.lowest_loss, but may not have written a new checkpoint with
-        # that loss yet.
-        "checkpoint_lowest_loss": None,
         "tune_eval": {
             "loss": None,
             "perplexity": None,
@@ -107,14 +102,11 @@ def default_extra_state(args) -> Dict[str, Any]:
             "best": None,
             "best_epoch": None,
             "num_since_best": 0,
-            "last_eval_step": 0,
         },
-        "last_checkpoints": checkpoint.ManagedCheckpoints(
-            max(args.num_avg_checkpoints, args.max_checkpoints_kept),
-            # Don't auto_clear checkpoints for no_epoch_checkpoints, because
-            # we are only going to reuse the same file.
-            auto_clear=(args.max_checkpoints_kept > 0),
-        ),
+        # The list of checkpoint files is actually managed by the
+        # CheckpointManager, which overwrites this placeholder when it saves
+        # checkpoints.
+        "checkpoint_files": [],
     }
 
 
@@ -312,7 +304,16 @@ def setup_training_state(args, trainer, task, epoch_itr):
         {"epoch": epoch, "iterations_in_epoch": extra_state["batch_offset"]}
     )
 
-    return extra_state, epoch_itr
+    checkpoint_manager = None
+    if distributed_utils.is_master(args):
+        checkpoint_manager = checkpoint.CheckpointManager(
+            num_avg_checkpoints=args.num_avg_checkpoints,
+            auto_clear_checkpoints=args.auto_clear_checkpoints,
+            log_verbose=args.log_verbose,
+            checkpoint_files=extra_state["checkpoint_files"],
+        )
+
+    return extra_state, epoch_itr, checkpoint_manager
 
 
 def build_trainer(args, task, model, criterion, trainer_class):
@@ -374,7 +375,6 @@ def setup_training(args, trainer_class=None):
     __builtin__.print = print
 
     task, model, criterion = setup_training_model(args)
-
     if trainer_class is None:
         trainer_class = Trainer
 
@@ -428,6 +428,7 @@ def train(
     trainer,
     task,
     epoch_itr,
+    checkpoint_manager: Optional[checkpoint.CheckpointManager],
     output_queue: Optional[mp_queues.Queue] = None,
     **train_step_kwargs,
 ):
@@ -490,7 +491,11 @@ def train(
                 stop_training_mid_epoch,
                 translation_samples,
             ) = evals.save_and_eval(
-                args=args, trainer=trainer, task=task, extra_state=extra_state
+                args=args,
+                trainer=trainer,
+                task=task,
+                extra_state=extra_state,
+                checkpoint_manager=checkpoint_manager,
             )
 
             # This should come after save_and_eval. Even if log_output is None,
@@ -562,6 +567,7 @@ def train(
             task=task,
             extra_state=extra_state,
             end_of_epoch=True,
+            checkpoint_manager=checkpoint_manager,
         )
         if distributed_utils.is_master(args) and output_queue is not None:
             output_queue.put_nowait(
@@ -643,7 +649,7 @@ def single_process_main(args, trainer_class=Trainer, **train_step_kwargs):
     """Train the model for multiple epochs."""
     pytorch_translate_options.print_args(args)
     trainer, task, epoch_itr = setup_training(args, trainer_class)
-    extra_state, epoch_itr = setup_training_state(
+    extra_state, epoch_itr, checkpoint_manager = setup_training_state(
         args=args, trainer=trainer, task=task, epoch_itr=epoch_itr
     )
     train(
@@ -652,6 +658,7 @@ def single_process_main(args, trainer_class=Trainer, **train_step_kwargs):
         trainer=trainer,
         task=task,
         epoch_itr=epoch_itr,
+        checkpoint_manager=checkpoint_manager,
         **train_step_kwargs,
     )
 
@@ -682,7 +689,7 @@ def multi_process_train(
     # Therefore, any expensive data preprocessing should happen before.
     if args.distributed_world_size > 1:
         args.distributed_rank = distributed_utils.distributed_init(args)
-    extra_state, epoch_itr = setup_training_state(
+    extra_state, epoch_itr, checkpoint_manager = setup_training_state(
         args=args, trainer=trainer, task=task, epoch_itr=epoch_itr
     )
 
@@ -692,6 +699,7 @@ def multi_process_train(
         trainer=trainer,
         task=task,
         epoch_itr=epoch_itr,
+        checkpoint_manager=checkpoint_manager,
         output_queue=output_queue,
         **train_step_kwargs,
     )
