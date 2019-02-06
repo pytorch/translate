@@ -6,6 +6,27 @@ import torch
 from pytorch_translate import constants, utils
 
 
+UNSUPPORTED_FAIRSEQ_FLAGS = [
+    ("save_interval", 1),
+    ("keep_interval_updates", -1),
+    ("no_save", False),
+    ("no_epoch_checkpoints", False),
+    ("validate_interval", 1),
+]
+
+
+def check_unsupported_fairseq_flags(args):
+    for (flag_name, default_value) in UNSUPPORTED_FAIRSEQ_FLAGS:
+        if hasattr(args, flag_name):
+            if getattr(args, flag_name) != default_value:
+                raise ValueError(
+                    f"Found unsupported Fairseq flag "
+                    f"--{flag_name.replace('_', '-')} with non-default value "
+                    f"of {getattr(args, flag_name)} "
+                )
+            setattr(args, flag_name, None)
+
+
 def add_dataset_args(parser, train=False, gen=False):
     """Same as fairseq.options.add_dataset_args but without
     the "data" argument"""
@@ -454,15 +475,6 @@ def expand_optimization_args(group):
         ),
     )
     group.add_argument(
-        "--subepoch-validate-interval",
-        default=0,
-        type=int,
-        metavar="N",
-        help="Calculates loss over the validation set every N batch updates. "
-        "Note that validation is done at the end of every epoch regardless. "
-        "A value of <= 0 disables this.",
-    )
-    group.add_argument(
         "--stop-time-hr",
         default=-1.0,
         type=float,
@@ -477,7 +489,7 @@ def expand_optimization_args(group):
         metavar="N",
         help="Stops training after N validations have been run without "
         "achieving a better loss than before. Note that this is affected by "
-        "--validation-interval in how frequently we run validation in the "
+        "--save-interval-updates in how frequently we run validation in the "
         "first place. A value of < 0 disables this.",
     )
     group.add_argument(
@@ -487,7 +499,7 @@ def expand_optimization_args(group):
         metavar="N",
         help="Stops training after N evals have been run without "
         "achieving a better BLEU score than before. Note that this is affected "
-        "by --generate-bleu-eval-interval in how frequently we run BLEU eval "
+        "by --save-interval-updates in how frequently we run BLEU eval "
         "in the first place. A value of < 0 disables this.",
     )
     group.add_argument(
@@ -498,7 +510,7 @@ def expand_optimization_args(group):
         help="Decay learning rate after N evals have been run without "
         "achieving a better BLEU score than before. This is to achieve "
         "decay lr within an epoch, independent of lr_scheduler. "
-        "Note that this is affected by --generate-bleu-eval-interval in "
+        "Note that this is affected by --save-interval-updates in "
         "how frequently we run BLEU eval in the first place. "
         "A value of < 0 disables this.",
     )
@@ -530,14 +542,6 @@ def expand_checkpointing_args(group):
     """Expands the checkpointing related arguments with pytorch_translate
     specific arguments"""
     group.add_argument(
-        "--no-end-of-epoch-checkpoints",
-        action="store_true",
-        help="Disables saving checkpoints at the end of the epoch. "
-        "This differs from --no-save and --no-epoch-checkpoints in that it "
-        "still allows for intra-epoch checkpoints if --save-interval-updates "
-        "is set.",
-    )
-    group.add_argument(
         "--max-checkpoints-kept",
         default=-1,
         type=int,
@@ -547,6 +551,16 @@ def expand_checkpointing_args(group):
         "When --generate-bleu-eval-avg-checkpoints is used and is > N, the "
         "number of checkpoints kept around is automatically adjusted "
         "to allow BLEU to work properly.",
+    )
+    group.add_argument(
+        "--num-avg-checkpoints",
+        default=1,
+        type=int,
+        metavar="N",
+        help=(
+            "Average over the last N checkpoints when saving "
+            "averaged checkpoints and when doing BLEU eval. Must be >=1."
+        ),
     )
     group.add_argument(
         "--pretrained-checkpoint-file",
@@ -650,38 +664,6 @@ def expand_generation_args(group, train=False):
     # These arguments are only used during training
     if train:
         group.add_argument(
-            "--generate-bleu-eval-per-epoch",
-            action="store_true",
-            help="Whether to generate BLEU score eval after each epoch.",
-        )
-        group.add_argument(
-            "--generate-bleu-eval-interval",
-            default=0,
-            type=int,
-            metavar="N",
-            help="Does BLEU eval every N batch updates. Note that "
-            "--save-interval-updates also affects this - we can only eval as "
-            "frequently as a checkpoint is written. A value of <= 0 "
-            "disables this.",
-        )
-        group.add_argument(
-            "--generate-bleu-eval-avg-checkpoints",
-            default=1,
-            type=int,
-            metavar="N",
-            help="Maximum number of last N checkpoints to average over when "
-            "doing BLEU eval. Must be >= 1.",
-        )
-        group.add_argument(
-            "--continuous-averaging-after-epochs",
-            type=int,
-            default=-1,
-            help=(
-                "Average parameter values after each step since previous "
-                "checkpoint, beginning after the specified number of epochs. "
-            ),
-        )
-        group.add_argument(
             "--multi-model-restore-files",
             default=None,
             type=str,
@@ -705,10 +687,8 @@ def validate_generation_args(args):
         "Argument --lenpen is IGNORED by pytorch_translate. Use "
         "--length-penalty instead."
     )
-    if "generate_bleu_eval_avg_checkpoints" in args:
-        assert (
-            args.generate_bleu_eval_avg_checkpoints >= 1
-        ), "--generate-bleu-eval-avg-checkpoints must be >= 1."
+    if "num_avg_checkpoints" in args:
+        assert args.num_avg_checkpoints >= 1, "--num-avg-checkpoints must be >= 1."
 
 
 def add_verbosity_args(parser, train=False):

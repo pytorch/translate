@@ -110,12 +110,10 @@ def default_extra_state(args) -> Dict[str, Any]:
             "last_eval_step": 0,
         },
         "last_checkpoints": checkpoint.ManagedCheckpoints(
-            max(args.generate_bleu_eval_avg_checkpoints, args.max_checkpoints_kept),
+            max(args.num_avg_checkpoints, args.max_checkpoints_kept),
             # Don't auto_clear checkpoints for no_epoch_checkpoints, because
             # we are only going to reuse the same file.
-            auto_clear=(
-                args.max_checkpoints_kept > 0 and not args.no_epoch_checkpoints
-            ),
+            auto_clear=(args.max_checkpoints_kept > 0),
         ),
     }
 
@@ -137,6 +135,8 @@ def validate_and_set_default_args(args):
     # Prevents generate from printing individual translated sentences when
     # calculating BLEU score.
     args.quiet = True
+
+    pytorch_translate_options.check_unsupported_fairseq_flags(args)
 
     if args.local_num_gpus > args.distributed_world_size:
         raise ValueError(
