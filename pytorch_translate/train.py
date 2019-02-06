@@ -108,7 +108,35 @@ def default_extra_state(args) -> Dict[str, Any]:
         # CheckpointManager, which overwrites this placeholder when it saves
         # checkpoints.
         "checkpoint_files": [],
+        "training_progress": [],
     }
+
+
+def update_output(
+    args,
+    extra_state: Dict[str, Any],
+    output_queue: Optional[mp_queues.Queue],
+    num_updates: int,
+    train_ppl: float,
+    wps: Optional[float],
+):
+    if distributed_utils.is_master(args) and output_queue is not None:
+        progress_output: Tuple[int, Dict] = (
+            num_updates,
+            {
+                "train_ppl": train_ppl,
+                "tune_ppl": extra_state["tune_eval"]["perplexity"],
+                "tune_bleu": extra_state["tune_bleu"]["current"],
+                "wps": wps,
+                # translation_samples isn't currently used by the queue reader,
+                # so just pass None for now until we start needing it.
+                "translation_samples": None,
+            },
+        )
+        output_queue.put_nowait(progress_output)
+        extra_state["training_progress"].append(progress_output)
+
+    return extra_state
 
 
 def clear_per_step_extra_state(extra_state: Dict[str, Any]) -> Dict[str, Any]:
@@ -299,7 +327,13 @@ def setup_training_state(args, trainer, task, epoch_itr):
             # Reset the start time for the current training run.
             extra_state["start_time"] = time.time()
 
+    # Skips printing all training progress to prevent log spam.
+    training_progress = extra_state["training_progress"]
+    extra_state["training_progress"] = (
+        ["...truncated...", training_progress[-1]] if len(training_progress) > 0 else []
+    )
     print(f"| extra_state: {extra_state}")
+    extra_state["training_progress"] = training_progress
 
     epoch = extra_state["epoch"]
     if extra_state["batch_offset"] == 0:
@@ -516,22 +550,16 @@ def train(
                 extra_meters=extra_meters,
                 log_output=log_output,
             )
-
-            if distributed_utils.is_master(args) and output_queue is not None:
-                output_queue.put_nowait(
-                    (
-                        trainer.get_num_updates(),
-                        {
-                            "train_ppl": train_stats["ppl"],
-                            "tune_ppl": extra_state["tune_eval"]["perplexity"],
-                            "tune_bleu": extra_state["tune_bleu"]["current"],
-                            # We only report wps at the end of an epoch, since
-                            # the meter gets reset at the start of every epoch.
-                            "wps": None,
-                            "translation_samples": translation_samples,
-                        },
-                    )
-                )
+            extra_state = update_output(
+                args=args,
+                extra_state=extra_state,
+                output_queue=output_queue,
+                num_updates=trainer.get_num_updates(),
+                train_ppl=train_stats["ppl"],
+                # We only report wps at the end of an epoch, since
+                # the meter gets reset at the start of every epoch.
+                wps=None,
+            )
 
             if (
                 args.save_interval_updates > 0
@@ -567,19 +595,14 @@ def train(
             end_of_epoch=True,
             checkpoint_manager=checkpoint_manager,
         )
-        if distributed_utils.is_master(args) and output_queue is not None:
-            output_queue.put_nowait(
-                (
-                    trainer.get_num_updates(),
-                    {
-                        "train_ppl": train_stats["ppl"],
-                        "tune_ppl": extra_state["tune_eval"]["perplexity"],
-                        "tune_bleu": extra_state["tune_bleu"]["current"],
-                        "wps": train_stats["wps"],
-                        "translation_samples": translation_samples,
-                    },
-                )
-            )
+        extra_state = update_output(
+            args=args,
+            extra_state=extra_state,
+            output_queue=output_queue,
+            num_updates=trainer.get_num_updates(),
+            train_ppl=train_stats["ppl"],
+            wps=train_stats["wps"],
+        )
 
         if stop_training_mid_epoch or stop_training_end_of_epoch:
             break
@@ -678,6 +701,13 @@ def multi_process_train(
     extra_state, epoch_itr, checkpoint_manager = setup_training_state(
         args=args, trainer=trainer, task=task, epoch_itr=epoch_itr
     )
+
+    # Replay previous training progress so the output_queue contains all
+    # previous training progress even when we resume training from an existing
+    # checkpoint.
+    if distributed_utils.is_master(args) and output_queue is not None:
+        for progress_output in extra_state["training_progress"]:
+            output_queue.put_nowait(progress_output)
 
     train(
         args=args,
