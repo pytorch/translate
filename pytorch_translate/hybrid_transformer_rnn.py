@@ -247,6 +247,9 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
     ):
         (encoder_x, src_tokens, encoder_padding_mask) = encoder_out
 
+        if encoder_padding_mask is not None and encoder_padding_mask.numel() == 0:
+            encoder_padding_mask = None
+
         bsz, seqlen = prev_output_tokens.size()
         if incremental_state is not None:
             prev_output_tokens = prev_output_tokens[:, -1:]

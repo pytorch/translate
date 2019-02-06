@@ -277,6 +277,10 @@ class TransformerEncoder(FairseqEncoder):
             x=x, positions=positions, encoder_padding_mask=encoder_padding_mask
         )
 
+        if encoder_padding_mask is None:
+            # using an empty tensor instead of None for PyTorch native export
+            encoder_padding_mask = torch.Tensor().type_as(src_tokens)
+
         return x, src_tokens, encoder_padding_mask
 
     def reorder_encoder_out(self, encoder_out, new_order):
@@ -285,7 +289,7 @@ class TransformerEncoder(FairseqEncoder):
             x = x.index_select(1, new_order)
         if src_tokens is not None:
             src_tokens = src_tokens.index_select(0, new_order)
-        if encoder_padding_mask is not None:
+        if encoder_padding_mask is not None and encoder_padding_mask.numel() != 0:
             encoder_padding_mask = encoder_padding_mask.index_select(0, new_order)
         return (x, src_tokens, encoder_padding_mask)
 
@@ -381,6 +385,9 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         timestep=None,
     ):
         (encoder_x, src_tokens, encoder_padding_mask) = encoder_out
+
+        if encoder_padding_mask is not None and encoder_padding_mask.numel() == 0:
+            encoder_padding_mask = None
 
         # embed positions
         positions = self.embed_positions(
