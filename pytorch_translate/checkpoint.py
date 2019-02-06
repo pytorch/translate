@@ -137,7 +137,7 @@ def save_averaged_checkpoint(args, extra_state):
         )
 
     last_checkpoints = extra_state["last_checkpoints"].get_last_n(
-        1 if args.no_epoch_checkpoints else args.generate_bleu_eval_avg_checkpoints
+        1 if args.no_epoch_checkpoints else args.num_avg_checkpoints
     )
     if args.log_verbose:
         print(
