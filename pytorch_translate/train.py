@@ -90,6 +90,7 @@ def default_extra_state(args) -> Dict[str, Any]:
         "epoch": 1,
         "batch_offset": 0,
         "start_time": time.time(),
+        "previous_training_time": 0.0,
         "tune_eval": {
             "loss": None,
             "perplexity": None,
@@ -295,6 +296,9 @@ def setup_training_state(args, trainer, task, epoch_itr):
         )
         if loaded_extra_state:
             extra_state.update(loaded_extra_state)
+            # Reset the start time for the current training run.
+            extra_state["start_time"] = time.time()
+
     print(f"| extra_state: {extra_state}")
 
     epoch = extra_state["epoch"]
@@ -541,12 +545,6 @@ def train(
                 lr = trainer.optimizer.get_lr()
                 print(f"Decayed lr from {current_lr} to {lr}.")
 
-            stop_training_mid_epoch = (
-                stop_training_mid_epoch
-                or is_training_over_time_limit(
-                    extra_state["start_time"], args.stop_time_hr
-                )
-            )
             if stop_training_mid_epoch:
                 break
 
@@ -597,18 +595,6 @@ def train(
         f"| Best BLEU score of {extra_state['tune_bleu']['best']} was from "
         f"epoch {extra_state['tune_bleu']['best_epoch']}"
     )
-
-
-def is_training_over_time_limit(start_time: float, stop_time: float):
-    elapsed_hr = (time.time() - start_time) / (60 * 60)
-    training_over_time_limit = False
-    if stop_time >= 0 and elapsed_hr > stop_time:
-        print(
-            f"Stopping training due to stop time limit - it has been  "
-            f"{elapsed_hr} hours since starting training at {start_time}."
-        )
-        training_over_time_limit = True
-    return training_over_time_limit
 
 
 def setup_epoch(args, epoch_itr, trainer):
