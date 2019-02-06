@@ -6,16 +6,21 @@ import torch
 from pytorch_translate import constants, utils
 
 
-UNSUPPORTED_FAIRSEQ_FLAGS = [
-    ("save_interval", 1),
-    ("keep_interval_updates", -1),
-    ("no_save", False),
-    ("no_epoch_checkpoints", False),
-    ("validate_interval", 1),
-]
-
-
 def check_unsupported_fairseq_flags(args):
+    UNSUPPORTED_FAIRSEQ_FLAGS = [
+        # Use --save-interval-updates instead.
+        ("save_interval", 1),
+        # Look at --num-avg-checkpoints and --auto-clear-checkpoints.
+        ("keep_interval_updates", -1),
+        # We always save checkpoints at the end of an epoch.
+        ("no_epoch_checkpoints", False),
+        # We always save checkpoints.
+        ("no_save", False),
+        # We run validation every time we save a checkpoint, so this is effectively
+        # controlled by --save-interval-updates as well.
+        ("validate_interval", 1),
+    ]
+
     for (flag_name, default_value) in UNSUPPORTED_FAIRSEQ_FLAGS:
         if hasattr(args, flag_name):
             if getattr(args, flag_name) != default_value:
@@ -542,15 +547,15 @@ def expand_checkpointing_args(group):
     """Expands the checkpointing related arguments with pytorch_translate
     specific arguments"""
     group.add_argument(
-        "--max-checkpoints-kept",
-        default=-1,
-        type=int,
-        metavar="N",
-        help="Keep at most the last N checkpoints file around. "
-        "A value < -1 keeps all. "
-        "When --generate-bleu-eval-avg-checkpoints is used and is > N, the "
-        "number of checkpoints kept around is automatically adjusted "
-        "to allow BLEU to work properly.",
+        "--auto-clear-checkpoints",
+        type=utils.bool_flag,
+        nargs="?",
+        const=True,
+        default=True,
+        help=(
+            "If True, we keep only the last --num-avg-checkpoints checkpoints "
+            "on disk and delete all older checkpoints."
+        ),
     )
     group.add_argument(
         "--num-avg-checkpoints",

@@ -4,7 +4,7 @@ import math
 import os
 import shutil
 from collections import OrderedDict, defaultdict
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from fairseq import distributed_utils, progress_bar, utils
 from fairseq.meters import AverageMeter
@@ -164,9 +164,14 @@ def eval_tune_loss(args, trainer, task, subset, extra_state):
     return extra_state, stop_due_to_tune_loss
 
 
-def evaluate_bleu(args, task, extra_state, trainer):
+def evaluate_bleu(
+    args, task, extra_state: Dict[str, Any], trainer, averaged_params: OrderedDict
+) -> Tuple[Dict[str, Any], bool, bool, List]:
     epoch, offset = extra_state["epoch"], extra_state["batch_offset"]
-    filename, averaged_state = checkpoint.save_averaged_checkpoint(args, extra_state)
+    if args.log_verbose:
+        print(
+            f"| Preparing to calculate BLEU score for epoch {epoch}, offset {offset}."
+        )
     extra_state["tune_bleu"]["current"], translation_samples = calculate_bleu_on_subset(
         args=args,
         task=task,
@@ -174,9 +179,12 @@ def evaluate_bleu(args, task, extra_state, trainer):
         offset=offset,
         dataset_split=args.valid_subset,
         trainer=trainer,
-        model_params=averaged_state["model"],
+        model_params=averaged_params,
     )
+    if args.log_verbose:
+        print(f"| Finished calculating BLEU score for epoch {epoch}, offset {offset}.")
 
+    new_best_averaged_checkpoint = False
     if (
         extra_state["tune_bleu"]["best"] is None
         or extra_state["tune_bleu"]["current"] > extra_state["tune_bleu"]["best"]
@@ -184,10 +192,7 @@ def evaluate_bleu(args, task, extra_state, trainer):
         extra_state["tune_bleu"]["best"] = extra_state["tune_bleu"]["current"]
         extra_state["tune_bleu"]["best_epoch"] = epoch
         extra_state["tune_bleu"]["num_since_best"] = 0
-        best_filename = os.path.join(
-            args.save_dir, constants.AVERAGED_CHECKPOINT_BEST_FILENAME
-        )
-        shutil.copy2(filename, best_filename)
+        new_best_averaged_checkpoint = True
     else:
         extra_state["tune_bleu"]["num_since_best"] += 1
 
@@ -203,7 +208,12 @@ def evaluate_bleu(args, task, extra_state, trainer):
             f"(current score: {extra_state['tune_bleu']['current']}) was "
             f"{extra_state['tune_bleu']['num_since_best']} evals ago."
         )
-    return extra_state, stop_due_to_tune_bleu, translation_samples
+    return (
+        extra_state,
+        stop_due_to_tune_bleu,
+        new_best_averaged_checkpoint,
+        translation_samples,
+    )
 
 
 def calculate_bleu_on_subset(
@@ -219,8 +229,18 @@ def calculate_bleu_on_subset(
     # prevent users from accidentally passing in the model from the trainer,
     # since after calling make_generation_fast_(), the model would no longer be
     # suitable for continuing training.
+    if args.log_verbose:
+        print(
+            f"| Preparing to create/load model params for BLEU score "
+            f"calculation (epoch {epoch_str}, offset {offset})."
+        )
     model = task.build_model(args)
     model.load_state_dict(model_params)
+    if args.log_verbose:
+        print(
+            f"| Finished creating/loading model params for BLEU score "
+            f"calculation (epoch {epoch_str}, offset {offset})."
+        )
 
     # This is a trick to have generate use max_sentences_valid
     max_sentences_train = args.max_sentences
@@ -265,69 +285,70 @@ def calculate_bleu_on_subset(
 
 
 def save_and_eval(
-    args, trainer, task, extra_state: Dict[str, Any], end_of_epoch=False
-) -> Tuple[Dict[str, Any], bool, Optional[list]]:
+    args,
+    trainer,
+    task,
+    extra_state: Dict[str, Any],
+    checkpoint_manager: Optional[checkpoint.CheckpointManager],
+    end_of_epoch=False,
+) -> Tuple[Dict[str, Any], bool, Optional[List]]:
+    if not end_of_epoch and (
+        args.save_interval_updates <= 0
+        or (extra_state["num_iterations"] % args.save_interval_updates != 0)
+    ):
+        return extra_state, False, None
+
     # Under multiprocessing, each process will run eval over a different
     # shard of the tune data set and then aggregate the results across all
     # processes, so the eval stats from all processes' trainer should
     # remain synchronized.
-    is_master = distributed_utils.is_master(args)
 
     # Tune loss
-    mid_epoch_eval_tune_loss = (args.save_interval_updates > 0) and (
-        extra_state["num_iterations"] % args.save_interval_updates == 0
+    extra_state, stop_due_to_tune_loss = eval_tune_loss(
+        args=args,
+        trainer=trainer,
+        task=task,
+        subset=args.valid_subset,
+        extra_state=extra_state,
     )
-    do_eval_tune_loss = end_of_epoch or mid_epoch_eval_tune_loss
-    stop_due_to_tune_loss = False
-    if do_eval_tune_loss:
-        extra_state, stop_due_to_tune_loss = eval_tune_loss(
-            args=args,
-            trainer=trainer,
-            task=task,
-            subset=args.valid_subset,
-            extra_state=extra_state,
+
+    is_master: bool = distributed_utils.is_master(args)
+    if is_master:
+        assert checkpoint_manager is not None, (
+            f"Master worker (rank {args.distributed_rank}) should "
+            f"have a checkpoint_manager defined."
+        )
+    else:
+        assert checkpoint_manager is None, (
+            f"Non-master worker (rank {args.distributed_rank}) should not "
+            f"have a checkpoint_manager defined."
         )
 
-    # Save
     # Only save checkpoints and eval tune BLEU on the master - all other
     # processes will just get the results from the master.
-    mid_epoch_save = (args.save_interval_updates > 0) and (
-        extra_state["num_iterations"] % args.save_interval_updates == 0
-    )
-    do_save = is_master and (mid_epoch_save or end_of_epoch)
-
-    if do_save:
-        extra_state = checkpoint.save_checkpoint(
-            trainer=trainer, args=args, extra_state=extra_state
+    translation_samples: Optional[List] = None
+    if is_master:
+        averaged_params: OrderedDict = checkpoint_manager.get_averaged_params(
+            new_params=trainer.get_model().state_dict()
         )
-
-    # Bleu eval
-    mid_epoch_bleu_eval = args.save_interval_updates > 0 and (
-        extra_state["num_iterations"] - extra_state["tune_bleu"]["last_eval_step"]
-        >= args.save_interval_updates
-    )
-    end_of_epoch_bleu_eval = end_of_epoch
-    # We can only do BLEU eval when we have a new checkpoint to load.
-    do_eval_bleu = (
-        is_master and do_save and (mid_epoch_bleu_eval or end_of_epoch_bleu_eval)
-    )
-
-    if mid_epoch_bleu_eval and do_eval_bleu:
-        extra_state["tune_bleu"]["last_eval_step"] = extra_state["num_iterations"]
-
-    if do_eval_bleu and not do_save:
-        raise ValueError(
-            "do_save should always be true when do_eval_bleu is true "
-            "since a new BLEU eval can only be done when there's a new "
-            "checkpoint."
+        extra_state, stop_due_to_tune_bleu, new_best_averaged_checkpoint, translation_samples = evaluate_bleu(
+            args=args,
+            task=task,
+            extra_state=extra_state,
+            trainer=trainer,
+            averaged_params=averaged_params,
         )
-
-    translation_samples = None
-    stop_due_to_tune_bleu = False
-    if do_eval_bleu:
-        extra_state, stop_due_to_tune_bleu, translation_samples = evaluate_bleu(
-            args=args, task=task, extra_state=extra_state, trainer=trainer
+        # checkpoint_manager takes ownership of averaged_params.
+        extra_state = checkpoint_manager.save(
+            args=args,
+            trainer=trainer,
+            extra_state=extra_state,
+            new_averaged_params=averaged_params,
         )
+        if new_best_averaged_checkpoint:
+            checkpoint_manager.save_best_averaged_checkpoint(
+                args=args, trainer=trainer, extra_state=extra_state
+            )
 
     # We don't all_gather the translation_samples since the sample sentences
     # could be pretty long, and only the master uses it anyway.
@@ -341,12 +362,9 @@ def save_and_eval(
     )
 
     # Basic sanity checks that extra_state is populated correctly.
-    assert not (
-        do_eval_tune_loss
-        and (
-            extra_state["tune_eval"]["loss"] is None
-            or extra_state["tune_eval"]["perplexity"] is None
-        )
+    assert (
+        extra_state["tune_eval"]["loss"] is not None
+        and extra_state["tune_eval"]["perplexity"] is not None
+        and extra_state["tune_bleu"]["current"] is not None
     )
-    assert not (do_eval_bleu and extra_state["tune_bleu"]["current"] is None)
     return extra_state, stop_training, translation_samples
