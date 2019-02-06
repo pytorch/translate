@@ -267,9 +267,6 @@ class EncoderEnsemble(nn.Module):
                     torch.jit._fork(model.encoder, src_tokens_seq_first, src_lengths)
                 )
 
-            # evaluation mode
-            model.eval()
-
         for i, (model, future) in enumerate(zip(self.models, futures)):
             if isinstance(model.encoder, TransformerEncoder):
                 encoder_out = future
@@ -1360,9 +1357,6 @@ class CharSourceEncoderEnsemble(nn.Module):
             encoder_out = model.encoder(
                 src_tokens_seq_first, src_lengths, char_inds, word_lengths
             )
-
-            # evaluation mode
-            model.eval()
 
             # "primary" encoder output (vector representations per source token)
             encoder_outputs = encoder_out[0]
