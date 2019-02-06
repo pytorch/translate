@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import math
+import pickle
 from collections import Counter, defaultdict
 from itertools import chain, zip_longest
 from multiprocessing import Pool
@@ -132,6 +133,26 @@ class MorphologyHMMParams(object):
         if self.emission_prob(affix, morpheme) == 0:
             return self.SMALL_CONST
         return math.log(self.emission_prob(affix, morpheme))
+
+    @staticmethod
+    def load(file_path):
+        with open(file_path, "rb") as f:
+            e, t, s, c = pickle.load(f)
+        m = MorphologyHMMParams(s)
+        m.morph_emit_probs = e
+        m.affix_trans_probs = t
+        m.word_counts = c
+        return m
+
+    def save(self, file_path):
+        e, t, s, c = (
+            self.morph_emit_probs,
+            self.affix_trans_probs,
+            self.smoothing_const,
+            self.word_counts,
+        )
+        with open(file_path, "wb") as f:
+            pickle.dump((e, t, s, c), f)
 
 
 class MorphologySegmentor(object):
@@ -346,10 +367,8 @@ class UnsupervisedMorphology(object):
                 * self.params.affix_trans_probs[prev_tag]["END"]
             )
         denominator = sum(
-            [
-                transition_expectations[(prev_tag, "END")]
-                for prev_tag in ["prefix", "stem", "suffix"]
-            ]
+            transition_expectations[(prev_tag, "END")]
+            for prev_tag in ["prefix", "stem", "suffix"]
         )
         for prev_tag in ["prefix", "stem", "suffix"]:
             transition_expectations[(prev_tag, "END")] /= denominator

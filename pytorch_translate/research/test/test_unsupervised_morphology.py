@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 
 import math
+import shutil
+import tempfile
 import unittest
+from os import path
 from unittest.mock import Mock, patch
 
 from pytorch_translate.research.unsupervised_morphology import unsupervised_morphology
@@ -341,3 +344,51 @@ class TestUnsupervisedMorphology(unittest.TestCase):
                 "no_exist_file.txt", smoothing_const=0.0
             )
             unsupervised_model.expectation_maximization(100, 10)
+
+    def test_save_load(self):
+        with patch("builtins.open") as mock_open:
+            txt_content = [
+                "work",
+                "works",
+                "worked",
+                "working",
+                "go",
+                "goes",
+                "gone",
+                "going",
+                "do",
+                "does",
+                "did",
+                "doing",
+                "see",
+                "saw",
+                "seen",
+                "seeing",
+            ]
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+            unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
+                "no_exist_file.txt", smoothing_const=0.0
+            )
+            unsupervised_model.expectation_maximization(3, 2)
+
+        test_dir = tempfile.mkdtemp()
+        unsupervised_model.params.save(path.join(test_dir, "test.pickle"))
+
+        loaded_params = unsupervised_morphology.MorphologyHMMParams.load(
+            path.join(test_dir, "test.pickle")
+        )
+
+        assert (
+            unsupervised_model.params.morph_emit_probs == loaded_params.morph_emit_probs
+        )
+        assert (
+            unsupervised_model.params.affix_trans_probs
+            == loaded_params.affix_trans_probs
+        )
+        assert unsupervised_model.params.word_counts == loaded_params.word_counts
+        assert (
+            unsupervised_model.params.smoothing_const == loaded_params.smoothing_const
+        )
+        assert unsupervised_model.params.SMALL_CONST == loaded_params.SMALL_CONST
+        shutil.rmtree(test_dir)
