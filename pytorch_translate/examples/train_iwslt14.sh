@@ -46,8 +46,7 @@ CUDA_VISIBLE_DEVICES=0 python3 pytorch_translate/train.py \
    --attention-type dot \
    --sentence-avg \
    --momentum 0 \
-   --generate-bleu-eval-avg-checkpoints 10 \
-   --generate-bleu-eval-per-epoch \
+   --num-avg-checkpoints 10 \
    --beam 6 \
    --no-beamable-mm \
    --source-lang de \

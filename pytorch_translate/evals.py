@@ -274,8 +274,8 @@ def save_and_eval(
     is_master = distributed_utils.is_master(args)
 
     # Tune loss
-    mid_epoch_eval_tune_loss = (args.subepoch_validate_interval > 0) and (
-        extra_state["num_iterations"] % args.subepoch_validate_interval == 0
+    mid_epoch_eval_tune_loss = (args.save_interval_updates > 0) and (
+        extra_state["num_iterations"] % args.save_interval_updates == 0
     )
     do_eval_tune_loss = end_of_epoch or mid_epoch_eval_tune_loss
     stop_due_to_tune_loss = False
@@ -294,8 +294,7 @@ def save_and_eval(
     mid_epoch_save = (args.save_interval_updates > 0) and (
         extra_state["num_iterations"] % args.save_interval_updates == 0
     )
-    end_of_epoch_save = end_of_epoch and not args.no_end_of_epoch_checkpoints
-    do_save = is_master and not args.no_save and (mid_epoch_save or end_of_epoch_save)
+    do_save = is_master and (mid_epoch_save or end_of_epoch)
 
     if do_save:
         extra_state = checkpoint.save_checkpoint(
@@ -303,11 +302,11 @@ def save_and_eval(
         )
 
     # Bleu eval
-    mid_epoch_bleu_eval = args.generate_bleu_eval_interval > 0 and (
+    mid_epoch_bleu_eval = args.save_interval_updates > 0 and (
         extra_state["num_iterations"] - extra_state["tune_bleu"]["last_eval_step"]
-        >= args.generate_bleu_eval_interval
+        >= args.save_interval_updates
     )
-    end_of_epoch_bleu_eval = end_of_epoch and args.generate_bleu_eval_per_epoch
+    end_of_epoch_bleu_eval = end_of_epoch
     # We can only do BLEU eval when we have a new checkpoint to load.
     do_eval_bleu = (
         is_master and do_save and (mid_epoch_bleu_eval or end_of_epoch_bleu_eval)
