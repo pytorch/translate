@@ -3,6 +3,7 @@
 import math
 import os
 import shutil
+import time
 from collections import OrderedDict, defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -284,6 +285,19 @@ def calculate_bleu_on_subset(
     return score_aggregator_fn(scores), translation_samples
 
 
+def is_training_over_time_limit(extra_state: Dict[str, Any], stop_time: float) -> bool:
+    elapsed_hr = (
+        time.time() - extra_state["start_time"] + extra_state["previous_training_time"]
+    ) / (60 * 60)
+    if stop_time >= 0 and elapsed_hr > stop_time:
+        print(
+            f"Stopping training due to stop time limit of {stop_time} hours - "
+            f"we've trained for {elapsed_hr} hours."
+        )
+        return True
+    return False
+
+
 def save_and_eval(
     args,
     trainer,
@@ -292,11 +306,19 @@ def save_and_eval(
     checkpoint_manager: Optional[checkpoint.CheckpointManager],
     end_of_epoch=False,
 ) -> Tuple[Dict[str, Any], bool, Optional[List]]:
+    # Checks for time limit stopping criterion even when we're not doing
+    # eval/saving checkpoints.
+    stop_due_to_time_limit = is_training_over_time_limit(extra_state, args.stop_time_hr)
     if not end_of_epoch and (
         args.save_interval_updates <= 0
         or (extra_state["num_iterations"] % args.save_interval_updates != 0)
     ):
-        return extra_state, False, None
+        return extra_state, stop_due_to_time_limit, None
+
+    # Update training time before saving the checkpoint.
+    time_now: float = time.time()
+    extra_state["previous_training_time"] += time_now - extra_state["start_time"]
+    extra_state["start_time"] = time_now
 
     # Under multiprocessing, each process will run eval over a different
     # shard of the tune data set and then aggregate the results across all
@@ -356,7 +378,9 @@ def save_and_eval(
     master_stop_training = None
     if is_master:
         master_extra_state = extra_state
-        master_stop_training = stop_due_to_tune_loss or stop_due_to_tune_bleu
+        master_stop_training = (
+            stop_due_to_time_limit or stop_due_to_tune_loss or stop_due_to_tune_bleu
+        )
     extra_state, stop_training = pytorch_translate_utils.all_gather_from_master(
         args=args, data=[master_extra_state, master_stop_training]
     )
