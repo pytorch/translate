@@ -403,25 +403,20 @@ class UnsupervisedMorphology(object):
         """
         This method is subprocess for the expectation method.
         """
-        emissions, transitions, freqs = [], [], []
-
-        for (word, freq) in words:
-            e, t = self.forward_backward(word)
-            emissions.append(e)
-            transitions.append(t)
-            freqs.append(freq)
-
         emission_expectations = defaultdict(float)
         transition_expectations = defaultdict(float)
+        for wf in words:
+            if wf is None:
+                continue
+            (word, freq) = wf
+            e, t = self.forward_backward(word)
+            for e_key in e.keys():
+                emission_expectations[e_key] += e[e_key] * freq
+            for t_key in t.keys():
+                transition_expectations[t_key] += t[t_key] * freq
+            del e
+            del t
 
-        for e_key in set(chain(*[list(e.keys()) for e in emissions])):
-            emission_expectations[e_key] = sum(
-                e[e_key] * freqs[i] for i, e in enumerate(emissions)
-            )
-        for t_key in set(chain(*[list(t.keys()) for t in transitions])):
-            transition_expectations[t_key] = sum(
-                t[t_key] * freqs[i] for i, e in enumerate(transitions)
-            )
         return emission_expectations, transition_expectations
 
     def expectation(self, pool, train_words_chunks):
@@ -429,8 +424,8 @@ class UnsupervisedMorphology(object):
         This method runs the expectation step with a chunked list of training words.
         Args:
             pool: Pool object for multi-threading.
-            train_words_chunks: a list of word+frequency-lists (chunked for
-                    multi-threading).
+            train_words_chunks: a list of word+frequency-lists
+                                (chunked for multi-threading).
         """
         expectations = pool.map(self.expectation_substep, train_words_chunks)
 
@@ -480,9 +475,9 @@ class UnsupervisedMorphology(object):
             emission_expectations: the expected counts for each affix-morpheme pair.
             emission_denoms: the sum-expected count of each morpheme class.
             transition_expectations: the expected counts for each affix-affix pair
-                for transition.
+                                     for transition.
             transition_denoms: the sum-expected count of each morpheme class as
-                conditional in transition.
+                               conditional in transition.
         """
         smoothing_const = self.params.smoothing_const
         for morpheme_class in self.params.morph_emit_probs.keys():
@@ -515,7 +510,7 @@ class UnsupervisedMorphology(object):
                 else:
                     self.params.affix_trans_probs[m1][m2] = 0.0
 
-    def expectation_maximization(self, num_iters, num_cpus=10):
+    def expectation_maximization(self, num_iters, num_cpus=10, model_path=None):
         """
         Runs the EM algorithm.
         Args:
@@ -536,3 +531,5 @@ class UnsupervisedMorphology(object):
             print("starting maximization step")
             self.maximization(ee, ed, te, td)
             print("updated parameters after maximization")
+            if model_path is not None:
+                self.save(model_path)
