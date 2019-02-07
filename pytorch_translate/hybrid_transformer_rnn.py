@@ -403,8 +403,8 @@ def base_architecture(args):
     args.encoder_layers = getattr(args, "encoder_layers", 6)
     args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 8)
     args.encoder_freeze_embed = getattr(args, "encoder_freeze_embed", False)
-    args.encoder_learned_pos = getattr(args, "encoder_normalize_before", False)
-    args.encoder_normalize_before = getattr(args, "encoder_learned_pos", False)
+    args.encoder_learned_pos = getattr(args, "encoder_learned_pos", False)
+    args.encoder_normalize_before = getattr(args, "encoder_normalize_before", False)
     args.decoder_pretrained_embed = getattr(args, "decoder_pretrained_embed", None)
     args.decoder_embed_dim = getattr(args, "decoder_embed_dim", args.encoder_embed_dim)
     args.decoder_ffn_embed_dim = getattr(
