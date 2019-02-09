@@ -182,7 +182,7 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
     https://arxiv.org/abs/1804.09849
     """
 
-    def __init__(self, args, src_dict, dst_dict, embed_tokens, left_pad=False):
+    def _init_dims(self, args, src_dict, dst_dict, embed_tokens, left_pad):
         super().__init__(dst_dict)
         self.dropout = args.dropout
 
@@ -192,9 +192,12 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         self.lstm_units = args.decoder_lstm_units
         self.attention_dim = args.encoder_embed_dim
         self.num_layers = args.decoder_layers
+        self.initial_input_dim = embed_dim
+        self.input_dim = self.lstm_units + self.attention_dim
 
+    def _init_components(self, args, src_dict, dst_dict, embed_tokens, left_pad):
         self.initial_rnn_layer = nn.LSTM(
-            input_size=embed_dim, hidden_size=self.lstm_units
+            input_size=self.initial_input_dim, hidden_size=self.lstm_units
         )
 
         self.proj_layer = None
@@ -212,15 +215,12 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         self.extra_rnn_layers = nn.ModuleList([])
         for _ in range(self.num_layers - 1):
             self.extra_rnn_layers.append(
-                nn.LSTM(
-                    input_size=self.lstm_units + self.attention_dim,
-                    hidden_size=self.lstm_units,
-                )
+                nn.LSTM(input_size=self.input_dim, hidden_size=self.lstm_units)
             )
 
         out_embed_dim = args.decoder_out_embed_dim
         self.bottleneck_layer = fairseq_transformer.Linear(
-            self.attention_dim + self.lstm_units, out_embed_dim
+            self.input_dim, out_embed_dim
         )
 
         self.embed_out = nn.Parameter(torch.Tensor(len(dst_dict), out_embed_dim))
@@ -234,6 +234,27 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
 
         self.onnx_trace = False
 
+    def __init__(self, args, src_dict, dst_dict, embed_tokens, left_pad=False):
+        self._init_dims(args, src_dict, dst_dict, embed_tokens, left_pad)
+        self._init_components(args, src_dict, dst_dict, embed_tokens, left_pad)
+
+    # Enable dependency injection by subclasses
+    def _unpack_encoder_out(self, encoder_out):
+        """ Allow taking encoder_out from different architecture which
+        may have different formats.
+        """
+        return encoder_out
+
+    def _init_hidden(self, encoder_out, batch_size):
+        """ Initialize with latent code if available otherwise zeros."""
+        return torch.zeros([1, batch_size, self.lstm_units])
+
+    def _concat_latent_code(self, x, encoder_out):
+        """ Concat latent code, if available in encoder_out, which is the
+        case in subclass.
+        """
+        return x
+
     def prepare_for_onnx_export_(self):
         self.onnx_trace = True
 
@@ -245,7 +266,9 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         possible_translation_tokens=None,
         timestep=None,
     ):
-        (encoder_x, src_tokens, encoder_padding_mask) = encoder_out
+        (encoder_x, src_tokens, encoder_padding_mask) = self._unpack_encoder_out(
+            encoder_out
+        )
 
         bsz, seqlen = prev_output_tokens.size()
         if incremental_state is not None:
@@ -275,9 +298,10 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
             h_prev = prev_states[0]
             c_prev = prev_states[1]
         else:
-            h_prev = torch.zeros([1, bsz, self.lstm_units]).type_as(x)
+            h_prev = self._init_hidden(encoder_out, bsz).type_as(x)
             c_prev = torch.zeros([1, bsz, self.lstm_units]).type_as(x)
 
+        x = self._concat_latent_code(x, encoder_out)
         x, (h_next, c_next) = self.initial_rnn_layer(x, (h_prev, c_prev))
         if incremental_state is not None:
             state_outputs.extend([h_next, c_next])
@@ -301,6 +325,7 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         for i, layer in enumerate(self.extra_rnn_layers):
             residual = x
             rnn_input = torch.cat([x, attention_out], dim=2)
+            rnn_input = self._concat_latent_code(rnn_input, encoder_out)
 
             if incremental_state is not None:
                 # first num_layers pairs of states are (prev_hidden, prev_cell)
@@ -308,7 +333,7 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
                 h_prev = prev_states[2 * i + 2]
                 c_prev = prev_states[2 * i + 3]
             else:
-                h_prev = torch.zeros([1, bsz, self.lstm_units]).type_as(x)
+                h_prev = self._init_hidden(encoder_out, bsz).type_as(x)
                 c_prev = torch.zeros([1, bsz, self.lstm_units]).type_as(x)
 
             x, (h_next, c_next) = layer(rnn_input, (h_prev, c_prev))
@@ -318,7 +343,7 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
             x = x + residual
 
         x = torch.cat([x, attention_out], dim=2)
-
+        x = self._concat_latent_code(x, encoder_out)
         x = self.bottleneck_layer(x)
 
         # T x B x C -> B x T x C
@@ -361,12 +386,14 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         For encoder-decoder attention, key and value are computed once from
         the encoder outputs and stay the same throughout decoding.
         """
-        encoder_x, src_tokens, encoder_padding_mask = encoder_out
+        (encoder_x, src_tokens, encoder_padding_mask) = self._unpack_encoder_out(
+            encoder_out
+        )
         batch_size = torch.onnx.operators.shape_as_tensor(encoder_x)[1]
 
         states = []
         for _ in range(self.num_layers):
-            hidden = torch.zeros([1, batch_size, self.lstm_units]).type_as(encoder_x)
+            hidden = self._init_hidden(encoder_out, batch_size).type_as(encoder_x)
             cell = torch.zeros([1, batch_size, self.lstm_units]).type_as(encoder_x)
             states.extend([hidden, cell])
 
