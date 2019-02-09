@@ -104,8 +104,21 @@ class SemiSupervisedModel(FairseqMultiModel):
         def get_encoder(lang):
             lang = strip_suffix(lang)
             if lang not in lang_encoders:
+                src_dict = task.dicts[lang]
+                encoder_embed_tokens = common_layers.Embedding(
+                    num_embeddings=len(src_dict),
+                    embedding_dim=args.encoder_embed_dim,
+                    padding_idx=src_dict.pad(),
+                    freeze_embed=args.encoder_freeze_embed,
+                    normalize_embed=args.encoder_normalize_embed,
+                )
+                utils.load_embedding(
+                    embedding=encoder_embed_tokens,
+                    dictionary=src_dict,
+                    pretrained_embed=args.encoder_pretrained_embed,
+                )
                 lang_encoders[lang] = cls.single_model_cls.build_encoder(
-                    args, task.dicts[lang]
+                    args, src_dict, embed_tokens=encoder_embed_tokens
                 )
             return lang_encoders[lang]
 
@@ -128,12 +141,27 @@ class SemiSupervisedModel(FairseqMultiModel):
                     and not args.remove_vr_if_same_lang_at_enc_and_dec
                 ):
                     args_maybe_modified.vocab_reduction_params = None
+                tgt_dict = task.dicts[target_lang]
+                if shared_decoder_embed_tokens is None:
+                    decoder_embed_tokens = common_layers.Embedding(
+                        num_embeddings=len(tgt_dict),
+                        embedding_dim=args.decoder_embed_dim,
+                        padding_idx=tgt_dict.pad(),
+                        freeze_embed=args.decoder_freeze_embed,
+                    )
 
+                    utils.load_embedding(
+                        embedding=decoder_embed_tokens,
+                        dictionary=tgt_dict,
+                        pretrained_embed=args.decoder_pretrained_embed,
+                    )
+                else:
+                    decoder_embed_tokens = shared_decoder_embed_tokens
                 lang_decoders[target_lang] = cls.single_model_cls.build_decoder(
                     args_maybe_modified,
                     task.dicts[source_lang],
-                    task.dicts[target_lang],
-                    embedding_module=shared_decoder_embed_tokens,
+                    tgt_dict,
+                    embed_tokens=decoder_embed_tokens,
                 )
             return lang_decoders[target_lang]
 

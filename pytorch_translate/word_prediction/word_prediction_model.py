@@ -2,7 +2,7 @@
 
 from fairseq.models import FairseqModel, register_model, register_model_architecture
 from pytorch_translate import rnn
-from pytorch_translate.rnn import LSTMSequenceEncoder, RNNDecoder, RNNEncoder
+from pytorch_translate.rnn import LSTMSequenceEncoder, RNNDecoder, RNNEncoder, RNNModel
 from pytorch_translate.utils import torch_find
 from pytorch_translate.word_prediction import word_predictor
 
@@ -61,6 +61,11 @@ class RNNWordPredictionModel(WordPredictionModel):
         """Build a new model instance."""
         src_dict, dst_dict = task.source_dictionary, task.target_dictionary
         base_architecture_wp(args)
+
+        encoder_embed_tokens, decoder_embed_tokens = RNNModel.build_embed_tokens(
+            args, src_dict, dst_dict
+        )
+
         if args.sequence_lstm:
             encoder_class = LSTMSequenceEncoder
         else:
@@ -69,8 +74,8 @@ class RNNWordPredictionModel(WordPredictionModel):
 
         encoder = encoder_class(
             src_dict,
+            embed_tokens=encoder_embed_tokens,
             embed_dim=args.encoder_embed_dim,
-            freeze_embed=args.encoder_freeze_embed,
             cell_type=args.cell_type,
             num_layers=args.encoder_layers,
             hidden_dim=args.encoder_hidden_dim,
@@ -88,10 +93,10 @@ class RNNWordPredictionModel(WordPredictionModel):
         decoder = decoder_class(
             src_dict=src_dict,
             dst_dict=dst_dict,
+            embed_tokens=decoder_embed_tokens,
             vocab_reduction_params=args.vocab_reduction_params,
             encoder_hidden_dim=args.encoder_hidden_dim,
             embed_dim=args.decoder_embed_dim,
-            freeze_embed=args.decoder_freeze_embed,
             out_embed_dim=args.decoder_out_embed_dim,
             cell_type=args.cell_type,
             num_layers=args.decoder_layers,
