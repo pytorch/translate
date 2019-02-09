@@ -31,6 +31,7 @@ from pytorch_translate.common_layers import (
 from pytorch_translate.multi_model import MultiDecoder, MultiEncoder
 from pytorch_translate.multilingual import MultilingualDecoder, MultilingualEncoder
 from pytorch_translate.ngram import NGramDecoder
+from pytorch_translate.semi_supervised import SemiSupervisedModel
 from pytorch_translate.utils import maybe_cat, maybe_cuda, torch_find
 from torch.nn.utils.rnn import PackedSequence, pack_padded_sequence, pad_packed_sequence
 
@@ -1382,6 +1383,16 @@ class BiLSTM(nn.Module):
         return (unpacked_output, final_hiddens, final_cells)
 
 
+@register_model("semi_supervised_rnn")
+class SemisupervisedRNNModel(SemiSupervisedModel):
+    single_model_cls = RNNModel
+
+    @staticmethod
+    def add_args(parser):
+        RNNModel.add_args(parser)
+        SemiSupervisedModel.add_args(parser)
+
+
 @register_model_architecture("rnn", "rnn")
 def base_architecture(args):
     # default architecture
@@ -1448,3 +1459,9 @@ def rnn_big_test(args):
     args.decoder_layers = 6
     args.decoder_hidden_dim = 1024
     args.decoder_out_embed_dim = 1024
+
+
+@register_model_architecture("semi_supervised_rnn", "semi_supervised_rnn")
+def semi_supervised_rnn(args):
+    base_architecture(args)
+    SemiSupervisedModel.set_semi_supervised_arch_args(args)
