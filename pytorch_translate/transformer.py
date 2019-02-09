@@ -293,14 +293,14 @@ class TransformerEncoder(FairseqEncoder):
         """Maximum input length supported by the encoder."""
         return self.transformer_embedding.embed_positions.max_positions()
 
-    def upgrade_state_dict(self, state_dict):
+    def upgrade_state_dict_named(self, state_dict, name):
         if isinstance(
             self.transformer_embedding.embed_positions, SinusoidalPositionalEmbedding
         ):
-            if "encoder.transformer_embedding.embed_positions.weights" in state_dict:
-                del state_dict["encoder.transformer_embedding.embed_positions.weights"]
+            if f"{name}.transformer_embedding.embed_positions.weights" in state_dict:
+                del state_dict[f"{name}.transformer_embedding.embed_positions.weights"]
             state_dict[
-                "encoder.transformer_embedding.embed_positions._float_tensor"
+                f"{name}.transformer_embedding.embed_positions._float_tensor"
             ] = torch.FloatTensor(1)
         return state_dict
 
@@ -479,11 +479,11 @@ class TransformerDecoder(FairseqIncrementalDecoder):
             )
         return self._future_mask[:dim, :dim]
 
-    def upgrade_state_dict(self, state_dict):
+    def upgrade_state_dict_named(self, state_dict, name):
         if isinstance(self.embed_positions, SinusoidalPositionalEmbedding):
-            if "decoder.embed_positions.weights" in state_dict:
-                del state_dict["decoder.embed_positions.weights"]
-            state_dict["decoder.embed_positions._float_tensor"] = torch.FloatTensor(1)
+            if f"{name}.embed_positions.weights" in state_dict:
+                del state_dict[f"{name}.embed_positions.weights"]
+            state_dict[f"{name}.embed_positions._float_tensor"] = torch.FloatTensor(1)
         return state_dict
 
     def _init_prev_states(self, encoder_out):
