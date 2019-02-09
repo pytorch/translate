@@ -9,6 +9,7 @@ from pytorch_translate.rnn import (
     LSTMSequenceEncoder,
     RNNDecoder,
     RNNEncoder,
+    RNNModel,
     base_architecture,
 )
 from pytorch_translate.tasks.pytorch_translate_task import PytorchTranslateTask
@@ -109,10 +110,13 @@ class RNNDualLearningModel(DualLearningModel):
             encoder_class = RNNEncoder
         decoder_class = RNNDecoder
 
+        encoder_embed_tokens, decoder_embed_tokens = RNNModel.build_embed_tokens(
+            args, task.primal_src_dict, task.primal_tgt_dict
+        )
         primal_encoder = encoder_class(
             task.primal_src_dict,
             embed_dim=args.encoder_embed_dim,
-            freeze_embed=args.encoder_freeze_embed,
+            embed_tokens=encoder_embed_tokens,
             cell_type=args.cell_type,
             num_layers=args.encoder_layers,
             hidden_dim=args.encoder_hidden_dim,
@@ -124,6 +128,7 @@ class RNNDualLearningModel(DualLearningModel):
         primal_decoder = decoder_class(
             src_dict=task.primal_src_dict,
             dst_dict=task.primal_tgt_dict,
+            embed_tokens=decoder_embed_tokens,
             vocab_reduction_params=args.vocab_reduction_params,
             encoder_hidden_dim=args.encoder_hidden_dim,
             embed_dim=args.decoder_embed_dim,
@@ -143,10 +148,13 @@ class RNNDualLearningModel(DualLearningModel):
         )
         primal_model = rnn.RNNModel(primal_task, primal_encoder, primal_decoder)
 
+        encoder_embed_tokens, decoder_embed_tokens = RNNModel.build_embed_tokens(
+            args, task.dual_src_dict, task.dual_tgt_dict
+        )
         dual_encoder = encoder_class(
             task.dual_src_dict,
             embed_dim=args.encoder_embed_dim,
-            freeze_embed=args.encoder_freeze_embed,
+            embed_tokens=encoder_embed_tokens,
             cell_type=args.cell_type,
             num_layers=args.encoder_layers,
             hidden_dim=args.encoder_hidden_dim,
@@ -158,10 +166,10 @@ class RNNDualLearningModel(DualLearningModel):
         dual_decoder = decoder_class(
             src_dict=task.dual_src_dict,
             dst_dict=task.dual_tgt_dict,
+            embed_tokens=decoder_embed_tokens,
             vocab_reduction_params=args.vocab_reduction_params,
             encoder_hidden_dim=args.encoder_hidden_dim,
             embed_dim=args.decoder_embed_dim,
-            freeze_embed=args.decoder_freeze_embed,
             out_embed_dim=args.decoder_out_embed_dim,
             cell_type=args.cell_type,
             num_layers=args.decoder_layers,

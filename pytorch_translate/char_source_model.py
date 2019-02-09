@@ -6,8 +6,8 @@ from ast import literal_eval
 import torch
 import torch.nn.functional as F
 from fairseq.models import FairseqEncoder, register_model, register_model_architecture
-from pytorch_translate import char_encoder, model_constants, rnn, vocab_constants
-from pytorch_translate.common_layers import VariableTracker
+from pytorch_translate import char_encoder, model_constants, rnn, utils, vocab_constants
+from pytorch_translate.common_layers import Embedding, VariableTracker
 from pytorch_translate.dictionary import TAGS
 
 
@@ -98,13 +98,25 @@ class CharSourceModel(rnn.RNNModel):
                 bidirectional=bool(args.encoder_bidirectional),
             )
 
+        decoder_embed_tokens = Embedding(
+            num_embeddings=len(dst_dict),
+            embedding_dim=args.decoder_embed_dim,
+            padding_idx=dst_dict.pad(),
+            freeze_embed=args.decoder_freeze_embed,
+        )
+
+        utils.load_embedding(
+            embedding=decoder_embed_tokens,
+            dictionary=dst_dict,
+            pretrained_embed=args.decoder_pretrained_embed,
+        )
         decoder = rnn.RNNDecoder(
             src_dict=src_dict,
             dst_dict=dst_dict,
+            embed_tokens=decoder_embed_tokens,
             vocab_reduction_params=args.vocab_reduction_params,
             encoder_hidden_dim=args.encoder_hidden_dim,
             embed_dim=args.decoder_embed_dim,
-            freeze_embed=args.decoder_freeze_embed,
             out_embed_dim=args.decoder_out_embed_dim,
             cell_type=args.cell_type,
             num_layers=args.decoder_layers,
