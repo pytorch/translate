@@ -472,7 +472,7 @@ class TestTranslation(unittest.TestCase):
                     ],
                 )
 
-    def test_semisupervised(self):
+    def test_semi_supervised_rnn(self):
         """
         Tests semi_supervised task. Important flags: `--train-mono-*-text-file`,
         `--task`, and `--arch`.
@@ -490,7 +490,7 @@ class TestTranslation(unittest.TestCase):
                         "--train-mono-target-text-file",
                         os.path.join(data_dir, "train.out"),
                         "--arch",
-                        "semi_supervised",
+                        "semi_supervised_rnn",
                         "--cell-type",
                         "lstm",
                         "--sequence-lstm",
@@ -534,7 +534,7 @@ class TestTranslation(unittest.TestCase):
                         "--train-mono-target-text-file",
                         os.path.join(data_dir, "train.out"),
                         "--arch",
-                        "semi_supervised",
+                        "semi_supervised_rnn",
                         "--denoising-target-mono",
                         "--cell-type",
                         "lstm",
