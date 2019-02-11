@@ -19,6 +19,7 @@ from caffe2.python import core, workspace
 from caffe2.python.onnx import backend as caffe2_backend
 from caffe2.python.predictor import predictor_exporter
 from fairseq import tasks, utils
+from fairseq.models import ARCH_MODEL_REGISTRY
 from pytorch_translate.tasks.pytorch_translate_task import DictionaryHolderTask
 from pytorch_translate.transformer import TransformerEncoder
 from pytorch_translate.word_prediction import word_prediction_model
@@ -101,12 +102,13 @@ def load_models_from_checkpoints(
             model = char_source_hybrid.CharSourceHybridModel.build_model(
                 checkpoint_data["args"], task
             )
-        elif architecture == "semi_supervised":
+        elif "semi_supervised" in architecture:
             model_args = copy.deepcopy(checkpoint_data["args"])
             model_args.source_vocab_file = src_dict_filename
             model_args.target_vocab_file = dst_dict_filename
             task = tasks.setup_task(model_args)
-            model = semi_supervised.SemiSupervisedModel.build_model(model_args, task)
+
+            model = ARCH_MODEL_REGISTRY[model_args.arch].build_model(model_args, task)
         else:
             raise RuntimeError("Architecture not supported: {architecture}")
         model.load_state_dict(checkpoint_data["model"])
