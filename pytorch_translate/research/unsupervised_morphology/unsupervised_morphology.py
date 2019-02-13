@@ -2,6 +2,7 @@
 
 import math
 import pickle
+import random
 from collections import Counter, defaultdict
 from itertools import chain, zip_longest
 from multiprocessing import Pool
@@ -34,7 +35,7 @@ class MorphologyHMMParams(object):
         self.smoothing_const = smoothing_const
         self.SMALL_CONST = -10000
 
-    def init_params_from_data(self, input_file_path):
+    def init_uniform_params_from_data(self, input_file_path):
         """
         We should obtain a list of all possible morphemes from a data file.
         """
@@ -102,6 +103,151 @@ class MorphologyHMMParams(object):
         self.affix_trans_probs["END"]["stem"] = 0
         self.affix_trans_probs["END"]["suffix"] = 0
         self.affix_trans_probs["END"]["END"] = 0
+
+    def zero_out_parmas(self):
+        """
+        Resets parameter values for all parameters.
+        """
+        for morpheme_class1 in self.affix_trans_probs.keys():
+            for morpheme_class2 in self.affix_trans_probs[morpheme_class1].keys():
+                self.affix_trans_probs[morpheme_class1][morpheme_class2] = 0.0
+
+        for morpheme_class in self.morph_emit_probs.keys():
+            for morpheme in self.morph_emit_probs[morpheme_class].keys():
+                self.morph_emit_probs[morpheme_class][morpheme] = 0.0
+
+    def sample_segmentation(self, word, affix_len_mean, affix_len_std_dev):
+        """
+        Sample until the first plausible segmentation shows up. Here the
+        constraint is to have a stem with at least length of two.
+        """
+        wlen = len(word)
+        while True:
+            # if a word is short, the real mean value show decrease. For example,
+            # if wlen=3, real_min is 1.
+            real_mean = min(affix_len_mean, wlen - 2)
+
+            prefix_lens = []
+            for _ in range(2):
+                # Sample at most two prefixes.
+                pl = int(
+                    max(
+                        math.ceil(random.normalvariate(real_mean, affix_len_std_dev)), 0
+                    )
+                )
+                if pl > 0:
+                    prefix_lens.append(pl)
+
+            suffix_lens = []
+            for _ in range(2):
+                # Sample at most two prefixes.
+                sl = int(
+                    max(
+                        math.ceil(random.normalvariate(real_mean, affix_len_std_dev)), 0
+                    )
+                )
+                if sl > 0:
+                    suffix_lens.append(sl)
+
+            stem_len = int(wlen - sum(prefix_lens + suffix_lens))
+            num_of_stems = 1 if random.randint(1, 10) < 10 else 2
+            if stem_len > 4 and num_of_stems > 1:
+                # Generate two stems by breaking it from the middle.
+                m = int(stem_len / 2)
+                stem_lens = [m, stem_len - m]
+            elif stem_len >= 2:
+                # Generate one stem.
+                stem_lens = [stem_len]
+            else:
+                continue
+
+            tags = (
+                ["START"]
+                + ["prefix"] * len(prefix_lens)
+                + ["stem"] * len(stem_lens)
+                + ["suffix"] * len(suffix_lens)
+                + ["END"]
+            )
+
+            lens = chain(prefix_lens, stem_lens, suffix_lens)
+
+            morphemes = []
+            offset = 0
+            for ml in lens:
+                morpheme = word[offset : ml + offset]
+                morphemes.append(morpheme)
+                offset += ml
+
+            # Making sure that we reached the end of word.
+            assert offset == wlen
+            assert len(morphemes) + 2 == len(tags)
+
+            # Successful attempt, break the loop.
+            break
+
+        return morphemes, tags
+
+    def init_params_with_normal_distribution(
+        self, input_file_path: str, affix_len_mean=2.0, affix_len_std_dev=1.0
+    ):
+        """
+        Instead of uniformly enumerating all possible affixes, we initialize
+        parameters by sampling.
+        Args:
+            input_file_path: input file path.
+            affix_len_mean: mean value for affix (prefix or suffix) length.
+            affix_len_std_dev: standard deviation value for affix length.
+        """
+        assert self.smoothing_const > 0
+        self.init_uniform_params_from_data(input_file_path)
+        self.zero_out_parmas()
+
+        self.affix_trans_denoms = {
+            morpheme: 0.0 for morpheme in self.affix_trans_probs.keys()
+        }
+        self.morph_emit_denoms = {
+            morpheme: 0.0 for morpheme in self.morph_emit_probs.keys()
+        }
+
+        for word in self.word_counts:
+            wlen, freq = len(word), self.word_counts[word]
+            if wlen <= 2:
+                # If a word is very short, it is definitely an
+                # independent stem.
+                self.morph_emit_probs["stem"][word] += freq
+                self.morph_emit_denoms["stem"] += freq
+                self.affix_trans_probs["START"]["stem"] += freq
+                self.affix_trans_denoms["START"] += freq
+                self.affix_trans_probs["stem"]["END"] += freq
+                self.affix_trans_denoms["stem"] += freq
+
+            morphemes, tags = self.sample_segmentation(
+                word, affix_len_mean, affix_len_std_dev
+            )
+            for i in range(len(morphemes)):
+                prev_tag, tag = tags[i], tags[i + 1]
+                self.morph_emit_probs[tag][morphemes[i]] += freq
+                self.morph_emit_denoms[tag] += freq
+                self.affix_trans_probs[prev_tag][tag] += freq
+                self.affix_trans_denoms[prev_tag] += freq
+            self.affix_trans_probs[tags[-2]][tags[-1]] += freq
+            self.affix_trans_denoms[tags[-2]] += freq
+
+        for prev_tag in self.affix_trans_probs.keys():
+            if prev_tag == "END":
+                continue
+            num_morphs = len(self.affix_trans_probs[prev_tag])
+            for cur_tag in self.affix_trans_probs[prev_tag].keys():
+                self.affix_trans_probs[prev_tag][cur_tag] /= self.affix_trans_denoms[
+                    prev_tag
+                ]
+
+        for tag in self.morph_emit_probs.keys():
+            num_morphs = len(self.morph_emit_probs[tag])
+            for word in self.morph_emit_probs[tag].keys():
+                self.morph_emit_probs[tag][word] = (
+                    self.morph_emit_probs[tag][word] + self.smoothing_const
+                ) / (self.morph_emit_denoms[tag] + num_morphs * self.smoothing_const)
 
     def transition_log_prob(self, prev_affix, current_affix):
         """
@@ -266,9 +412,30 @@ class MorphologySegmentor(object):
 
 
 class UnsupervisedMorphology(object):
-    def __init__(self, input_file, smoothing_const=0.1):
+    def __init__(
+        self,
+        input_file: str,
+        smoothing_const: float = 0.1,
+        use_normal_init: bool = False,
+        normal_mean: float = 2.0,
+        normal_stddev: float = 1.0,
+    ):
+        """
+        Args:
+            use_normal_init: Use normal distribution for initializing the
+                probabilities. Default model uses a uniform value for all.
+            normal_mean: Mean value for prefix/suffix length when sampling with
+                the normal distribution.
+            normal_stddev: Standard deviation for prefix/suffix length when sampling
+                with the normal distribution.
+        """
         self.params = MorphologyHMMParams(smoothing_const)
-        self.params.init_params_from_data(input_file)
+        if use_normal_init:
+            self.params.init_params_with_normal_distribution(
+                input_file, normal_mean, normal_stddev
+            )
+        else:
+            self.params.init_uniform_params_from_data(input_file)
 
     @staticmethod
     def init_forward_values(n):
