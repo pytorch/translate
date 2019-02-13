@@ -26,6 +26,7 @@ class SequenceGenerator(object):
         use_char_source=False,
         diverse_beam_groups=-1,
         diverse_beam_strength=0.5,
+        diversity_sibling_gamma=0.0,
         sampling=False,
         sampling_topk=-1,
         sampling_temperature=1,
@@ -52,6 +53,8 @@ class SequenceGenerator(object):
                 (-1 by default is vanilla beam search)
             diverse_beam_strength: strength of diversity penalty for Diverse
                 Beam Search.
+            diversity_sibling_gamma: The diversity rate of sibling rank (-0.0 by default
+               to disable sibling rank penalty)
         """
         self.models = models
         self.pad = tgt_dict.pad()
@@ -87,6 +90,7 @@ class SequenceGenerator(object):
             )
         else:
             self.search = search.BeamSearch(tgt_dict)
+        self.diversity_sibling_gamma = diversity_sibling_gamma
 
     def cuda(self):
         for model in self.models:
@@ -355,13 +359,11 @@ class SequenceGenerator(object):
                     # possible_translation_tokens
                     unk_index = unk_pos[0][0]
                     logprobs[:, unk_index] += self.unk_reward
-
             # external lexicon reward
             logprobs[:, self.lexicon_indices] += self.lexicon_reward
 
             logprobs += self.word_reward
             logprobs[:, self.eos] -= self.word_reward
-
             # Record attention scores
             attn[:, :, step + 1].copy_(avg_attn)
 
@@ -387,6 +389,11 @@ class SequenceGenerator(object):
                     possible_tokens_size = self.vocab_size
                     if possible_translation_tokens is not None:
                         possible_tokens_size = possible_translation_tokens.size(0)
+                    if self.diversity_sibling_gamma > 0:
+                        logprobs = self.diversity_sibling_rank(
+                            logprobs.view(bsz, -1, possible_tokens_size),
+                            self.diversity_sibling_gamma,
+                        )
                     cand_scores, cand_indices, cand_beams = self.search.step(
                         step,
                         logprobs.view(bsz, -1, possible_tokens_size),
@@ -687,3 +694,25 @@ class SequenceGenerator(object):
             avg_attn.div_(len(self.models))
 
         return avg_probs, avg_attn, possible_translation_tokens
+
+    def diversity_sibling_rank(self, logprobs, gamma):
+        """
+        See "A Simple, Fast Diverse Decoding Algorithm for Neural Generation"
+        for details
+        """
+        _, beam_size, vocab_size = logprobs.size()
+        logprobs = logprobs.view(-1, vocab_size)
+        # Keep consistent with beamsearch class in fairseq
+        k = min(2 * beam_size, vocab_size)
+        _, indices = torch.topk(logprobs, k)
+        # Set diverse penalty as k for all words
+        diverse_penalty = torch.ones_like(logprobs) * k
+        diversity_sibling_rank = (
+            torch.arange(0, k).view(-1, 1).expand(k, logprobs.size(0)).type_as(logprobs)
+        )
+        # Set diversity penalty accordingly for top-k words
+        diverse_penalty[
+            torch.arange(0, logprobs.size(0)).long(), indices.transpose(0, 1)
+        ] = diversity_sibling_rank
+        logprobs -= gamma * diverse_penalty
+        return logprobs
