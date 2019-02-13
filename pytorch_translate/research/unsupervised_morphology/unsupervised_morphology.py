@@ -122,8 +122,9 @@ class MorphologyHMMParams(object):
         constraint is to have a stem with at least length of two.
         """
         wlen = len(word)
-        while True:
-            # if a word is short, the real mean value show decrease. For example,
+        # At most try 5 times to sample segmentations. Otherwise
+        for _ in range(5):
+            # If a word is short, the real mean value show decrease. For example,
             # if wlen=3, real_min is 1.
             real_mean = min(affix_len_mean, wlen - 2)
 
@@ -159,6 +160,9 @@ class MorphologyHMMParams(object):
                 # Generate one stem.
                 stem_lens = [stem_len]
             else:
+                # Just in case the model was not able to sample any segmentation.
+                morphemes = [word]
+                tags = ["START", "stem", "END"]
                 continue
 
             tags = (
@@ -414,11 +418,12 @@ class MorphologySegmentor(object):
 class UnsupervisedMorphology(object):
     def __init__(
         self,
-        input_file: str,
-        smoothing_const: float = 0.1,
-        use_normal_init: bool = False,
-        normal_mean: float = 2.0,
-        normal_stddev: float = 1.0,
+        input_file,
+        smoothing_const=0.1,
+        use_normal_init=False,
+        normal_mean=2.0,
+        normal_stddev=1.0,
+        use_hardEM=False,
     ):
         """
         Args:
@@ -428,14 +433,19 @@ class UnsupervisedMorphology(object):
                 the normal distribution.
             normal_stddev: Standard deviation for prefix/suffix length when sampling
                 with the normal distribution.
+            use_hardEM: Choosing between soft EM or Viterbi EM (hard EM) algorithm.
         """
         self.params = MorphologyHMMParams(smoothing_const)
+        self.use_hardEM = use_hardEM
+
         if use_normal_init:
             self.params.init_params_with_normal_distribution(
                 input_file, normal_mean, normal_stddev
             )
         else:
             self.params.init_uniform_params_from_data(input_file)
+
+        self.segmentor = MorphologySegmentor(self.params) if self.use_hardEM else None
 
     @staticmethod
     def init_forward_values(n):
@@ -566,6 +576,29 @@ class UnsupervisedMorphology(object):
     def group_to(max_size, iterable):
         return list(zip_longest(*[iter(iterable)] * max_size, fillvalue=None))
 
+    def get_expectations_from_viterbi(self, word):
+        """
+        This method segments a word with the Viterbi algorithm, and assumes that
+        the output of the Viterbi algorithm has an expected count of one, and others
+        will have an expected count of zero. This is in contrast with the
+        forward-backward algorithm where every possible segmentation is taken into
+        account.
+        """
+        emission_expectations = defaultdict(float)
+        transition_expectations = defaultdict(float)
+
+        labels, indices = self.segmentor.segment_viterbi(word)
+
+        transition_expectations[("START", labels[0])] += 1
+        for i in range(len(labels)):
+            substr = word[indices[i] : indices[i + 1]]
+            emission_expectations[(labels[i], substr)] += 1
+            if i > 0:
+                transition_expectations[(labels[i - 1], labels[i])] += 1
+        transition_expectations[(labels[-1], "END")] += 1
+
+        return emission_expectations, transition_expectations
+
     def expectation_substep(self, words):
         """
         This method is subprocess for the expectation method.
@@ -576,7 +609,12 @@ class UnsupervisedMorphology(object):
             if wf is None:
                 continue
             (word, freq) = wf
-            e, t = self.forward_backward(word)
+
+            if self.use_hardEM:
+                e, t = self.get_expectations_from_viterbi(word)
+            else:
+                e, t = self.forward_backward(word)
+
             for e_key in e.keys():
                 emission_expectations[e_key] += e[e_key] * freq
             for t_key in t.keys():
@@ -651,7 +689,9 @@ class UnsupervisedMorphology(object):
             num_morphs = len(self.params.morph_emit_probs[morpheme_class])
             d = emission_denoms[morpheme_class]
             for morpheme in self.params.morph_emit_probs[morpheme_class].keys():
-                e = emission_expectations[morpheme_class][morpheme]
+                e = 0
+                if morpheme in emission_expectations[morpheme_class]:
+                    e = emission_expectations[morpheme_class][morpheme]
                 if d > 0 or smoothing_const > 0:
                     self.params.morph_emit_probs[morpheme_class][morpheme] = (
                         e + smoothing_const
@@ -667,8 +707,11 @@ class UnsupervisedMorphology(object):
             for m2 in self.params.affix_trans_probs[m1].keys():
                 if m2 in transition_expectations[m1]:
                     if transition_denoms[m1] > 0:
+                        t = 0
+                        if m2 in transition_expectations[m1]:
+                            t = transition_expectations[m1][m2]
                         self.params.affix_trans_probs[m1][m2] = (
-                            transition_expectations[m1][m2] / transition_denoms[m1]
+                            t / transition_denoms[m1]
                         )
                     else:  # for cases of underflow.
                         self.params.affix_trans_probs[m1][m2] = 1.0 / len(
@@ -693,10 +736,16 @@ class UnsupervisedMorphology(object):
         train_words_chunks = UnsupervisedMorphology.group_to(chunk_size, train_words)
         for epoch in range(num_iters):
             print("starting epoch %i" % epoch)
-            print("starting expectation step")
-            ee, ed, te, td = self.expectation(pool, train_words_chunks)
-            print("starting maximization step")
-            self.maximization(ee, ed, te, td)
-            print("updated parameters after maximization")
-            if model_path is not None:
-                self.save(model_path)
+            self.em_step(pool, train_words_chunks, model_path)
+
+    def em_step(self, pool, train_words_chunks, model_path):
+        """
+        One EM step in the EM algorithm.
+        """
+        print("starting expectation step")
+        ee, ed, te, td = self.expectation(pool, train_words_chunks)
+        print("starting maximization step")
+        self.maximization(ee, ed, te, td)
+        print("updated parameters after maximization")
+        if model_path is not None:
+            self.save(model_path)
