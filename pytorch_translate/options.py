@@ -665,6 +665,12 @@ def expand_generation_args(group, train=False):
             "and EOS-terminated, suitable for use as training targets)"
         ),
     )
+    group.add_argument(
+        "--diversity-sibling-gamma",
+        type=float,
+        default=0.0,
+        help=("The diversity rate of sibling_rank for generating diverse beams"),
+    )
 
     # These arguments are only used during training
     if train:

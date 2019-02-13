@@ -131,3 +131,26 @@ class TestBeamDecode(unittest.TestCase):
             task, target_tokens, hypo_tokens
         )
         np.testing.assert_almost_equal(smoothed_bleu, 0.35186, decimal=5)
+
+    def test_diversity_sibling_rank(self):
+        """
+        Testing calculation of sibling_rank() function.
+        """
+        test_args = test_utils.ModelParamsDict()
+        _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
+        model = task.build_model(test_args)
+        translator = beam_decode.SequenceGenerator([model], task.target_dictionary)
+        logprobs = torch.FloatTensor(
+            [[[2, 1, 3, 5, 6], [0, 1, 3, 2, 4]], [[2, 3, 1, 5, 0], [3, 1, 5, 2, 0]]]
+        )
+        logprobs_out = torch.FloatTensor(
+            [
+                [[-1, -3, 1, 4, 6], [-4, -2, 2, 0, 4]],
+                [[0, 2, -2, 5, -4], [2, -2, 5, 0, -4]],
+            ]
+        )
+        logprobs = translator.diversity_sibling_rank(logprobs, 1)
+        np.testing.assert_allclose(
+            actual=logprobs_out.view(-1, 5).numpy(), desired=logprobs.numpy(), atol=1e-5
+        )
