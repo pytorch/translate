@@ -12,6 +12,11 @@ from pytorch_translate import utils as pytorch_translate_utils
 @register_criterion("word_knowledge_distillation")
 class KnowledgeDistillationCriterion(FairseqCriterion):
     def __init__(self, args, task):
+        """
+        This code is for word-level knowledge distillation. Most of the algorithm
+        is inspired from the Kim and Rush (2016) paper:
+        http://www.aclweb.org/anthology/D16-1139
+        """
         super().__init__(args, task)
         assert (
             args.teacher_path
@@ -36,6 +41,8 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
         if self.kd_weight < 0 or self.kd_weight > 1:
             raise ValueError(f"--kd-weight ({self.kd_weight}) must be in [0, 1]")
 
+        self.top_k_teacher_tokens = getattr(args, "top_k_teacher_tokens", 8)
+
     @staticmethod
     def add_args(parser):
         """Add criterion-specific arguments to the parser."""
@@ -51,6 +58,18 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
             help=(
                 "mixture weight between the knowledge distillation and",
                 "negative log likelihood losses. Must be in [0.0, 1.0]",
+            ),
+        )
+        parser.add_argument(
+            "--top-k-teacher-tokens",
+            type=int,
+            default=8,
+            help=(
+                "Incorporating only the top k words from the teacher model.",
+                "We zero out all other possibilities and normalize the probabilities",
+                "based on the K top element.",
+                "If top-k-teacher-tokens=0, it backs up to the original way of",
+                "enumerating all.",
             ),
         )
 
@@ -80,7 +99,25 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
                 avg_probs.add_(probs)
         avg_probs.div_(len(self.teacher_models))
         avg_probs = avg_probs.view(-1, avg_probs.size(-1)).detach()
-        kd_loss = -torch.sum(avg_probs * lprobs)
+
+        if self.top_k_teacher_tokens > 0:
+            # Getting the topk probabilities, masking others, normalizing the topk
+            # probabilities.
+            top_k_teacher_tokens_avg_probs, indices = torch.topk(
+                avg_probs, k=self.top_k_teacher_tokens
+            )
+            top_k_teacher_tokens_probs_normalized = (
+                top_k_teacher_tokens_avg_probs
+                / torch.sum(top_k_teacher_tokens_avg_probs)
+            )
+            topk_mask = torch.zeros(avg_probs.shape).type_as(avg_probs)
+            topk_probs = topk_mask.scatter(
+                1, indices, top_k_teacher_tokens_probs_normalized
+            )
+
+            kd_loss = -torch.sum(topk_probs * lprobs)
+        else:
+            kd_loss = -torch.sum(avg_probs * lprobs)
 
         # 3. Compute NLL loss with respect to the ground truth
         target = model.get_targets(sample, net_output).view(-1)
