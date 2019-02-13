@@ -434,8 +434,8 @@ class UnsupervisedMorphology(object):
             normal_stddev: Standard deviation for prefix/suffix length when sampling
                 with the normal distribution.
             use_hardEM: Choosing between soft EM or Viterbi EM (hard EM) algorithm.
+    ):
         """
-        self.params = MorphologyHMMParams(smoothing_const)
         self.use_hardEM = use_hardEM
 
         if use_normal_init:
