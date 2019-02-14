@@ -80,11 +80,49 @@ def get_arg_parser():
         default=2,
     )
     parser.add_option(
+        "--hard-em", action="store_true", dest="use_hardEM", default=False
+    )
+    parser.add_option(
         "--normal-stddev",
         type="float",
         help="Standard deviation for the normal distribution in initialization.",
         dest="normal_stddev",
         default=1,
+    )
+    parser.add_option(
+        "--no-morph-likeness",
+        action="store_false",
+        help="Turn off morph likeness based on perplexity.",
+        dest="use_morph_likeness",
+        default=True,
+    )
+    parser.add_option(
+        "--perplexity-threshold",
+        type="float",
+        help="Perplexity threshold in affix likeness equation.",
+        dest="perplexity_threshold",
+        default=10,
+    )
+    parser.add_option(
+        "--length-threshold",
+        type="float",
+        help="Length threshold in stem likeness equation.",
+        dest="length_threshold",
+        default=3,
+    )
+    parser.add_option(
+        "--perplexity-slope",
+        type="float",
+        help="Perplexity slope in affix likeness equation.",
+        dest="perplexity_slope",
+        default=1,
+    )
+    parser.add_option(
+        "--length-slope",
+        type="float",
+        help="Length slope in stem likeness equation.",
+        dest="length_slope",
+        default=2,
     )
     return parser
 
@@ -99,6 +137,12 @@ if __name__ == "__main__":
             use_normal_init=options.normal_init,
             normal_mean=options.normal_mean,
             normal_stddev=options.normal_stddev,
+            use_hardEM=options.use_hardEM,
+            use_morph_likeness=options.use_morph_likeness,
+            perplexity_threshold=options.perplexity_threshold,
+            perplexity_slope=options.perplexity_slope,
+            length_threshold=options.length_threshold,
+            length_slope=options.length_slope,
         )
         print("Number of training words", len(model.params.word_counts))
         model.expectation_maximization(
