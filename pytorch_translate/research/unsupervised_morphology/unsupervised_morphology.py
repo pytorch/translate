@@ -6,10 +6,23 @@ import random
 from collections import Counter, defaultdict
 from itertools import chain, zip_longest
 from multiprocessing import Pool
+from typing import Dict
+
+from pytorch_translate.research.unsupervised_morphology.morphology_context import (
+    MorphologyContext,
+)
 
 
 class MorphologyHMMParams(object):
-    def __init__(self, smoothing_const=0.1):
+    def __init__(
+        self,
+        smoothing_const: float = 0.1,
+        use_morph_likeness: bool = True,
+        perplexity_threshold: float = 10,
+        perplexity_slope: float = 1,
+        length_threshold: float = 3,
+        length_slope: float = 2,
+    ):
         """
         This class contains HMM probabilities for the morphological model.
         The model has transition probabilities of affix classes, and
@@ -20,20 +33,44 @@ class MorphologyHMMParams(object):
         We also have two registered affixes for showing the START and END of
         words.
         Args:
-            smoothing_const: for smoothing the categorical distribution. This is
+            * smoothing_const: For smoothing the categorical distribution. This is
             mostly useful for unseen observations outside training.
+            * use_morph_likeness: If true, use the equations 16 and 17 in the
+            following paper:
+            https://users.ics.aalto.fi/krista/papers/Creutz07.pdf
+            * perplexity_threshold and perplexity_slope: Used for thresholding
+            and slope the perplexity value. This come from equation 16 of the
+            above paper:
+            > prefix_like(m) =
+            1/(1 + exp(-perplexity_slope *(right_perplexity(m)-perplexity_threshold)))
+            * length_threshold and length_slope: This comes from equation 17 of
+            the above paper:
+            > stem_like(m) = 1/(1+ exp(-length_slope*(length(m)-length_threshold)))
         """
-        self.morph_emit_probs = {"prefix": {}, "stem": {}, "suffix": {}}
-        self.affix_trans_probs = {
+        self.morph_emit_probs: Dict[str, dict] = {
+            "prefix": {},
+            "stem": {},
+            "suffix": {},
+        }
+        self.affix_trans_probs: Dict[str, dict] = {
             "prefix": {},
             "stem": {},
             "suffix": {},
             "START": {},
             "END": {},
         }
-        self.word_counts = Counter()
+        self.word_counts: Dict[str, int] = Counter()
         self.smoothing_const = smoothing_const
         self.SMALL_CONST = -10000
+        self.use_morph_likeness = use_morph_likeness
+        self.perplexity_threshold = perplexity_threshold
+        self.perplexity_slope = perplexity_slope
+        self.length_threshold = length_threshold
+        self.length_slope = length_slope
+
+        # This gets values after calling init_uniform_params_from_data if
+        # use_morph_likeness is True.
+        self.morph_likeness = None
 
     def init_uniform_params_from_data(self, input_file_path):
         """
@@ -53,20 +90,45 @@ class MorphologyHMMParams(object):
                 for word in line.strip().split():
                     self.word_counts[word] += 1
 
+        context_dics: Dict[str, MorphologyContext] = {}
         for word in self.word_counts:
+            word_count = self.word_counts[word]
             if len(word) <= 2:
                 # If a word is very short, it is definitely an
                 # independent stem.
                 self.morph_emit_probs["stem"][word] = 1.0
+                if self.use_morph_likeness:
+                    # We don't allow context with length lower than 3.
+                    if word not in context_dics:
+                        context_dics[word] = MorphologyContext()
 
             for i in range(0, len(word)):
                 for j in range(i, len(word)):
+                    substr = word[i : j + 1]
                     if j < len(word) - 2:
-                        self.morph_emit_probs["prefix"][word[i : j + 1]] = 1.0
+                        self.morph_emit_probs["prefix"][substr] = 1.0
                     if j - i >= 1:
-                        self.morph_emit_probs["stem"][word[i : j + 1]] = 1.0
+                        self.morph_emit_probs["stem"][substr] = 1.0
                     if i >= 2:
-                        self.morph_emit_probs["suffix"][word[i : j + 1]] = 1.0
+                        self.morph_emit_probs["suffix"][substr] = 1.0
+
+                    if self.use_morph_likeness:
+                        if substr not in context_dics:
+                            context_dics[substr] = MorphologyContext()
+
+                        # Updating left and right context vectors.
+                        for k in range(0, i - 2):
+                            # Get context values of length at least 3.
+                            left_context_str = word[k:i]
+                            context_dics[substr].add_to_left_context(
+                                left_context_str, word_count
+                            )
+                        for k in range(j + 4, len(word) + 1):
+                            # Get context values of length at least 3.
+                            right_context_str = word[j + 1 : k]
+                            context_dics[substr].add_to_right_context(
+                                right_context_str, word_count
+                            )
 
         # Normalizing the initial probabilities uniformly.
         for affix in self.morph_emit_probs.keys():
@@ -103,6 +165,51 @@ class MorphologyHMMParams(object):
         self.affix_trans_probs["END"]["stem"] = 0
         self.affix_trans_probs["END"]["suffix"] = 0
         self.affix_trans_probs["END"]["END"] = 0
+
+        if self.use_morph_likeness:
+            self.build_morph_likeness_values(context_dics)
+
+        # Deleting this to free memory just in case GC does not work efficiently.
+        del context_dics
+
+    def build_morph_likeness_values(self, context_dics):
+        self.morph_likeness = {
+            "prefix": defaultdict(float),
+            "stem": defaultdict(float),
+            "suffix": defaultdict(float),
+        }
+        for substr in context_dics.keys():
+            left_perplexity = context_dics[substr].left_perplexity()
+            right_perplexity = context_dics[substr].right_perplexity()
+
+            # Following https://users.ics.aalto.fi/krista/papers/Creutz07.pdf
+            # As in eq. 16.
+            prefix_like = 1.0 / (
+                1
+                + math.exp(
+                    -self.perplexity_slope
+                    * (right_perplexity - self.perplexity_threshold)
+                )
+            )
+            suffix_like = 1.0 / (
+                1
+                + math.exp(
+                    -self.perplexity_slope
+                    * (left_perplexity - self.perplexity_threshold)
+                )
+            )
+
+            # As in eq. 17.
+            stem_like = 1.0 / (
+                1 + math.exp(-self.length_slope * (len(substr) - self.length_threshold))
+            )
+
+            # Similar to eq. 19, but we ignore non-morpheme type and normalization
+            # exponent q.
+            denom = prefix_like + stem_like + suffix_like
+            self.morph_likeness["stem"][substr] = stem_like / denom
+            self.morph_likeness["prefix"][substr] = prefix_like / denom
+            self.morph_likeness["suffix"][substr] = suffix_like / denom
 
     def zero_out_parmas(self):
         """
@@ -253,56 +360,70 @@ class MorphologyHMMParams(object):
                     self.morph_emit_probs[tag][word] + self.smoothing_const
                 ) / (self.morph_emit_denoms[tag] + num_morphs * self.smoothing_const)
 
-    def transition_log_prob(self, prev_affix, current_affix):
+    def transition_log_prob(self, prev_tag, current_tag):
         """
         For parameter estimation of the forward-backward algorithm, we still need
         the actual probability values. However, in decoding, working in log-scale
         is more efficient.
         """
-        if self.affix_trans_probs[prev_affix][current_affix] == 0:
+        if self.affix_trans_probs[prev_tag][current_tag] == 0:
             return self.SMALL_CONST
-        return math.log(self.affix_trans_probs[prev_affix][current_affix])
+        return math.log(self.affix_trans_probs[prev_tag][current_tag])
 
-    def emission_prob(self, affix, morpheme):
+    def emission_prob(self, morpheme_type, morpheme):
         """
         If a morpheme is not seen, we return the default smoothed probability.
         Note that we assume the probabilities for the seen morphemes are already
         smoothed.
         """
-        if affix in {"START", "END"}:
+        if morpheme_type in {"START", "END"}:
             return 0
-        if morpheme in self.morph_emit_probs[affix]:
-            return self.morph_emit_probs[affix][morpheme]
-        else:
-            num_morphs = len(self.morph_emit_probs[affix])
-            return self.smoothing_const / (num_morphs * (1 + self.smoothing_const))
 
-    def emission_log_probs(self, affix, morpheme):
-        if affix in {"START", "END"}:
+        # Incorporating likeness count.
+        likeness_const = (
+            1
+            if self.morph_likeness is None
+            else self.morph_likeness[morpheme_type][morpheme]
+        )
+
+        if morpheme in self.morph_emit_probs[morpheme_type]:
+            return likeness_const * self.morph_emit_probs[morpheme_type][morpheme]
+        else:
+            num_morphs = len(self.morph_emit_probs[morpheme_type])
+            return (
+                likeness_const
+                * self.smoothing_const
+                / (num_morphs * (1 + self.smoothing_const))
+            )
+
+    def emission_log_probs(self, morpheme_type, morpheme):
+        if morpheme_type in {"START", "END"}:
             return self.SMALL_CONST
-        if self.emission_prob(affix, morpheme) == 0:
+        if self.emission_prob(morpheme_type, morpheme) == 0:
             return self.SMALL_CONST
-        return math.log(self.emission_prob(affix, morpheme))
+        return math.log(self.emission_prob(morpheme_type, morpheme))
 
     @staticmethod
     def load(file_path):
         with open(file_path, "rb") as f:
-            e, t, s, c = pickle.load(f)
+            e, t, s, c, morph_likeness = pickle.load(f)
         m = MorphologyHMMParams(s)
         m.morph_emit_probs = e
         m.affix_trans_probs = t
         m.word_counts = c
+        m.morph_likeness = morph_likeness
         return m
 
     def save(self, file_path):
-        e, t, s, c = (
+        e, t, s, c, morph_likeness = (
             self.morph_emit_probs,
             self.affix_trans_probs,
             self.smoothing_const,
             self.word_counts,
+            self.morph_likeness,
         )
         with open(file_path, "wb") as f:
-            pickle.dump((e, t, s, c), f)
+            pickle.dump((e, t, s, c, morph_likeness), f)
 
 
 class MorphologySegmentor(object):
@@ -418,12 +539,17 @@ class MorphologySegmentor(object):
 class UnsupervisedMorphology(object):
     def __init__(
         self,
-        input_file,
-        smoothing_const=0.1,
-        use_normal_init=False,
-        normal_mean=2.0,
-        normal_stddev=1.0,
-        use_hardEM=False,
+        input_file: str,
+        smoothing_const: float = 0.1,
+        use_normal_init: bool = False,
+        normal_mean: float = 2.0,
+        normal_stddev: float = 1.0,
+        use_hardEM: bool = False,
+        use_morph_likeness: bool = True,
+        perplexity_threshold: float = 10,
+        perplexity_slope: float = 1,
+        length_threshold: float = 3,
+        length_slope: float = 2,
     ):
         """
         Args:
@@ -434,8 +560,20 @@ class UnsupervisedMorphology(object):
             normal_stddev: Standard deviation for prefix/suffix length when sampling
                 with the normal distribution.
             use_hardEM: Choosing between soft EM or Viterbi EM (hard EM) algorithm.
+            use_morph_likeness: Used by MorphologyHMMParams constructor.
+            perplexity_threshold: Used by MorphologyHMMParams constructor.
+            perplexity_slope: Used by MorphologyHMMParams constructor.
+            length_threshold: Used by MorphologyHMMParams constructor.
+            length_slope: Used by MorphologyHMMParams constructor.
         """
-        self.params = MorphologyHMMParams(smoothing_const)
+        self.params = MorphologyHMMParams(
+            smoothing_const=smoothing_const,
+            use_morph_likeness=use_morph_likeness,
+            perplexity_threshold=perplexity_threshold,
+            perplexity_slope=perplexity_slope,
+            length_threshold=length_threshold,
+            length_slope=length_slope,
+        )
         self.use_hardEM = use_hardEM
 
         if use_normal_init:
