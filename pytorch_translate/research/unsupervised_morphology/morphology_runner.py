@@ -58,6 +58,34 @@ def get_arg_parser():
     parser.add_option(
         "--save-checkpoint", action="store_true", dest="save_checkpoint", default=False
     )
+    parser.add_option(
+        "--smooth-const",
+        type="float",
+        help="Constant float value for smoothing probabilities.",
+        dest="smooth_const",
+        default=2,
+    )
+    parser.add_option(
+        "--normal-init",
+        action="store_true",
+        help="Initialize parameters with samples from normal distribution.",
+        dest="normal_init",
+        default=False,
+    )
+    parser.add_option(
+        "--normal-mean",
+        type="float",
+        help="Mean for the normal distribution in initialization.",
+        dest="normal_mean",
+        default=2,
+    )
+    parser.add_option(
+        "--normal-stddev",
+        type="float",
+        help="Standard deviation for the normal distribution in initialization.",
+        dest="normal_stddev",
+        default=1,
+    )
     return parser
 
 
@@ -65,7 +93,13 @@ if __name__ == "__main__":
     arg_parser = get_arg_parser()
     options, args = arg_parser.parse_args()
     if options.train_file is not None and options.model_path is not None:
-        model = unsupervised_morphology.UnsupervisedMorphology(options.train_file)
+        model = unsupervised_morphology.UnsupervisedMorphology(
+            input_file=options.train_file,
+            smoothing_const=options.smooth_const,
+            use_normal_init=options.normal_init,
+            normal_mean=options.normal_mean,
+            normal_stddev=options.normal_stddev,
+        )
         print("Number of training words", len(model.params.word_counts))
         model.expectation_maximization(
             options.em_iter,
