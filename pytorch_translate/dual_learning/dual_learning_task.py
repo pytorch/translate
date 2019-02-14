@@ -19,7 +19,7 @@ from pytorch_translate.weighted_criterions import (
 
 
 @register_task("dual_learning_task")
-class DualLearningTask(FairseqTask):
+class DualLearningTask(PytorchTranslateTask):
     """A task for training primal model and dual models jointly.
     It takes:
         - unlabelled source (aka source monolingual data for translation task),
@@ -160,7 +160,7 @@ class DualLearningTask(FairseqTask):
     ):
         if not torch.cuda.is_available():
             raise NotImplementedError("Training on CPU is not supported.")
-        super().__init__(args)
+        super().__init__(args, primal_src_dict, primal_tgt_dict)
         self.primal_src_dict = primal_src_dict
         self.primal_tgt_dict = primal_tgt_dict
         self.dual_src_dict = dual_src_dict

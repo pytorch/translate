@@ -128,7 +128,7 @@ class UnsupervisedCriterion(FairseqCriterion):
             scorer = bleu.Scorer(src_dict.pad(), src_dict.eos(), src_dict.unk())
             for _, _, x_hypos in reconstructed_source:
                 x_hat = x_hypos[0]["tokens"][:-1]
-                scorer.add(original_src.int(), x_hat.int().cpu())
+                scorer.add(original_src.int().cpu(), x_hat.int().cpu())
             backward_reward = scorer.score(order=4) / 100.0
 
             total_reward = (

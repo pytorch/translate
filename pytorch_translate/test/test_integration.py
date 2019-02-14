@@ -544,6 +544,51 @@ class TestTranslation(unittest.TestCase):
                 )
                 generate_main(data_dir)
 
+    def test_dual_learning(self):
+        """
+        Tests dual_learning task. Important flags: `--train-mono-*-text-file`,
+        `--task`, and `--arch`.
+        """
+        with contextlib.redirect_stdout(StringIO()):
+            with tempfile.TemporaryDirectory("test_rnn") as data_dir:
+                create_dummy_data(data_dir)
+                train_translation_model(
+                    data_dir,
+                    [
+                        "--task",
+                        "dual_learning_task",
+                        "--dual-criterion",
+                        "unsupervised_criterion",
+                        "--train-mono-source-text-file",
+                        os.path.join(data_dir, "train.in"),
+                        "--train-mono-target-text-file",
+                        os.path.join(data_dir, "train.out"),
+                        "--arch",
+                        "rnn",
+                        "--cell-type",
+                        "lstm",
+                        "--sequence-lstm",
+                        "--reverse-source",
+                        "--encoder-bidirectional",
+                        "--encoder-layers",
+                        "2",
+                        "--encoder-embed-dim",
+                        "8",
+                        "--encoder-hidden-dim",
+                        "16",
+                        "--decoder-layers",
+                        "2",
+                        "--decoder-embed-dim",
+                        "8",
+                        "--decoder-hidden-dim",
+                        "16",
+                        "--decoder-out-embed-dim",
+                        "8",
+                        "--attention-type",
+                        "dot",
+                    ],
+                )
+
 
 def train_translation_model(data_dir, extra_flags, criterion=None):
     parser = train.get_parser_with_args()

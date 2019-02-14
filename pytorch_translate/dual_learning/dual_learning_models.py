@@ -132,7 +132,6 @@ class RNNDualLearningModel(DualLearningModel):
             vocab_reduction_params=args.vocab_reduction_params,
             encoder_hidden_dim=args.encoder_hidden_dim,
             embed_dim=args.decoder_embed_dim,
-            freeze_embed=args.decoder_freeze_embed,
             out_embed_dim=args.decoder_out_embed_dim,
             cell_type=args.cell_type,
             num_layers=args.decoder_layers,
