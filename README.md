@@ -209,6 +209,14 @@ Note that the model takes in [BPE](https://github.com/rsennrich/subword-nmt)
 inputs, so some input words need to be split into multiple tokens.
 For instance, "hineinstopfen" is represented as "hinein@@ stop@@ fen".
 
+### PyTorch Translate Research
+
+We welcome you to explore the models we have in the `pytorch_translate/research`
+folder. If you use them and encounter any errors, please paste logs and a
+command that we can use to reproduce the error. Feel free to contribute any
+bugfixes or report your experience, but keep in mind that these models are a
+work in progress and thus are currently unsupported.
+
 ## Join the Translate Community
 
 We welcome contributions! See the `CONTRIBUTING.md` file for how to help out.
