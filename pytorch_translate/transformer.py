@@ -22,6 +22,7 @@ from pytorch_translate.common_layers import (
     TransformerTokenEmbedding,
     VariableTracker,
 )
+from pytorch_translate.semi_supervised import SemiSupervisedModel
 from pytorch_translate.utils import torch_find
 
 
@@ -228,8 +229,12 @@ class TransformerModel(FairseqModel):
                 args.decoder_freeze_embed,
             )
 
-        encoder = TransformerEncoder(args, src_dict, encoder_embed_tokens)
-        decoder = TransformerDecoder(args, src_dict, tgt_dict, decoder_embed_tokens)
+        encoder = TransformerModel.build_encoder(
+            args, src_dict, embed_tokens=encoder_embed_tokens
+        )
+        decoder = TransformerModel.build_decoder(
+            args, src_dict, tgt_dict, embed_tokens=decoder_embed_tokens
+        )
         return TransformerModel(task, encoder, decoder)
 
     def get_targets(self, sample, net_output):
@@ -240,6 +245,14 @@ class TransformerModel(FairseqModel):
                 possible_translation_tokens, targets, len(self.task.target_dictionary)
             )
         return targets
+
+    @classmethod
+    def build_encoder(cls, args, src_dict, embed_tokens):
+        return TransformerEncoder(args, src_dict, embed_tokens=embed_tokens)
+
+    @classmethod
+    def build_decoder(cls, args, src_dict, dst_dict, embed_tokens):
+        return TransformerDecoder(args, src_dict, dst_dict, embed_tokens=embed_tokens)
 
 
 class TransformerEncoder(FairseqEncoder):
@@ -541,6 +554,16 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         return states
 
 
+@register_model("semi_supervised_transformer")
+class SemisupervisedTransformerModel(SemiSupervisedModel):
+    single_model_cls = TransformerModel
+
+    @staticmethod
+    def add_args(parser):
+        TransformerModel.add_args(parser)
+        SemiSupervisedModel.add_args(parser)
+
+
 @register_model_architecture("ptt_transformer", "ptt_transformer")
 def base_architecture(args):
     args.encoder_pretrained_embed = getattr(args, "encoder_pretrained_embed", None)
@@ -570,3 +593,11 @@ def base_architecture(args):
     args.dropout = getattr(args, "dropout", 0.1)
     args.adaptive_softmax_cutoff = getattr(args, "adaptive_softmax_cutoff", None)
     vocab_reduction.set_arg_defaults(args)
+
+
+@register_model_architecture(
+    "semi_supervised_transformer", "semi_supervised_transformer"
+)
+def semi_supervised_transformer(args):
+    base_architecture(args)
+    SemiSupervisedModel.set_semi_supervised_arch_args(args)

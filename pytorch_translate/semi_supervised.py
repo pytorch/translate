@@ -110,7 +110,7 @@ class SemiSupervisedModel(FairseqMultiModel):
                     embedding_dim=args.encoder_embed_dim,
                     padding_idx=src_dict.pad(),
                     freeze_embed=args.encoder_freeze_embed,
-                    normalize_embed=args.encoder_normalize_embed,
+                    normalize_embed=getattr(args, "encoder_normalize_embed", False),
                 )
                 utils.load_embedding(
                     embedding=encoder_embed_tokens,
