@@ -168,7 +168,10 @@ def _generate_score(models, args, task, dataset, optimize=True):
     # and zero probs scores
     translated_sentences = [""] * len(dataset)
     translated_scores = [0.0] * len(dataset)
-    translated_token_arrays = [None] * len(dataset)
+
+    collect_output_hypos = getattr(args, "output_hypos_binary_path", False)
+    if collect_output_hypos:
+        output_hypos_token_arrays = [None] * len(dataset)
 
     # Generate and compute BLEU score
     dst_dict = task.target_dictionary
@@ -202,7 +205,10 @@ def _generate_score(models, args, task, dataset, optimize=True):
 
             translated_sentences[trans_info.sample_id] = trans_info.hypo_str
             translated_scores[trans_info.sample_id] = trans_info.hypo_score
-            translated_token_arrays[trans_info.sample_id] = trans_info.hypo_tokens
+            if collect_output_hypos:
+                output_hypos_token_arrays[
+                    trans_info.sample_id
+                ] = trans_info.best_hypo_tokens
             translation_samples.append(
                 collections.OrderedDict(
                     {
@@ -217,10 +223,10 @@ def _generate_score(models, args, task, dataset, optimize=True):
             t.log({"wps": round(wps_meter.avg)})
             num_sentences += 1
 
-    # If applicable, save translation tokens to binary output file
-    if getattr(args, "output_hypos_binary_path", False):
+    # If applicable, save collected hypothesis tokens to binary output file
+    if collect_output_hypos:
         output_dataset = pytorch_translate_data.InMemoryNumpyDataset()
-        output_dataset.load_from_sequences(translated_token_arrays)
+        output_dataset.load_from_sequences(output_hypos_token_arrays)
         output_dataset.save(args.output_hypos_binary_path)
 
     # If applicable, save the translations to the output file
@@ -336,9 +342,12 @@ def _iter_translations(args, task, dataset, translations, align_dict):
             print(f"S-{sample_id}\t{src_str}")
             print(f"T-{sample_id}\t{target_str}")
 
-        # used only for oracle evaluation (args.report_oracle_bleu)
+        # used for oracle evaluation (args.report_oracle_bleu)
         best_hypo_tokens = None
         best_hypo_score = 0
+        collect_oracle_hypos = args.report_oracle_bleu or (
+            args.output_hypos_binary_path and args.nbest > 0
+        )
 
         # Process top predictions
         for i, hypo in enumerate(hypos[: min(len(hypos), args.nbest)]):
@@ -360,7 +369,7 @@ def _iter_translations(args, task, dataset, translations, align_dict):
                     )
                 )
 
-            if args.report_oracle_bleu:
+            if collect_oracle_hypos:
                 score = smoothed_sentence_bleu(task, target_tokens, hypo_tokens)
                 if score > best_hypo_score:
                     best_hypo_tokens = hypo_tokens
@@ -385,6 +394,9 @@ def _iter_translations(args, task, dataset, translations, align_dict):
                     hypo["score"] / len(hypo_tokens) if len(hypo_tokens) > 0 else 0.0
                 )
                 top_hypo_tokens = hypo_tokens
+
+        if not collect_oracle_hypos:
+            best_hypo_tokens = top_hypo_tokens
 
         yield TranslationInfo(
             sample_id=sample_id,
