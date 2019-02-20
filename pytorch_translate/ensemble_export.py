@@ -182,15 +182,31 @@ def merge_transpose_and_batchmatmul(caffe2_backend_rep):
 
 
 def save_caffe2_rep_to_db(
-    caffe2_backend_rep, output_path, input_names, output_names, num_workers
+    caffe2_backend_rep,
+    output_path,
+    input_names,
+    output_names,
+    num_workers,
+    copied_from=None,
 ):
+    """
+    If specified, copied_from is a dictionary with output blobs as keys and
+    input blobs as values, indicating that the former should be copied from the
+    latter.
+    """
     merge_transpose_and_batchmatmul(caffe2_backend_rep)
 
     # netdef external_input includes internally produced blobs
     actual_external_inputs = set()
     produced = set()
     for operator in caffe2_backend_rep.predict_net.op:
-        for blob in operator.input:
+        for i, blob in enumerate(operator.input):
+            # in the case of copied_from, we use the input blob (value) as the
+            # operator input and append a copy operator from input to output
+            # at the end of the network.
+            if copied_from is not None and blob in copied_from:
+                operator.input[i] = copied_from[blob]
+                blob = copied_from[blob]
             if blob not in produced:
                 actual_external_inputs.add(blob)
         for blob in operator.output:
@@ -212,9 +228,15 @@ def save_caffe2_rep_to_db(
             predict_net.Copy(saved_name, param)
             param_names[i] = saved_name
 
-    output_shapes = {}
+    if copied_from is not None:
+        for (output_blob, input_blob) in copied_from.items():
+            predict_net.Copy(input_blob, output_blob)
+
+    dummy_shapes = {}
     for blob in output_names:
-        output_shapes[blob] = (0,)
+        dummy_shapes[blob] = (0,)
+    for blob in input_names:
+        dummy_shapes[blob] = (0,)
 
     # Required because of https://github.com/pytorch/pytorch/pull/6456/files
     with caffe2_backend_rep.workspace._ctx:
@@ -224,7 +246,7 @@ def save_caffe2_rep_to_db(
             parameters=param_names,
             inputs=input_names,
             outputs=output_names,
-            shapes=output_shapes,
+            shapes=dummy_shapes,
             net_type="dag",
             num_workers=num_workers,
         )
@@ -269,6 +291,14 @@ class EncoderEnsemble(nn.Module):
                     torch.jit._fork(model.encoder, src_tokens_seq_first, src_lengths)
                 )
 
+        # underlying assumption is each model has same vocab_reduction_module
+        vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
+        possible_translation_tokens = None
+        if vocab_reduction_module is not None:
+            possible_translation_tokens = vocab_reduction_module(
+                src_tokens=src_tokens, decoder_input_tokens=None
+            )
+
         for i, (model, future) in enumerate(zip(self.models, futures)):
             if isinstance(model.encoder, TransformerEncoder):
                 encoder_out = future
@@ -280,13 +310,17 @@ class EncoderEnsemble(nn.Module):
             output_names.append(f"encoder_output_{i}")
             if hasattr(model.decoder, "_init_prev_states"):
                 states.extend(model.decoder._init_prev_states(encoder_out))
+            if (
+                hasattr(model.decoder, "_precompute_reduced_weights")
+                and possible_translation_tokens is not None
+            ):
+                states.extend(
+                    model.decoder._precompute_reduced_weights(
+                        possible_translation_tokens
+                    )
+                )
 
-        # underlying assumption is each model has same vocab_reduction_module
-        vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
-        if vocab_reduction_module is not None:
-            possible_translation_tokens = vocab_reduction_module(
-                src_tokens=src_tokens, decoder_input_tokens=None
-            )
+        if possible_translation_tokens is not None:
             outputs.append(possible_translation_tokens)
             output_names.append("possible_translation_tokens")
 
@@ -380,6 +414,8 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
         self.tile_internal = tile_internal
 
+        self.copied_from = {}
+
     def forward(self, input_tokens, prev_scores, timestep, *inputs):
         """
         Decoder step inputs correspond one-to-one to encoder outputs.
@@ -391,6 +427,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
         attn_weights_per_model = []
         state_outputs = []
         beam_axis_per_state = []
+        reduced_output_weights_per_model = []
 
         # from flat to (batch x 1)
         input_tokens = input_tokens.unsqueeze(1)
@@ -434,6 +471,19 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 )
                 next_state_input += 1
 
+                if (
+                    hasattr(model.decoder, "_precompute_reduced_weights")
+                    and possible_translation_tokens is not None
+                ):
+                    # (output_projection_w, output_projection_b)
+                    reduced_output_weights = inputs[
+                        next_state_input : next_state_input + 2
+                    ]
+                    next_state_input += 2
+                else:
+                    reduced_output_weights = None
+                reduced_output_weights_per_model.append(reduced_output_weights)
+
                 # no batching, we only care about care about "max" length
                 src_length_int = int(encoder_output.size()[0])
                 src_length = torch.LongTensor(np.array([src_length_int]))
@@ -458,6 +508,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
                     prev_hiddens,
                     prev_cells,
                     prev_input_feed,
+                    reduced_output_weights,
                 ):
                     # store cached states, use evaluation mode
                     model.decoder._is_incremental_eval = True
@@ -479,6 +530,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
                         encoder_out,
                         incremental_state=incremental_state,
                         possible_translation_tokens=possible_translation_tokens,
+                        reduced_output_weights=reduced_output_weights,
                     )
                     logits, attn_scores, _ = decoder_output
 
@@ -511,6 +563,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
                     prev_hiddens,
                     prev_cells,
                     prev_input_feed,
+                    reduced_output_weights,
                 )
 
                 futures.append(fut)
@@ -529,6 +582,10 @@ class DecoderBatchedStepEnsemble(nn.Module):
                     next_state_input += 4
 
                 encoder_out = (encoder_output, None, None)
+
+                # TODO(jcross)
+                reduced_output_weights = None
+                reduced_output_weights_per_model.append(reduced_output_weights)
 
                 def forked_section(
                     input_tokens,
@@ -575,6 +632,10 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 state_inputs = inputs[next_state_input : next_state_input + num_states]
                 next_state_input += num_states
 
+                # TODO(jcross)
+                reduced_output_weights = None
+                reduced_output_weights_per_model.append(reduced_output_weights)
+
                 def forked_section(
                     input_tokens,
                     encoder_out,
@@ -617,7 +678,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
             else:
                 raise RuntimeError(f"Not a supported model: {type(model)}")
 
-        for (model, fut) in zip(self.models, futures):
+        for i, (model, fut) in enumerate(zip(self.models, futures)):
             if (
                 isinstance(model, rnn.RNNModel)
                 or isinstance(model, char_source_model.CharSourceModel)
@@ -637,6 +698,12 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
                 state_outputs.append(next_input_feed)
                 beam_axis_per_state.append(0)
+
+                if reduced_output_weights_per_model[i] is not None:
+                    state_outputs.extend(reduced_output_weights_per_model[i])
+                    beam_axis_per_state.extend(
+                        [None for _ in reduced_output_weights_per_model[i]]
+                    )
 
             elif isinstance(model, transformer.TransformerModel) or isinstance(
                 model, char_source_transformer_model.CharSourceTransformerModel
@@ -730,7 +797,12 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
         for i, state in enumerate(state_outputs):
             beam_axis = beam_axis_per_state[i]
-            next_state = state.index_select(dim=beam_axis, index=prev_hypos)
+            if beam_axis is None:
+                next_state = state
+                # to ensure correct Caffe2 export during save_to_db()
+                self.copied_from[f"state_output_{i}"] = f"state_input_{i}"
+            else:
+                next_state = state.index_select(dim=beam_axis, index=prev_hypos)
             outputs.append(next_state)
             self.output_names.append(f"state_output_{i}")
             self.input_names.append(f"state_input_{i}")
@@ -799,6 +871,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
             input_names=self.input_names,
             output_names=self.output_names,
             num_workers=2 * len(self.models),
+            copied_from=self.copied_from,
         )
 
 
@@ -1090,6 +1163,16 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
             prev_input_feed = inputs[next_state_input].view(1, -1)
             next_state_input += 1
 
+            if (
+                hasattr(model.decoder, "_precompute_reduced_weights")
+                and possible_translation_tokens is not None
+            ):
+                # (output_projection_w, output_projection_b)
+                reduced_output_weights = inputs[next_state_input : next_state_input + 2]
+                next_state_input += 2
+            else:
+                reduced_output_weights = None
+
             # no batching, we only care about care about "max" length
             src_length_int = int(encoder_output.size()[0])
             src_length = torch.LongTensor(np.array([src_length_int]))
@@ -1141,6 +1224,9 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
             for h, c in zip(next_hiddens, next_cells):
                 state_outputs.extend([h, c])
             state_outputs.append(next_input_feed)
+
+            if reduced_output_weights is not None:
+                state_outputs.extend(reduced_output_weights)
 
         average_log_probs = torch.mean(
             torch.cat(log_probs_per_model, dim=0), dim=0, keepdim=True

@@ -346,6 +346,7 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
         encoder_out,
         incremental_state=None,
         possible_translation_tokens=None,
+        reduced_output_weights=None,
     ):
         (_, _, _, src_lengths, src_tokens, src_embeddings) = encoder_out
         x, attn_scores = self.forward_unprojected(
@@ -353,24 +354,28 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
         )
         if not self.project_output:
             return x, attn_scores, None
-        output_projection_w = self.output_projection_w
-        output_projection_b = self.output_projection_b
         decoder_input_tokens = input_tokens.contiguous()
 
-        if self.vocab_reduction_module and possible_translation_tokens is None:
-            possible_translation_tokens = self.vocab_reduction_module(
-                src_tokens,
-                encoder_output=encoder_out,
-                decoder_input_tokens=decoder_input_tokens,
-            )
+        if reduced_output_weights is not None:
+            (output_projection_w, output_projection_b) = reduced_output_weights
+        else:
+            output_projection_w = self.output_projection_w
+            output_projection_b = self.output_projection_b
 
-        if possible_translation_tokens is not None:
-            output_projection_w = output_projection_w.index_select(
-                dim=0, index=possible_translation_tokens
-            )
-            output_projection_b = output_projection_b.index_select(
-                dim=0, index=possible_translation_tokens
-            )
+            if self.vocab_reduction_module and possible_translation_tokens is None:
+                possible_translation_tokens = self.vocab_reduction_module(
+                    src_tokens,
+                    encoder_output=encoder_out,
+                    decoder_input_tokens=decoder_input_tokens,
+                )
+
+            if possible_translation_tokens is not None:
+                output_projection_w = output_projection_w.index_select(
+                    dim=0, index=possible_translation_tokens
+                )
+                output_projection_b = output_projection_b.index_select(
+                    dim=0, index=possible_translation_tokens
+                )
 
         # avoiding transpose of projection weights during ONNX tracing
         batch_time_hidden = torch.onnx.operators.shape_as_tensor(x)
@@ -421,6 +426,15 @@ class DecoderWithOutputProjection(FairseqIncrementalDecoder):
             logits.add_(lex_logits)
 
         return logits, attn_scores, possible_translation_tokens
+
+    def _precompute_reduced_weights(self, possible_translation_tokens):
+        output_projection_w = self.output_projection_w.index_select(
+            dim=0, index=possible_translation_tokens
+        )
+        output_projection_b = self.output_projection_b.index_select(
+            dim=0, index=possible_translation_tokens
+        )
+        return (output_projection_w, output_projection_b)
 
     @abc.abstractmethod
     def forward_unprojected(
