@@ -112,7 +112,9 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             stem = stems[stem_i]
             txt_content.append(p + stem + s)
 
-        morph_hmm_model = unsupervised_morphology.MorphologyHMMParams()
+        morph_hmm_model = unsupervised_morphology.MorphologyHMMParams(
+            use_morph_likeness=False
+        )
         with patch("builtins.open") as mock_open:
             mock_open.return_value.__enter__ = mock_open
             mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
@@ -129,7 +131,9 @@ class TestUnsupervisedMorphology(unittest.TestCase):
         assert morph_hmm_model.affix_trans_probs["START"]["END"] == 0
 
     def test_emission_probs(self):
-        morph_hmm_model = unsupervised_morphology.MorphologyHMMParams()
+        morph_hmm_model = unsupervised_morphology.MorphologyHMMParams(
+            use_morph_likeness=False
+        )
         with patch("builtins.open") as mock_open:
             txt_content = [
                 "123 124 234 345",
@@ -146,7 +150,9 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             assert morph_hmm_model.emission_prob("END", "1") == 0
 
     def test_emission_log_probs(self):
-        morph_hmm_model = unsupervised_morphology.MorphologyHMMParams()
+        morph_hmm_model = unsupervised_morphology.MorphologyHMMParams(
+            use_morph_likeness=False
+        )
         with patch("builtins.open") as mock_open:
             txt_content = [
                 "123 124 234 345",
@@ -167,6 +173,42 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             assert (
                 morph_hmm_model.emission_log_probs("END", "1")
                 == morph_hmm_model.SMALL_CONST
+            )
+
+    def test_likeness_probs(self):
+        morph_hmm_model = unsupervised_morphology.MorphologyHMMParams(
+            use_morph_likeness=True
+        )
+        with patch("builtins.open") as mock_open:
+            txt_content = [
+                "123 124 234 345",
+                "112 122 123 345",
+                "123456789",
+                "123456 456789",
+            ]
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+            morph_hmm_model.init_uniform_params_from_data("no_exist_file.txt")
+
+            float_precision = 3
+            assert round(morph_hmm_model.morph_likeness["prefix"]["23"], 3) == round(
+                0.016515200181119086, float_precision
+            )
+            assert round(morph_hmm_model.morph_likeness["stem"]["23"], 3) == round(
+                0.9824677845172917, float_precision
+            )
+            assert round(morph_hmm_model.morph_likeness["suffix"]["23"], 3) == round(
+                0.0010170153015892497, float_precision
+            )
+
+            assert round(morph_hmm_model.morph_likeness["prefix"]["789"], 3) == round(
+                0.00024574366719647703, float_precision
+            )
+            assert round(morph_hmm_model.morph_likeness["stem"]["789"], 3) == round(
+                0.9957636518152019, float_precision
+            )
+            assert round(morph_hmm_model.morph_likeness["suffix"]["789"], 3) == round(
+                0.003990604517601711, float_precision
             )
 
     def test_transition_log_probs(self):
@@ -192,7 +234,7 @@ class TestUnsupervisedMorphology(unittest.TestCase):
 
     def test_segment_viterbi_no_smoothing(self):
         morph_hmm_model = unsupervised_morphology.MorphologyHMMParams(
-            smoothing_const=0.0
+            smoothing_const=0.0, use_morph_likeness=False
         )
         with patch("builtins.open") as mock_open:
             txt_content = [
@@ -212,7 +254,9 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             )
 
     def test_segment_viterbi_w_smoothing(self):
-        morph_hmm_model = unsupervised_morphology.MorphologyHMMParams()
+        morph_hmm_model = unsupervised_morphology.MorphologyHMMParams(
+            use_morph_likeness=False
+        )
         with patch("builtins.open") as mock_open:
             txt_content = [
                 "123 124 234 345",
@@ -229,7 +273,7 @@ class TestUnsupervisedMorphology(unittest.TestCase):
 
     def test_segment_word_no_smoothing(self):
         morph_hmm_model = unsupervised_morphology.MorphologyHMMParams(
-            smoothing_const=0.0
+            smoothing_const=0.0, use_morph_likeness=False
         )
         with patch("builtins.open") as mock_open:
             txt_content = [
@@ -402,13 +446,16 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
             # Running with forward-backward.
             unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
-                "no_exist_file.txt", smoothing_const=0.0
+                "no_exist_file.txt", smoothing_const=0.0, use_morph_likeness=False
             )
             unsupervised_model.expectation_maximization(10, 10)
 
             # Running with Viterbi-EM.
             unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
-                "no_exist_file.txt", smoothing_const=0.0, use_hardEM=True
+                "no_exist_file.txt",
+                smoothing_const=0.0,
+                use_hardEM=True,
+                use_morph_likeness=False,
             )
             unsupervised_model.expectation_maximization(10, 10)
 
@@ -424,7 +471,10 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
 
             unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
-                "no_exist_file.txt", smoothing_const=0.0, use_hardEM=True
+                "no_exist_file.txt",
+                smoothing_const=0.0,
+                use_hardEM=True,
+                use_morph_likeness=False,
             )
             assert unsupervised_model.segmentor.segment_viterbi("123123789") == (
                 ["prefix", "prefix", "stem"],
