@@ -124,6 +124,13 @@ def get_arg_parser():
         dest="length_slope",
         default=2,
     )
+    parser.add_option(
+        "--investigate",
+        action="store_true",
+        dest="investigate",
+        help="Manually investigate param values for error analysis.",
+        default=False,
+    )
     return parser
 
 
@@ -174,3 +181,42 @@ if __name__ == "__main__":
                     output.append(segment_cache[word])
                 writer.write(" ".join(output) + "\n")
         writer.close()
+
+    if options.investigate and options.model_path is not None:
+        model = unsupervised_morphology.MorphologyHMMParams.load(options.model_path)
+        segmentor = unsupervised_morphology.MorphologySegmentor(model)
+
+        while True:
+            message = " ".join(
+                [
+                    "input options: 1) e [str] for emission probs,",
+                    "2) t for transition params,",
+                    "3) l [str] for likeness params,",
+                    "4) s [str] for segmenting word:\n",
+                ]
+            )
+            input_command = input(message).strip().split()
+
+            if len(input_command) > 1 and (
+                input_command[0] == "e" or input_command[0] == "l"
+            ):
+                substr = input_command[1]
+                lookup = (
+                    model.morph_emit_probs
+                    if input_command[0] == "e"
+                    else model.morph_likeness
+                )
+                prefix_val = (
+                    lookup["prefix"][substr] if substr in lookup["prefix"] else 0
+                )
+                stem_val = lookup["stem"][substr] if substr in lookup["stem"] else 0
+                suffix_val = (
+                    lookup["suffix"][substr] if substr in lookup["suffix"] else 0
+                )
+                print(prefix_val, stem_val, suffix_val)
+            elif len(input_command) > 1 and input_command[0] == "s":
+                word = input_command[1]
+                segmented = segmentor.segment_word(word, add_affix_symbols=True)
+                print(segmented)
+            elif input_command[0] == "t":
+                print(model.affix_trans_probs)
