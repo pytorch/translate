@@ -318,17 +318,14 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             assert t[("suffix", "stem")] == 0
             assert t[("suffix", "suffix")] == 0
 
-        def test_forward_backward_with_smoothing(self):
-            """
-            Making sure that the algorithm works end-to-end.
-            """
-            with patch("builtins.open") as mock_open:
-                txt_content = ["123 12123"]
-                mock_open.return_value.__enter__ = mock_open
-                mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
-                unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
-                    "no_exist_file.txt", smoothing_const=0.0
-                )
+    def test_forward_backward_with_smoothing(self):
+        """
+        Making sure that the algorithm works end-to-end.
+        """
+        with patch("builtins.open") as mock_open:
+            txt_content = ["123 12123"]
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
             unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
                 "no_exist_file.txt", smoothing_const=0.1
             )
@@ -403,10 +400,44 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             ]
             mock_open.return_value.__enter__ = mock_open
             mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+            # Running with forward-backward.
             unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
                 "no_exist_file.txt", smoothing_const=0.0
             )
-            unsupervised_model.expectation_maximization(100, 10)
+            unsupervised_model.expectation_maximization(10, 10)
+
+            # Running with Viterbi-EM.
+            unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
+                "no_exist_file.txt", smoothing_const=0.0, use_hardEM=True
+            )
+            unsupervised_model.expectation_maximization(10, 10)
+
+    def test_get_expectations_from_viterbi(self):
+        with patch("builtins.open") as mock_open:
+            txt_content = [
+                "123 124 234 345",
+                "112 122 123 345",
+                "123456789",
+                "123456 456789",
+            ]
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+
+            unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
+                "no_exist_file.txt", smoothing_const=0.0, use_hardEM=True
+            )
+            assert unsupervised_model.segmentor.segment_viterbi("123123789") == (
+                ["prefix", "prefix", "stem"],
+                [0, 3, 6, 9],
+            )
+            e, t = unsupervised_model.get_expectations_from_viterbi("123123789")
+            assert e[("prefix", "123")] == 2
+            assert e[("stem", "789")] == 1
+            assert e[("suffix", "789")] == 0
+            assert t[("START", "prefix")] == 1
+            assert t[("prefix", "prefix")] == 1
+            assert t[("prefix", "stem")] == 1
+            assert t[("stem", "END")] == 1
 
     def test_save_load(self):
         with patch("builtins.open") as mock_open:
