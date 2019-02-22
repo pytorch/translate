@@ -373,6 +373,16 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
                 num_examples_limit=monolingual_num_examples_limit,
             )
 
+            def generate_fn(generator):
+                def _generate_fn(net_input):
+                    maxlen = int(
+                        self.args.max_len_a * net_input["src_tokens"].size(1)
+                        + self.args.max_len_b
+                    )
+                    return generator.generate(net_input, maxlen=maxlen)
+
+                return _generate_fn
+
             dataset_map[
                 f"{self.source_lang}-"
                 f"{self.target_lang}_{constants.MONOLINGUAL_DATA_IDENTIFIER}"
@@ -384,9 +394,7 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
                         # Remove EOS from the input before backtranslation.
                         remove_eos_from_src=True,
                     ),
-                    backtranslation_fn=bwd_generator.generate,
-                    max_len_a=self.args.max_len_a,
-                    max_len_b=self.args.max_len_b,
+                    backtranslation_fn=generate_fn(bwd_generator),
                     output_collater=TransformEosDataset(
                         dataset=tgt_dataset,
                         eos=self.target_dictionary.eos(),
@@ -405,9 +413,7 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
             ] = weighted_data.WeightedBacktranslationDataset(
                 dataset=BacktranslationDataset(
                     tgt_dataset=src_dataset,
-                    backtranslation_fn=fwd_generator.generate,
-                    max_len_a=self.args.max_len_a,
-                    max_len_b=self.args.max_len_b,
+                    backtranslation_fn=generate_fn(fwd_generator),
                     output_collater=TransformEosDataset(
                         dataset=src_dataset,
                         eos=self.source_dictionary.eos(),
