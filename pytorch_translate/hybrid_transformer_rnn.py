@@ -421,6 +421,25 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
 
         return states
 
+    def reorder_incremental_state(self, incremental_state, new_order):
+        # parent reorders attention model
+        super().reorder_incremental_state(incremental_state, new_order)
+
+        cached_state = utils.get_incremental_state(
+            self, incremental_state, "cached_state"
+        )
+        if cached_state is None:
+            return
+
+        # Last 2 elements of prev_states are encoder projections
+        # used for ONNX export
+        for i, state in enumerate(cached_state[:-2]):
+            cached_state[i] = state.index_select(1, new_order)
+
+        utils.set_incremental_state(
+            self, incremental_state, "cached_state", cached_state
+        )
+
 
 @register_model_architecture("hybrid_transformer_rnn", "hybrid_transformer_rnn")
 def base_architecture(args):
