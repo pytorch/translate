@@ -299,6 +299,26 @@ class EncoderEnsemble(nn.Module):
                 src_tokens=src_tokens, decoder_input_tokens=None
             )
 
+        # Precompute reduced decoder weight matrices.
+        # Once we have possible_translation_tokens, we need to gather rows
+        # out of each output_projection_{w,b} tensor for the decoders to
+        # use. We do it here because these reduced matrices are used on each
+        # step of the beam search, and this turns out to be a relatively
+        # expensive operation.
+        reduced_weights = {}
+        for i, model in enumerate(self.models):
+            if (
+                hasattr(model.decoder, "_precompute_reduced_weights")
+                and possible_translation_tokens is not None
+            ):
+                reduced_weights[i] = torch.jit._fork(
+                    model.decoder._precompute_reduced_weights,
+                    possible_translation_tokens,
+                )
+
+        # XXX: This loop is where we wait() for each encoder's output to be
+        # ready. If you're trying to add more ops, they should probably not
+        # go in this loop!
         for i, (model, future) in enumerate(zip(self.models, futures)):
             if isinstance(model.encoder, TransformerEncoder):
                 encoder_out = future
@@ -314,11 +334,7 @@ class EncoderEnsemble(nn.Module):
                 hasattr(model.decoder, "_precompute_reduced_weights")
                 and possible_translation_tokens is not None
             ):
-                states.extend(
-                    model.decoder._precompute_reduced_weights(
-                        possible_translation_tokens
-                    )
-                )
+                states.extend(torch.jit._wait(reduced_weights[i]))
 
         if possible_translation_tokens is not None:
             outputs.append(possible_translation_tokens)
