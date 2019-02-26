@@ -159,16 +159,6 @@ def validate_and_set_default_args(args):
 
     pytorch_translate_options.check_unsupported_fairseq_flags(args)
 
-    if args.local_num_gpus > args.distributed_world_size:
-        raise ValueError(
-            f"--local-num-gpus={args.local_num_gpus} must be "
-            f"<= --distributed-world-size={args.distributed_world_size}."
-        )
-    if args.local_num_gpus > torch.cuda.device_count():
-        raise ValueError(
-            f"--local-num-gpus={args.local_num_gpus} must be "
-            f"<= the number of GPUs: {torch.cuda.device_count()}."
-        )
     # Set default init method for multi-GPU training if the user didn't specify
     # them.
     if args.distributed_world_size > 1:
@@ -177,6 +167,17 @@ def validate_and_set_default_args(args):
             if not args.distributed_init_method
             else args.distributed_init_method
         )
+
+        if args.local_num_gpus > args.distributed_world_size:
+            raise ValueError(
+                f"--local-num-gpus={args.local_num_gpus} must be "
+                f"<= --distributed-world-size={args.distributed_world_size}."
+            )
+        if args.local_num_gpus > torch.cuda.device_count():
+            raise ValueError(
+                f"--local-num-gpus={args.local_num_gpus} must be "
+                f"<= the number of GPUs: {torch.cuda.device_count()}."
+            )
 
     if args.fp16 and getattr(args, "adversary", False):
         print(
@@ -658,24 +659,6 @@ def setup_epoch(args, epoch_itr, trainer):
     return itr, progress, extra_meters
 
 
-def single_process_main(args, trainer_class=Trainer, **train_step_kwargs):
-    """Train the model for multiple epochs."""
-    pytorch_translate_options.print_args(args)
-    trainer, task, epoch_itr = setup_training(args, trainer_class)
-    extra_state, epoch_itr, checkpoint_manager = setup_training_state(
-        args=args, trainer=trainer, task=task, epoch_itr=epoch_itr
-    )
-    train(
-        args=args,
-        extra_state=extra_state,
-        trainer=trainer,
-        task=task,
-        epoch_itr=epoch_itr,
-        checkpoint_manager=checkpoint_manager,
-        **train_step_kwargs,
-    )
-
-
 def multi_process_train(
     device_id: int,
     args,
@@ -695,7 +678,9 @@ def multi_process_train(
         init_fn()
     args.device_id = device_id
     args.distributed_rank = start_rank + device_id
-    torch.cuda.set_device(args.device_id)
+
+    if torch.cuda.is_available():
+        torch.cuda.set_device(args.device_id)
 
     trainer, task, epoch_itr = setup_training(args, trainer_class)
     # Distributed_init does initialization and works as a barrier.
@@ -745,7 +730,7 @@ def multi_process_main(
             trainer_class,
             train_step_kwargs,
         ),
-        nprocs=args.local_num_gpus,
+        nprocs=max(args.local_num_gpus, 1),  # Run on single CPU in case of no GPUs
         # We don't block here to allow caller to process output_queue in
         # parallel with training.
         join=False,
@@ -759,23 +744,19 @@ def main(args, trainer_class=Trainer, **train_step_kwargs):
     # wait while the master process is doing this.
     preprocess.preprocess_corpora(args)
 
-    if args.distributed_world_size == 1:
-        single_process_main(args, trainer_class, **train_step_kwargs)
-    else:
-        spawn_context, output_queue = multi_process_main(args=args, start_rank=0)
-
-        while not spawn_context.join(timeout=30):
-            # Periodically clears the output queue to ensure that the processes
-            # don't deadlock due to queue buffer being full. This is also
-            # necessary to ensure that processes join correctly, since a process
-            # may not terminate until all items it put on the queue have been
-            # consumed (per
-            # https://docs.python.org/3/library/multiprocessing.html#all-start-methods).
-            try:
-                while True:
-                    output_queue.get_nowait()
-            except queue.Empty:
-                pass
+    spawn_context, output_queue = multi_process_main(args=args, start_rank=0)
+    while not spawn_context.join(timeout=30):
+        # Periodically clears the output queue to ensure that the processes
+        # don't deadlock due to queue buffer being full. This is also
+        # necessary to ensure that processes join correctly, since a process
+        # may not terminate until all items it put on the queue have been
+        # consumed (per
+        # https://docs.python.org/3/library/multiprocessing.html#all-start-methods).
+        try:
+            while True:
+                output_queue.get_nowait()
+        except queue.Empty:
+            pass
 
 
 if __name__ == "__main__":
