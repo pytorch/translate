@@ -154,12 +154,8 @@ class SequenceGenerator(object):
                 ref = utils.strip_pad(s["target"][i, :], self.pad)
                 yield id, src, ref, hypos[i]
 
+    @torch.no_grad()
     def generate(self, encoder_input, beam_size=None, maxlen=None, prefix_tokens=None):
-        """Generate a batch of translations."""
-        with torch.no_grad():
-            return self._generate(encoder_input, beam_size, maxlen, prefix_tokens)
-
-    def _generate(self, encoder_input, beam_size=None, maxlen=None, prefix_tokens=None):
 
         src_tokens = encoder_input["src_tokens"]
 
