@@ -37,8 +37,8 @@ You should now be able to run the sample commands in the
 image versions under https://hub.docker.com/r/pytorch/translate/tags/.
 
 ### Install Translate from Source:
-These instructions were mainly tested on CentOS 7.4.1708 with a Tesla M40 card
-and a CUDA 8 installation. We highly encourage you to [report an issue](https://github.com/pytorch/translate/issues)
+These instructions were mainly tested on Ubuntu 16.04.5 LTS (Xenial Xerus) with a Tesla M60 card
+and a CUDA 9 installation. We highly encourage you to [report an issue](https://github.com/pytorch/translate/issues)
 if you are unable to install this project for your specific configuration.
 
 - If you don't already have an existing [Anaconda](https://www.anaconda.com/download/)
@@ -59,7 +59,7 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
   pushd translate
   ```
 
-- Install the combined [PyTorch](https://pytorch.org/) and [Caffe2](http://caffe2.ai/) Conda [package](https://anaconda.org/caffe2):
+- Install the [PyTorch](https://pytorch.org/) conda package:
 
   ```
   # Set to 8 or 9 depending on your CUDA version.
@@ -76,11 +76,8 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
   # Add LAPACK support for the GPU.
   conda install -y -c pytorch "magma-cuda${TMP_CUDA_VERSION}0"
 
-  # Install the combined PyTorch+Caffe2 conda package.
-  conda install -y -c caffe2 "pytorch-caffe2-cuda${TMP_CUDA_VERSION}.0-cudnn7"
-  # Force re-install of numpy 1.14 since the current version of the
-  # PyTorch+Caffe2 package downgrades it.
-  conda install -y numpy==1.14 --no-deps
+  # Install the combined PyTorch nightly conda package.
+  conda install pytorch-nightly cudatoolkit=${TMP_CUDA_VERSION}.0 -c pytorch
 
   # Install NCCL2.
   wget "https://s3.amazonaws.com/pytorch/nccl_2.1.15-1%2Bcuda${TMP_CUDA_VERSION}.0_x86_64.txz"
@@ -101,22 +98,23 @@ environment with Python 3.6, you can install one via [Miniconda3](https://conda.
   yes | pip install ./onnx 2>&1 | tee ONNX_OUT
   ```
 
+If you get a `Protobuf compiler not found` error, you need to install it:
+
+  ```
+  conda install -c anaconda protobuf
+  ```
+
+Then, try to install ONNX again:
+
+  ```
+  yes | pip install ./onnx 2>&1 | tee ONNX_OUT
+  ```
+
 - Build Translate:
 
   ```
   pip uninstall -y pytorch-translate
   python3 setup.py build develop
-  pushd pytorch_translate/cpp
-
-  mkdir build && pushd build
-  cmake \
-    -DCMAKE_PREFIX_PATH="${CONDA_PATH}/usr/local" \
-    -DCMAKE_INSTALL_PREFIX="${CONDA_PATH}" .. \
-    2>&1 | tee CMAKE_OUT
-  make 2>&1 | tee MAKE_OUT
-  # Return to the translate directory.
-  popd
-  popd
   ```
 
 Now you should be able to run the example scripts below!
