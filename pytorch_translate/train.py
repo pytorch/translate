@@ -159,16 +159,6 @@ def validate_and_set_default_args(args):
 
     pytorch_translate_options.check_unsupported_fairseq_flags(args)
 
-    if args.local_num_gpus > args.distributed_world_size:
-        raise ValueError(
-            f"--local-num-gpus={args.local_num_gpus} must be "
-            f"<= --distributed-world-size={args.distributed_world_size}."
-        )
-    if args.local_num_gpus > torch.cuda.device_count():
-        raise ValueError(
-            f"--local-num-gpus={args.local_num_gpus} must be "
-            f"<= the number of GPUs: {torch.cuda.device_count()}."
-        )
     # Set default init method for multi-GPU training if the user didn't specify
     # them.
     if args.distributed_world_size > 1:
@@ -177,6 +167,17 @@ def validate_and_set_default_args(args):
             if not args.distributed_init_method
             else args.distributed_init_method
         )
+
+        if args.local_num_gpus > args.distributed_world_size:
+            raise ValueError(
+                f"--local-num-gpus={args.local_num_gpus} must be "
+                f"<= --distributed-world-size={args.distributed_world_size}."
+            )
+        if args.local_num_gpus > torch.cuda.device_count():
+            raise ValueError(
+                f"--local-num-gpus={args.local_num_gpus} must be "
+                f"<= the number of GPUs: {torch.cuda.device_count()}."
+            )
 
     if args.fp16 and getattr(args, "adversary", False):
         print(
@@ -695,7 +696,9 @@ def multi_process_train(
         init_fn()
     args.device_id = device_id
     args.distributed_rank = start_rank + device_id
-    torch.cuda.set_device(args.device_id)
+
+    if torch.cuda.is_available():
+        torch.cuda.set_device(args.device_id)
 
     trainer, task, epoch_itr = setup_training(args, trainer_class)
     # Distributed_init does initialization and works as a barrier.
