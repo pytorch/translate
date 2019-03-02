@@ -277,6 +277,9 @@ class CharCNNEncoder(FairseqEncoder):
         # (enables ONNX tracing of length-sorted input with batch_size = 1)
         self.onnx_export_model = False
 
+    def prepare_for_onnx_export_(self):
+        self.onnx_export_model = True
+
     def set_gradient_tracking_mode(self, mode=True):
         """ This allows AdversarialTrainer to turn on retrain_grad when
         running adversarial example generation model."""
@@ -330,6 +333,10 @@ class CharCNNEncoder(FairseqEncoder):
         x = self.transformer_encoder_given_embeddings(
             x=x, positions=positions, encoder_padding_mask=encoder_padding_mask
         )
+
+        # tracing requires a tensor value
+        if self.onnx_export_model and encoder_padding_mask is None:
+            encoder_padding_mask = torch.Tensor([]).type_as(src_tokens)
 
         return x, src_tokens, encoder_padding_mask
 
