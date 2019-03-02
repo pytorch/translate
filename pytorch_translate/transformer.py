@@ -26,7 +26,7 @@ from pytorch_translate.semi_supervised import SemiSupervisedModel
 from pytorch_translate.utils import torch_find
 
 
-def build_embedding(dictionary, embed_dim, freeze, path=None):
+def build_embedding(dictionary, embed_dim, path=None, freeze=False):
     num_embeddings = len(dictionary)
     padding_idx = dictionary.pad()
     emb = TransformerTokenEmbedding(num_embeddings, embed_dim, padding_idx, freeze)
