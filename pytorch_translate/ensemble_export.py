@@ -1454,13 +1454,50 @@ class CharSourceEncoderEnsemble(nn.Module):
         # (seq_length, batch_size) for compatibility with Caffe2
         src_tokens_seq_first = src_tokens.t()
 
-        for i, model in enumerate(self.models):
+        futures = []
+        for model in self.models:
             # evaluation mode
             model.eval()
-
-            encoder_out = model.encoder(
-                src_tokens_seq_first, src_lengths, char_inds, word_lengths
+            futures.append(
+                torch.jit._fork(
+                    model.encoder,
+                    src_tokens_seq_first,
+                    src_lengths,
+                    char_inds,
+                    word_lengths,
+                )
             )
+
+        # underlying assumption is each model has same vocab_reduction_module
+        vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
+        possible_translation_tokens = None
+        if vocab_reduction_module is not None:
+            possible_translation_tokens = vocab_reduction_module(
+                src_tokens=src_tokens, decoder_input_tokens=None
+            )
+
+        # Precompute reduced decoder weight matrices.
+        # Once we have possible_translation_tokens, we need to gather rows
+        # out of each output_projection_{w,b} tensor for the decoders to
+        # use. We do it here because these reduced matrices are used on each
+        # step of the beam search, and this turns out to be a relatively
+        # expensive operation.
+        reduced_weights = {}
+        for i, model in enumerate(self.models):
+            if (
+                hasattr(model.decoder, "_precompute_reduced_weights")
+                and possible_translation_tokens is not None
+            ):
+                reduced_weights[i] = torch.jit._fork(
+                    model.decoder._precompute_reduced_weights,
+                    possible_translation_tokens,
+                )
+
+        # XXX: This loop is where we wait() for each encoder's output to be
+        # ready. If you're trying to add more ops, they should probably not
+        # go in this loop!
+        for i, (model, future) in enumerate(zip(self.models, futures)):
+            encoder_out = torch.jit._wait(future)
 
             # "primary" encoder output (vector representations per source token)
             encoder_outputs = encoder_out[0]
@@ -1469,13 +1506,13 @@ class CharSourceEncoderEnsemble(nn.Module):
 
             if hasattr(model.decoder, "_init_prev_states"):
                 states.extend(model.decoder._init_prev_states(encoder_out))
+            if (
+                hasattr(model.decoder, "_precompute_reduced_weights")
+                and possible_translation_tokens is not None
+            ):
+                states.extend(torch.jit._wait(reduced_weights[i]))
 
-        # underlying assumption is each model has same vocab_reduction_module
-        vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
-        if vocab_reduction_module is not None:
-            possible_translation_tokens = vocab_reduction_module(
-                src_tokens=src_tokens, decoder_input_tokens=None
-            )
+        if possible_translation_tokens is not None:
             outputs.append(possible_translation_tokens)
             output_names.append("possible_translation_tokens")
 
