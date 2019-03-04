@@ -463,7 +463,7 @@ class TestONNX(unittest.TestCase):
 
         self._test_ensemble_encoder_export_char_source(test_args)
 
-    def test_ensemble_encoder_export_char_cnn_hyrid(self):
+    def test_ensemble_encoder_export_char_cnn_hybrid(self):
         test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
 
         test_args.arch = "char_source_hybrid"
