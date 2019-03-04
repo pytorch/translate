@@ -147,16 +147,16 @@ class HybridTransformerRNNModel(FairseqModel):
         src_dict, tgt_dict = task.source_dictionary, task.target_dictionary
 
         encoder_embed_tokens = pytorch_translate_transformer.build_embedding(
-            src_dict,
-            args.encoder_embed_dim,
-            args.encoder_pretrained_embed,
-            args.encoder_freeze_embed,
+            dictionary=src_dict,
+            embed_dim=args.encoder_embed_dim,
+            path=args.encoder_pretrained_embed,
+            freeze=args.encoder_freeze_embed,
         )
         decoder_embed_tokens = pytorch_translate_transformer.build_embedding(
-            tgt_dict,
-            args.decoder_embed_dim,
-            args.decoder_pretrained_embed,
-            args.decoder_freeze_embed,
+            dictionary=tgt_dict,
+            embed_dim=args.decoder_embed_dim,
+            path=args.decoder_pretrained_embed,
+            freeze=args.decoder_freeze_embed,
         )
 
         encoder = pytorch_translate_transformer.TransformerEncoder(

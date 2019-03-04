@@ -147,10 +147,10 @@ class CharSourceHybridModel(hybrid_transformer_rnn.HybridTransformerRNNModel):
             char_source_model.verify_pretrain_params(args)
 
         encoder_embed_tokens = pytorch_translate_transformer.build_embedding(
-            src_dict,
-            args.encoder_embed_dim,
-            args.encoder_pretrained_embed,
-            args.encoder_freeze_embed,
+            dictionary=src_dict,
+            embed_dim=args.encoder_embed_dim,
+            path=args.encoder_pretrained_embed,
+            freeze=args.encoder_freeze_embed,
         )
         encoder = CharCNNEncoder(
             args,
@@ -172,10 +172,10 @@ class CharSourceHybridModel(hybrid_transformer_rnn.HybridTransformerRNNModel):
         )
 
         decoder_embed_tokens = pytorch_translate_transformer.build_embedding(
-            dst_dict,
-            args.decoder_embed_dim,
-            args.decoder_pretrained_embed,
-            args.decoder_freeze_embed,
+            dictionary=dst_dict,
+            embed_dim=args.decoder_embed_dim,
+            path=args.decoder_pretrained_embed,
+            freeze=args.decoder_freeze_embed,
         )
         decoder = hybrid_transformer_rnn.HybridRNNDecoder(
             args, src_dict, dst_dict, decoder_embed_tokens
