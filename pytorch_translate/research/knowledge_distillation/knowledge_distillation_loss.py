@@ -18,39 +18,13 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
         http://www.aclweb.org/anthology/D16-1139
         """
         super().__init__(args, task)
-        assert (
-            args.teacher_path
-        ), "Please specify at least one valid file for --teacher-path"
-        use_cuda = torch.cuda.is_available() and not self.args.cpu
-
-        # Load model ensemble from checkpoints
-        self.teacher_models, self.teacher_model_args, _ = pytorch_translate_utils.load_diverse_ensemble_for_inference(
-            args.teacher_path.split(":"), task
-        )
-
-        # Move models to device and to evaluation mode
-        if use_cuda:
-            for model in self.teacher_models:
-                model.cuda()
-        for model in self.teacher_models:
-            model.make_generation_fast_(
-                beamable_mm_beam_size=None if args.no_beamable_mm else args.beam
-            )
-
         self.kd_weight = getattr(args, "kd_weight", 0)
         if self.kd_weight < 0 or self.kd_weight > 1:
             raise ValueError(f"--kd-weight ({self.kd_weight}) must be in [0, 1]")
 
-        self.top_k_teacher_tokens = getattr(args, "top_k_teacher_tokens", 8)
-
     @staticmethod
     def add_args(parser):
         """Add criterion-specific arguments to the parser."""
-        parser.add_argument(
-            "--teacher-path",
-            metavar="FILE",
-            help="path(s) to teacher model file(s) colon separated",
-        )
         parser.add_argument(
             "--kd-weight",
             type=float,
@@ -60,18 +34,27 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
                 "negative log likelihood losses. Must be in [0.0, 1.0]",
             ),
         )
-        parser.add_argument(
-            "--top-k-teacher-tokens",
-            type=int,
-            default=8,
-            help=(
-                "Incorporating only the top k words from the teacher model.",
-                "We zero out all other possibilities and normalize the probabilities",
-                "based on the K top element.",
-                "If top-k-teacher-tokens=0, it backs up to the original way of",
-                "enumerating all.",
-            ),
-        )
+
+    def get_kd_loss(self, sample, student_probs, lprobs):
+        """
+        The second return argument is used for unit testing.
+
+        Args:
+            * sample: batched sample that has teacher score keys (top_k_scores and
+             top_k_indices)
+            * student_probs: tensor of student probabilities
+            * probs: flat version of student_probs
+        """
+        top_k_teacher_probs_normalized = sample["top_k_scores"]
+        indices = sample["top_k_indices"]
+
+        assert indices.shape[0:1] == student_probs.shape[0:1]
+
+        topk_mask = torch.zeros(student_probs.shape).type_as(student_probs)
+        topk_probs = topk_mask.scatter(2, indices, top_k_teacher_probs_normalized)
+        topk_probs_flat = topk_probs.view(-1, topk_probs.size(-1))
+        kd_loss = -torch.sum(topk_probs_flat * lprobs)
+        return kd_loss, topk_probs
 
     def forward(self, model, sample, reduce=True):
         """Compute the loss for the given sample.
@@ -84,40 +67,15 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
 
         # 1. Generate translation using student model
         net_output = model(**sample["net_input"])
-        lprobs = model.get_normalized_probs(net_output, log_probs=True)
+        student_probs = model.get_normalized_probs(net_output, log_probs=True)
         # [bsz, seqlen, vocab] -> [bsz*seqlen, vocab]
-        lprobs = lprobs.view(-1, lprobs.size(-1))
+        lprobs = student_probs.view(-1, student_probs.size(-1))
 
-        # 2. Generate translation using teacher models
-        avg_probs = None
-        for teacher_model in self.teacher_models:
-            teacher_output = teacher_model(**sample["net_input"])
-            probs = teacher_model.get_normalized_probs(teacher_output, log_probs=False)
-            if avg_probs is None:
-                avg_probs = probs
-            else:
-                avg_probs.add_(probs)
-        avg_probs.div_(len(self.teacher_models))
-        avg_probs = avg_probs.view(-1, avg_probs.size(-1)).detach()
-
-        if self.top_k_teacher_tokens > 0:
-            # Getting the topk probabilities, masking others, normalizing the topk
-            # probabilities.
-            top_k_teacher_tokens_avg_probs, indices = torch.topk(
-                avg_probs, k=self.top_k_teacher_tokens
-            )
-            top_k_teacher_tokens_probs_normalized = (
-                top_k_teacher_tokens_avg_probs
-                / torch.sum(top_k_teacher_tokens_avg_probs)
-            )
-            topk_mask = torch.zeros(avg_probs.shape).type_as(avg_probs)
-            topk_probs = topk_mask.scatter(
-                1, indices, top_k_teacher_tokens_probs_normalized
-            )
-
-            kd_loss = -torch.sum(topk_probs * lprobs)
-        else:
-            kd_loss = -torch.sum(avg_probs * lprobs)
+        # 2. Get translation from teacher models and calulate KD loss.
+        kd_loss = None
+        if "top_k_scores" in sample:
+            # top_k_scores is not present in the validation data.
+            kd_loss, _ = self.get_kd_loss(sample, student_probs, lprobs)
 
         # 3. Compute NLL loss with respect to the ground truth
         target = model.get_targets(sample, net_output).view(-1)
@@ -130,7 +88,10 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
         )
 
         # 4. Linearly interpolate between NLL and KD loss
-        loss = kd_loss * self.kd_weight + nll_loss * (1 - self.kd_weight)
+        if kd_loss is not None:
+            loss = kd_loss * self.kd_weight + nll_loss * (1 - self.kd_weight)
+        else:
+            loss = nll_loss
 
         if self.args.sentence_avg:
             sample_size = sample["target"].size(0)
