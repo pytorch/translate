@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import math
 from optparse import OptionParser
 
 from pytorch_translate.research.unsupervised_morphology import unsupervised_morphology
@@ -50,12 +51,6 @@ def get_arg_parser():
         default=None,
     )
     parser.add_option(
-        "--no-affix-symbol",
-        action="store_false",
-        dest="add_affix_symbols",
-        default=True,
-    )
-    parser.add_option(
         "--save-checkpoint", action="store_true", dest="save_checkpoint", default=False
     )
     parser.add_option(
@@ -66,69 +61,27 @@ def get_arg_parser():
         default=2,
     )
     parser.add_option(
-        "--normal-init",
-        action="store_true",
-        help="Initialize parameters with samples from normal distribution.",
-        dest="normal_init",
-        default=False,
-    )
-    parser.add_option(
-        "--normal-mean",
+        "--len-cost-pow",
         type="float",
-        help="Mean for the normal distribution in initialization.",
-        dest="normal_mean",
+        help="Power value for penalizing sequence for their length.",
+        dest="len_cost_pow",
         default=2,
     )
     parser.add_option(
         "--hard-em", action="store_true", dest="use_hardEM", default=False
     )
     parser.add_option(
-        "--normal-stddev",
-        type="float",
-        help="Standard deviation for the normal distribution in initialization.",
-        dest="normal_stddev",
-        default=1,
-    )
-    parser.add_option(
-        "--no-morph-likeness",
-        action="store_false",
-        help="Turn off morph likeness based on perplexity.",
-        dest="use_morph_likeness",
-        default=True,
-    )
-    parser.add_option(
-        "--perplexity-threshold",
-        type="float",
-        help="Perplexity threshold in affix likeness equation.",
-        dest="perplexity_threshold",
-        default=10,
-    )
-    parser.add_option(
-        "--length-threshold",
-        type="float",
-        help="Length threshold in stem likeness equation.",
-        dest="length_threshold",
-        default=3,
-    )
-    parser.add_option(
-        "--perplexity-slope",
-        type="float",
-        help="Perplexity slope in affix likeness equation.",
-        dest="perplexity_slope",
-        default=1,
-    )
-    parser.add_option(
-        "--length-slope",
-        type="float",
-        help="Length slope in stem likeness equation.",
-        dest="length_slope",
-        default=2,
-    )
-    parser.add_option(
         "--investigate",
         action="store_true",
         dest="investigate",
         help="Manually investigate param values for error analysis.",
+        default=False,
+    )
+    parser.add_option(
+        "--context",
+        action="store_true",
+        dest="context",
+        help="Use transition probabilities.",
         default=False,
     )
     return parser
@@ -141,15 +94,8 @@ if __name__ == "__main__":
         model = unsupervised_morphology.UnsupervisedMorphology(
             input_file=options.train_file,
             smoothing_const=options.smooth_const,
-            use_normal_init=options.normal_init,
-            normal_mean=options.normal_mean,
-            normal_stddev=options.normal_stddev,
             use_hardEM=options.use_hardEM,
-            use_morph_likeness=options.use_morph_likeness,
-            perplexity_threshold=options.perplexity_threshold,
-            perplexity_slope=options.perplexity_slope,
-            length_threshold=options.length_threshold,
-            length_slope=options.length_slope,
+            len_cost_pow=options.len_cost_pow,
         )
         print("Number of training words", len(model.params.word_counts))
         model.expectation_maximization(
@@ -174,9 +120,7 @@ if __name__ == "__main__":
                 output = []
                 for word in line.strip().split():
                     if word not in segment_cache:
-                        segmented = segmentor.segment_word(
-                            word, add_affix_symbols=options.add_affix_symbols
-                        )
+                        segmented = segmentor.segment_word(word)
                         segment_cache[word] = segmented
                     output.append(segment_cache[word])
                 writer.write(" ".join(output) + "\n")
@@ -185,38 +129,26 @@ if __name__ == "__main__":
     if options.investigate and options.model_path is not None:
         model = unsupervised_morphology.MorphologyHMMParams.load(options.model_path)
         segmentor = unsupervised_morphology.MorphologySegmentor(model)
-
         while True:
             message = " ".join(
                 [
                     "input options: 1) e [str] for emission probs,",
-                    "2) t for transition params,",
-                    "3) l [str] for likeness params,",
-                    "4) s [str] for segmenting word:\n",
+                    "2) s [str] for segmenting word:\n",
                 ]
             )
             input_command = input(message).strip().split()
 
-            if len(input_command) > 1 and (
-                input_command[0] == "e" or input_command[0] == "l"
-            ):
-                substr = input_command[1]
-                lookup = (
-                    model.morph_emit_probs
-                    if input_command[0] == "e"
-                    else model.morph_likeness
+            if len(input_command) > 1 and input_command[0] == "e":
+                e = (
+                    model.morph_emit_probs[input_command[1]]
+                    if input_command[1] in model.morph_emit_probs
+                    else 0
                 )
-                prefix_val = (
-                    lookup["prefix"][substr] if substr in lookup["prefix"] else 0
-                )
-                stem_val = lookup["stem"][substr] if substr in lookup["stem"] else 0
-                suffix_val = (
-                    lookup["suffix"][substr] if substr in lookup["suffix"] else 0
-                )
-                print(prefix_val, stem_val, suffix_val)
+                ln = math.pow(len(input_command[1]) - 1, model.len_cost_pow)
+                cost_coef = math.exp(-ln)
+
+                emission_prob = model.emission_prob(input_command[1])
+                print(e, cost_coef, e * cost_coef)
             elif len(input_command) > 1 and input_command[0] == "s":
-                word = input_command[1]
-                segmented = segmentor.segment_word(word, add_affix_symbols=True)
+                segmented = segmentor.segment_word(input_command[1])
                 print(segmented)
-            elif input_command[0] == "t":
-                print(model.affix_trans_probs)
