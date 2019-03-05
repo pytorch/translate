@@ -46,6 +46,8 @@ from pytorch_translate import (
 from pytorch_translate.dual_learning import dual_learning_criterion  # noqa
 from pytorch_translate.dual_learning import dual_learning_task  # noqa
 from pytorch_translate.research.knowledge_distillation import (  # noqa
+    dual_decoder_kd_loss,
+    dual_decoder_kd_model,
     knowledge_distillation_loss,
 )
 from pytorch_translate.word_prediction import word_prediction_criterion  # noqa
