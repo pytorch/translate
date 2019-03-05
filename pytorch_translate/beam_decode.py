@@ -156,20 +156,19 @@ class SequenceGenerator(object):
 
     @torch.no_grad()
     def generate(self, encoder_input, beam_size=None, maxlen=None, prefix_tokens=None):
+        encoder_inputs = self.prepare_encoder_inputs(encoder_input)
+        encoder_outs, incremental_states = self._encode(encoder_input=encoder_inputs)
+        return self._decode_target(
+            encoder_input,
+            encoder_outs,
+            incremental_states,
+            self.diversity_sibling_gamma,
+            beam_size,
+            maxlen,
+            prefix_tokens,
+        )
 
-        src_tokens = encoder_input["src_tokens"]
-
-        bsz, srclen = src_tokens.size()
-        maxlen = min(maxlen, self.maxlen) if maxlen is not None else self.maxlen
-
-        # the max beam size is the dictionary size - 1, since we never select pad
-        beam_size = beam_size if beam_size is not None else self.beam_size
-        assert (
-            beam_size < self.vocab_size
-        ), "Beam size must be smaller than target vocabulary"
-
-        # Encode, expanding outputs for each example beam_size times
-        reorder_indices = torch.arange(bsz).view(-1, 1).repeat(1, beam_size).view(-1)
+    def prepare_encoder_inputs(self, encoder_input):
         if self.use_char_source:
             encoder_inputs = (
                 encoder_input["src_tokens"],
@@ -179,11 +178,30 @@ class SequenceGenerator(object):
             )
         else:
             encoder_inputs = (encoder_input["src_tokens"], encoder_input["src_lengths"])
-        encoder_outs, incremental_states = self._encode(
-            encoder_input=encoder_inputs,
-            reorder_indices=reorder_indices.type_as(src_tokens),
-        )
+        return encoder_inputs
 
+    def _decode_target(
+        self,
+        encoder_input,
+        encoder_outs,
+        incremental_states,
+        diversity_sibling_gamma=0.0,
+        beam_size=None,
+        maxlen=None,
+        prefix_tokens=None,
+    ):
+        src_tokens = encoder_input["src_tokens"]
+        beam_size = beam_size if beam_size is not None else self.beam_size
+        bsz = src_tokens.size(0)
+        reorder_indices = (
+            torch.arange(bsz).view(-1, 1).repeat(1, beam_size).view(-1).long()
+        )
+        for i, model in enumerate(self.models):
+            encoder_outs[i] = model.encoder.reorder_encoder_out(
+                encoder_out=encoder_outs[i],
+                new_order=reorder_indices.type_as(src_tokens),
+            )
+        maxlen = min(maxlen, self.maxlen) if maxlen is not None else self.maxlen
         # initialize buffers
         scores = src_tokens.new(bsz * beam_size, maxlen + 1).float().fill_(0)
         scores_buf = scores.clone()
@@ -385,10 +403,10 @@ class SequenceGenerator(object):
                     possible_tokens_size = self.vocab_size
                     if possible_translation_tokens is not None:
                         possible_tokens_size = possible_translation_tokens.size(0)
-                    if self.diversity_sibling_gamma > 0:
+                    if diversity_sibling_gamma > 0:
                         logprobs = self.diversity_sibling_rank(
                             logprobs.view(bsz, -1, possible_tokens_size),
-                            self.diversity_sibling_gamma,
+                            diversity_sibling_gamma,
                         )
                     cand_scores, cand_indices, cand_beams = self.search.step(
                         step,
@@ -530,7 +548,7 @@ class SequenceGenerator(object):
 
         return finalized
 
-    def _encode(self, encoder_input, reorder_indices):
+    def _encode(self, encoder_input):
         encoder_outs = []
         incremental_states = {}
         for model in self.models:
@@ -540,13 +558,7 @@ class SequenceGenerator(object):
                 incremental_states[model] = {}
             else:
                 incremental_states[model] = None
-
             encoder_out = model.encoder(*encoder_input)
-
-            # expand outputs for each example beam_size times
-            encoder_out = model.encoder.reorder_encoder_out(
-                encoder_out=encoder_out, new_order=reorder_indices
-            )
             encoder_outs.append(encoder_out)
         return encoder_outs, incremental_states
 
