@@ -183,7 +183,6 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
     """
 
     def _init_dims(self, args, src_dict, dst_dict, embed_tokens, left_pad):
-        super().__init__(dst_dict)
         self.dropout = args.dropout
 
         embed_dim = embed_tokens.embedding_dim
@@ -194,6 +193,9 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         self.num_layers = args.decoder_layers
         self.initial_input_dim = embed_dim
         self.input_dim = self.lstm_units + self.attention_dim
+
+        self.num_attention_heads = args.decoder_attention_heads
+        self.out_embed_dim = args.decoder_attention_heads
 
     def _init_components(self, args, src_dict, dst_dict, embed_tokens, left_pad):
         self.initial_rnn_layer = nn.LSTM(
@@ -207,9 +209,7 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
             )
 
         self.attention = fairseq_transformer.MultiheadAttention(
-            self.attention_dim,
-            args.decoder_attention_heads,
-            dropout=args.attention_dropout,
+            self.attention_dim, self.num_attention_heads, dropout=args.attention_dropout
         )
 
         self.extra_rnn_layers = nn.ModuleList([])
@@ -218,13 +218,12 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
                 nn.LSTM(input_size=self.input_dim, hidden_size=self.lstm_units)
             )
 
-        out_embed_dim = args.decoder_out_embed_dim
         self.bottleneck_layer = fairseq_transformer.Linear(
-            self.input_dim, out_embed_dim
+            self.input_dim, self.out_embed_dim
         )
 
-        self.embed_out = nn.Parameter(torch.Tensor(len(dst_dict), out_embed_dim))
-        nn.init.normal_(self.embed_out, mean=0, std=out_embed_dim ** -0.5)
+        self.embed_out = nn.Parameter(torch.Tensor(len(dst_dict), self.out_embed_dim))
+        nn.init.normal_(self.embed_out, mean=0, std=self.out_embed_dim ** -0.5)
 
         self.vocab_reduction_module = None
         if args.vocab_reduction_params:
@@ -235,6 +234,7 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         self.onnx_trace = False
 
     def __init__(self, args, src_dict, dst_dict, embed_tokens, left_pad=False):
+        super().__init__(dst_dict)
         self._init_dims(args, src_dict, dst_dict, embed_tokens, left_pad)
         self._init_components(args, src_dict, dst_dict, embed_tokens, left_pad)
 

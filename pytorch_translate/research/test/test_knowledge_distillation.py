@@ -7,6 +7,8 @@ import torch.nn.functional as F
 from pytorch_translate import char_source_model  # noqa
 from pytorch_translate import rnn  # noqa
 from pytorch_translate.research.knowledge_distillation import (
+    dual_decoder_kd_loss,
+    dual_decoder_kd_model,
     knowledge_distillation_loss,
 )
 from pytorch_translate.tasks import pytorch_translate_task as tasks
@@ -58,20 +60,60 @@ class TestKnowledgeDistillation(unittest.TestCase):
         kd_loss = -torch.sum(topk_probs_flat * lprobs)
         assert kd_loss >= 0
 
-    def _dummy_sample(self):
+    def test_dual_decoder_kd_loss(self):
+        test_args = test_utils.ModelParamsDict(arch="dual_decoder_kd")
+        _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        self.task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
+        sample = self._dummy_sample()
+        model = self.task.build_model(test_args)
+
+        test_args.kd_weight = 0.5
+        test_args.label_smoothing = 0.1
+        criterion = dual_decoder_kd_loss.DualDecoderCriterion(test_args, self.task)
+
+        src_tokens = sample["net_input"]["src_tokens"]
+        src_lengths = sample["net_input"]["src_lengths"]
+        prev_output_tokens = sample["net_input"]["prev_output_tokens"]
+
+        encoder_out = model.encoder(src_tokens, src_lengths)
+        student_output = model.student_decoder(prev_output_tokens, encoder_out)
+        teacher_output = model.teacher_decoder(prev_output_tokens, encoder_out)
+
+        teacher_loss, teacher_nll_loss, teacher_probs = criterion.compute_teacher_loss(
+            model, teacher_output, sample, reduce=True
+        )
+
+        # probabilities for each label should sum to one
+        assert all((teacher_probs.sum(dim=1) - 1.0).abs() < 1e-6)
+
+        student_loss, student_nll_loss = criterion.compute_student_loss(
+            model, student_output, sample, teacher_probs, reduce=True
+        )
+
+    def _dummy_sample(self, batch_size=3, input_seq_length=5, output_seq_length=4):
+
+        output_sequence = torch.randint(
+            low=self.task.dst_dict.nspecial,
+            high=len(self.task.dst_dict),
+            size=(batch_size, output_seq_length),
+        ).long()
+        eos_column = torch.LongTensor(
+            [self.task.dst_dict.eos_index] * batch_size
+        ).unsqueeze(1)
+        prev_output_tokens = torch.cat([eos_column, output_sequence], dim=1)
+        target_tokens = torch.cat([output_sequence, eos_column], dim=1)
+
         sample = {
             "net_input": {
                 "src_tokens": torch.randint(
                     low=self.task.src_dict.nspecial,
                     high=len(self.task.src_dict),
-                    size=(3, 3),
+                    size=(batch_size, input_seq_length),
                 ).long(),
-                "prev_output_tokens": torch.randint(
-                    low=self.task.src_dict.nspecial,
-                    high=len(self.task.src_dict),
-                    size=(3, 3),
-                ).long(),
-                "src_lengths": torch.LongTensor([3, 3, 3]),
-            }
+                "prev_output_tokens": prev_output_tokens,
+                "src_lengths": torch.LongTensor([input_seq_length] * batch_size),
+            },
+            "target": target_tokens,
+            "ntokens": target_tokens.numel(),
         }
         return sample
