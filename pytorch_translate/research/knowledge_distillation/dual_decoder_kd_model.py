@@ -130,7 +130,7 @@ class StudentHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
         embed_dim = embed_tokens.embedding_dim
         self.embed_tokens = embed_tokens
 
-        self.lstm_units = args.sudent_decoder_lstm_units
+        self.lstm_units = args.student_decoder_lstm_units
         self.attention_dim = args.encoder_embed_dim
         self.num_layers = args.student_decoder_layers
         self.initial_input_dim = embed_dim
@@ -143,12 +143,12 @@ class StudentHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
 @register_model_architecture("dual_decoder_kd", "dual_decoder_kd")
 def base_architecture(args):
     pytorch_translate_transformer.base_architecture(args)
-    args.sudent_decoder_embed_dim = getattr(args, "sudent_decoder_embed_dim", 128)
-    args.sudent_decoder_layers = getattr(args, "sudent_decoder_layers", 3)
-    args.sudent_decoder_attention_heads = getattr(
-        args, "sudent_decoder_attention_heads", 8
+    args.student_decoder_embed_dim = getattr(args, "student_decoder_embed_dim", 128)
+    args.student_decoder_layers = getattr(args, "student_decoder_layers", 3)
+    args.student_decoder_attention_heads = getattr(
+        args, "student_decoder_attention_heads", 8
     )
-    args.sudent_decoder_lstm_units = getattr(args, "sudent_decoder_lstm_units", 128)
-    args.sudent_decoder_out_embed_dim = getattr(
-        args, "sudent_decoder_out_embed_dim", 128
+    args.student_decoder_lstm_units = getattr(args, "student_decoder_lstm_units", 128)
+    args.student_decoder_out_embed_dim = getattr(
+        args, "student_decoder_out_embed_dim", 128
     )
