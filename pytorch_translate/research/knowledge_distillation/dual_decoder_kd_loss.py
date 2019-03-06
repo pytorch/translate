@@ -44,7 +44,6 @@ class DualDecoderCriterion(FairseqCriterion):
         3) logging outputs to display while training
         """
 
-        # assert(isinstance(model, ))
         src_tokens = sample["net_input"]["src_tokens"]
         src_lengths = sample["net_input"]["src_lengths"]
         prev_output_tokens = sample["net_input"]["prev_output_tokens"]
