@@ -671,6 +671,18 @@ def expand_generation_args(group, train=False):
         default=0.0,
         help=("The diversity rate of sibling_rank for generating diverse beams"),
     )
+    group.add_argument(
+        "--rescoring-model-path",
+        default=None,
+        type=str,
+        help=("Provide a path for the rescoring model"),
+    )
+    group.add_argument(
+        "--rescoring-strategy",
+        default=None,
+        type=str,
+        help=("Provide the name for rescoring strategy"),
+    )
 
     # These arguments are only used during training
     if train:

@@ -22,6 +22,7 @@ from pytorch_translate import (
     data as pytorch_translate_data,
     dictionary as pytorch_translate_dictionary,
     options as pytorch_translate_options,
+    rescoring,
     utils as pytorch_translate_utils,
 )
 from pytorch_translate.dual_learning.dual_learning_models import DualLearningModel
@@ -85,6 +86,7 @@ class TranslationInfo(NamedTuple):
     hypo_str: str
     hypo_score: float
     best_hypo_tokens: Optional[torch.Tensor]
+    hypo_tokens_after_rescoring: Optional[torch.Tensor]
 
 
 def build_sequence_generator(args, task, models):
@@ -185,6 +187,11 @@ def _generate_score(models, args, task, dataset, optimize=True):
     if args.report_oracle_bleu:
         oracle_scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
 
+    rescoring_model = rescoring.setup_rescoring(args)
+    rescoring_scorer = None
+    if rescoring_model:
+        rescoring_scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
+
     num_sentences = 0
     translation_samples = []
     with progress_bar.build_progress_bar(args, itr) as t:
@@ -200,11 +207,15 @@ def _generate_score(models, args, task, dataset, optimize=True):
         )
 
         for trans_info in _iter_translations(
-            args, task, dataset, translations, align_dict
+            args, task, dataset, translations, align_dict, rescoring_model
         ):
             scorer.add(trans_info.target_tokens, trans_info.hypo_tokens)
             if oracle_scorer is not None:
                 oracle_scorer.add(trans_info.target_tokens, trans_info.best_hypo_tokens)
+            if rescoring_scorer is not None:
+                rescoring_scorer.add(
+                    trans_info.target_tokens, trans_info.hypo_tokens_after_rescoring
+                )
 
             translated_sentences[trans_info.sample_id] = trans_info.hypo_str
             translated_scores[trans_info.sample_id] = trans_info.hypo_score
@@ -247,6 +258,11 @@ def _generate_score(models, args, task, dataset, optimize=True):
     if oracle_scorer is not None:
         print(f"| Oracle BLEU (best hypo in beam): {oracle_scorer.result_string()}")
 
+    if rescoring_scorer is not None:
+        print(
+            f"| Rescoring BLEU (top hypo in beam after rescoring):{rescoring_scorer.result_string()}"
+        )
+
     return scorer, num_sentences, gen_timer, translation_samples
 
 
@@ -284,7 +300,9 @@ def smoothed_sentence_bleu(task, target_tokens, hypo_tokens):
     return smoothed_bleu
 
 
-def _iter_translations(args, task, dataset, translations, align_dict):
+def _iter_translations(
+    args, task, dataset, translations, align_dict, rescoring_model=None
+):
     """Iterate over translations.
 
     This is a generator function which wraps the beam-search sequence generator,
@@ -401,6 +419,10 @@ def _iter_translations(args, task, dataset, translations, align_dict):
         if not collect_oracle_hypos:
             best_hypo_tokens = top_hypo_tokens
 
+        hypo_tokens_after_rescoring = rescoring.run_rescoring(
+            args, task, hypos[: args.nbest], src_tokens, rescoring_model
+        )
+
         yield TranslationInfo(
             sample_id=sample_id,
             src_tokens=src_tokens,
@@ -411,6 +433,7 @@ def _iter_translations(args, task, dataset, translations, align_dict):
             hypo_str=hypo_str,
             hypo_score=hypo_score,
             best_hypo_tokens=best_hypo_tokens,
+            hypo_tokens_after_rescoring=hypo_tokens_after_rescoring,
         )
 
 
