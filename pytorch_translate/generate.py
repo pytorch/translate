@@ -175,7 +175,10 @@ def _generate_score(models, args, task, dataset, optimize=True):
 
     # Generate and compute BLEU score
     dst_dict = task.target_dictionary
-    scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
+    if args.sacrebleu:
+        scorer = bleu.SacrebleuScorer()
+    else:
+        scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
     itr = get_eval_itr(args, models, task, dataset)
 
     oracle_scorer = None
