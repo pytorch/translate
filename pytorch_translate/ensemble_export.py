@@ -20,6 +20,7 @@ from caffe2.python.onnx import backend as caffe2_backend
 from caffe2.python.predictor import predictor_exporter
 from fairseq import tasks, utils
 from fairseq.models import ARCH_MODEL_REGISTRY
+from pytorch_translate.research.knowledge_distillation import dual_decoder_kd_model
 from pytorch_translate.tasks.pytorch_translate_task import DictionaryHolderTask
 from pytorch_translate.transformer import TransformerEncoder
 from pytorch_translate.word_prediction import word_prediction_model
@@ -102,6 +103,11 @@ def load_models_from_checkpoints(
             model = char_source_hybrid.CharSourceHybridModel.build_model(
                 checkpoint_data["args"], task
             )
+        elif architecture == "dual_decoder_kd":
+            model = dual_decoder_kd_model.DualDecoderKDModel.build_model(
+                checkpoint_data["args"], task
+            )
+            model = model.get_student_model()
         elif "semi_supervised" in architecture:
             model_args = copy.deepcopy(checkpoint_data["args"])
             model_args.source_vocab_file = src_dict_filename
@@ -265,6 +271,9 @@ class EncoderEnsemble(nn.Module):
         self.src_dict = src_dict
         for i, model in enumerate(self.models):
             model.prepare_for_onnx_export_()
+            if hasattr(model, "get_student_model"):
+                model = model.get_student_model()
+                self.models[i] = model
             self._modules[f"model_{i}"] = model
 
     def forward(self, src_tokens, src_lengths):
@@ -416,6 +425,9 @@ class DecoderBatchedStepEnsemble(nn.Module):
         self.models = models
         for i, model in enumerate(self.models):
             model.prepare_for_onnx_export_()
+            if hasattr(model, "get_student_model"):
+                model = model.get_student_model()
+                self.models[i] = model
             self._modules[f"model_{i}"] = model
 
         self.tgt_dict = tgt_dict
