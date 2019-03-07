@@ -22,6 +22,9 @@ conda install -y -c pytorch "magma-cuda${TMP_CUDA_VERSION}0"
 # Caffe2 relies on the past module.
 yes | pip install future
 
+# statistical significance requires pandas
+yes | pip install pandas
+
 # Install NCCL2.
 wget "https://s3.amazonaws.com/pytorch/nccl_2.1.15-1%2Bcuda${TMP_CUDA_VERSION}.0_x86_64.txz"
 TMP_NCCL_VERSION="nccl_2.1.15-1+cuda${TMP_CUDA_VERSION}.0_x86_64"
@@ -31,10 +34,8 @@ export LD_LIBRARY_PATH="${NCCL_ROOT_DIR}/lib:${LD_LIBRARY_PATH}"
 rm "${TMP_NCCL_VERSION}.txz"
 
 
-# Use the combined PyTorch/Caffe2 package instead of rebuilding from source.
-conda install -y -c caffe2 "pytorch-caffe2-cuda${TMP_CUDA_VERSION}.0-cudnn7"
-# Force re-install of numpy 1.14
-conda install -y numpy==1.14 --no-deps --force
+# Install the combined PyTorch nightly conda package.
+conda install pytorch-nightly cudatoolkit=${TMP_CUDA_VERSION}.0 -c pytorch
 
 echo "Starting to install ONNX"
 git clone --recursive https://github.com/onnx/onnx.git

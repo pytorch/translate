@@ -150,7 +150,7 @@ def merge_transpose_and_batchmatmul(caffe2_backend_rep):
 
         if operator.type == "Transpose":
             transpose_last_axes = False
-            for arg in operator.arg._values:
+            for arg in operator.arg:
                 if arg.name == "axes":
                     axes = arg.ints
                     if axes[-2:] == [len(axes) - 1, len(axes) - 2]:
