@@ -195,7 +195,7 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         self.input_dim = self.lstm_units + self.attention_dim
 
         self.num_attention_heads = args.decoder_attention_heads
-        self.out_embed_dim = args.decoder_attention_heads
+        self.out_embed_dim = args.decoder_out_embed_dim
 
     def _init_components(self, args, src_dict, dst_dict, embed_tokens, left_pad):
         self.initial_rnn_layer = nn.LSTM(
