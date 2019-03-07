@@ -23,6 +23,9 @@ from pytorch_translate.ensemble_export import (
     ForcedDecoder,
     merge_transpose_and_batchmatmul,
 )
+from pytorch_translate.research.knowledge_distillation import (  # noqa
+    dual_decoder_kd_model,
+)
 from pytorch_translate.tasks import pytorch_translate_task as tasks
 from pytorch_translate.test import utils as test_utils
 
@@ -551,3 +554,17 @@ class TestONNX(unittest.TestCase):
             test_args, return_caffe2_rep=True
         )
         merge_transpose_and_batchmatmul(caffe2_rep)
+
+    def test_ensemble_encoder_export_dual_decoder(self):
+        test_args = test_utils.ModelParamsDict(arch="dual_decoder_kd")
+        self._test_ensemble_encoder_export(test_args)
+
+    def test_batched_beam_decoder_dual_decoder_vocab_reduction(self):
+        test_args = test_utils.ModelParamsDict(arch="dual_decoder_kd")
+        lexical_dictionaries = test_utils.create_lexical_dictionaries()
+        test_args.vocab_reduction_params = {
+            "lexical_dictionaries": lexical_dictionaries,
+            "num_top_words": 5,
+            "max_translation_candidates_per_word": 1,
+        }
+        self._test_batched_beam_decoder_step(test_args)

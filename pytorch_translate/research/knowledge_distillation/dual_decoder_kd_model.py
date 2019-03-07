@@ -10,7 +10,7 @@ from pytorch_translate.utils import torch_find
 
 @register_model("dual_decoder_kd")
 class DualDecoderKDModel(FairseqModel):
-    def __init__(self, task, encoder, student_decoder, teacher_decoder):
+    def __init__(self, task, encoder, teacher_decoder, student_decoder):
         super().__init__(encoder, student_decoder)
         self.teacher_decoder = teacher_decoder
         self.student_decoder = student_decoder
@@ -106,7 +106,12 @@ class DualDecoderKDModel(FairseqModel):
             args, src_dict, tgt_dict, student_decoder_embed_tokens
         )
 
-        return DualDecoderKDModel(task, encoder, teacher_decoder, student_decoder)
+        return DualDecoderKDModel(
+            task=task,
+            encoder=encoder,
+            teacher_decoder=teacher_decoder,
+            student_decoder=student_decoder,
+        )
 
     def get_targets(self, sample, net_output):
         targets = sample["target"].view(-1)
