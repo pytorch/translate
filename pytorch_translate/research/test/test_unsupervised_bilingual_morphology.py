@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import math
 import shutil
 import tempfile
 import unittest
@@ -45,7 +46,10 @@ class TestUnsupervisedMorphology(unittest.TestCase):
         assert round(morph_hmm_model.morph_emit_probs["1234"], 3) == round(
             0.0062799043062200955, 3
         )
-        assert round(morph_hmm_model.translation_probs["1234"]["1234"], 3) == 1.0 / 200
+        v = 1.0 / 200
+        assert round(morph_hmm_model.translation_probs["1234"]["1234"], 3) == v
+        assert morph_hmm_model.translation_prob("1234", "1234") == v
+        assert morph_hmm_model.translation_log_prob("1234", "1234") == math.log(v)
         shutil.rmtree(tmp_dir)
 
     def test_zero_out_params(self):

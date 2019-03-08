@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import copy
+import math
 import pickle
 from collections import defaultdict
 from typing import Dict
@@ -67,6 +68,20 @@ class BilingualMorphologyHMMParams(unsupervised_morphology.MorphologyHMMParams):
         for morpheme in self.translation_probs.keys():
             for target_morpheme in self.translation_probs[morpheme].keys():
                 self.translation_probs[morpheme][target_morpheme] = 0.0
+
+    def translation_prob(self, src_morph: str, target_morph: str):
+        if (
+            src_morph in self.translation_probs
+            and target_morph in self.translation_probs[src_morph]
+        ):
+            return self.translation_probs[src_morph][target_morph]
+        return 0.0
+
+    def translation_log_prob(self, src_morph: str, target_morph: str):
+        trans_prob = self.translation_prob(src_morph, target_morph)
+        if trans_prob == 0.0:
+            return self.SMALL_CONST
+        return math.log(trans_prob)
 
     @staticmethod
     def load(file_path):
