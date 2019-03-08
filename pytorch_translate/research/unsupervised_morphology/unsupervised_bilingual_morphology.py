@@ -104,3 +104,72 @@ class BilingualMorphologyHMMParams(unsupervised_morphology.MorphologyHMMParams):
         )
         with open(file_path, "wb") as f:
             pickle.dump((e, s, lc, mml, tp), f)
+
+
+class BilingualMorphologySegmentor(unsupervised_morphology.MorphologySegmentor):
+    def segment_blingual_viterbi(self, src_sentence: str, dst_sentence: str):
+        """
+        This is a dynamic programming algorithm for segmenting a sentence by using
+        a modified version of the Viterbi algorithm that also uses the IBM model.
+        The main differences to MorphologySegmentor: it uses IBM model parameters
+        to find the best segmentation.
+        """
+        src_len, dst_len = len(src_sentence), len(dst_sentence)
+        pi = [self.params.SMALL_CONST for _ in range(src_len + 1)]
+        pi[0] = 0
+        back_pointer = [0 for _ in range(src_len + 1)]
+
+        # We first calculate the relative count of each morpheme in the target
+        # language.
+        target_morpheme_counts: Dict[str, float] = defaultdict(float)
+        for dst_start in range(dst_len):
+            # loop over end indices of morphemes.
+            for dst_end in range(
+                dst_start + 1, min(dst_len + 1, dst_start + self.params.max_morph_len)
+            ):
+                substr = dst_sentence[dst_start:dst_end]
+                target_morpheme_counts[substr] += 1
+        denom = sum(target_morpheme_counts.values())
+
+        target_morpheme_log_probs = {
+            morpheme: math.log(target_morpheme_counts[morpheme] / denom)
+            for morpheme in target_morpheme_counts.keys()
+        }
+
+        # loop over starting indices of morphemes.
+        for src_start in range(src_len):
+            # loop over end indices of morphemes.
+            for src_end in range(
+                src_start + 1, min(src_len + 1, src_start + self.params.max_morph_len)
+            ):
+                substr = src_sentence[src_start:src_end]
+                e = self.params.emission_log_prob(substr)
+
+                # Getting max prability with respect to the target side.
+                max_target_prob = max(
+                    target_morpheme_log_probs[morpheme]
+                    + self.params.translation_log_prob(substr, morpheme)
+                    for morpheme in target_morpheme_log_probs.keys()
+                )
+
+                log_prob = pi[src_start] + e + max_target_prob
+                if log_prob > pi[src_end]:
+                    pi[src_end] = log_prob
+                    # Saving backpointer for previous tag and index.
+                    back_pointer[src_end] = src_start
+
+        # finalizing the best segmentation.
+        indices = [src_len]  # backtracking indices for segmentation.
+        indices.append(back_pointer[-1])
+        while True:
+            last_index = indices[-1]
+            if last_index == 0:
+                break
+            start_index = back_pointer[last_index]
+            indices.append(start_index)
+            if start_index == 0:
+                break
+
+        # We should now reverse the backtracked list.
+        indices.reverse()
+        return indices
