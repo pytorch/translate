@@ -8,6 +8,7 @@ from os import path
 
 from pytorch_translate.research.unsupervised_morphology.unsupervised_bilingual_morphology import (
     BilingualMorphologyHMMParams,
+    BilingualMorphologySegmentor,
 )
 
 
@@ -65,6 +66,23 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             assert morph_hmm_model.morph_emit_probs[morph] == 0
             for target_morph in morph_hmm_model.translation_probs.keys():
                 assert morph_hmm_model.translation_probs[morph][target_morph] == 0
+        shutil.rmtree(tmp_dir)
+
+    def test_bilingual_segmentation(self):
+        morph_hmm_model = BilingualMorphologyHMMParams()
+
+        tmp_dir, f1, f2 = get_two_tmp_files(
+            "\n".join(src_txt_content), "\n".join(dst_txt_content)
+        )
+        morph_hmm_model.init_params_from_data(f1, f2)
+        segmentor = BilingualMorphologySegmentor(morph_hmm_model)
+        assert segmentor.segment_viterbi("1234 1234") == [0, 2, 4, 7, 9]
+        assert segmentor.segment_blingual_viterbi("1234 1234", "1234 1234") == [
+            0,
+            4,
+            7,
+            9,
+        ]
         shutil.rmtree(tmp_dir)
 
     def test_save_load(self):
