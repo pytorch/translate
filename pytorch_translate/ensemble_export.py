@@ -107,7 +107,6 @@ def load_models_from_checkpoints(
             model = dual_decoder_kd_model.DualDecoderKDModel.build_model(
                 checkpoint_data["args"], task
             )
-            model = model.get_student_model()
         elif "semi_supervised" in architecture:
             model_args = copy.deepcopy(checkpoint_data["args"])
             model_args.source_vocab_file = src_dict_filename
@@ -117,7 +116,11 @@ def load_models_from_checkpoints(
             model = ARCH_MODEL_REGISTRY[model_args.arch].build_model(model_args, task)
         else:
             raise RuntimeError("Architecture not supported: {architecture}")
+
         model.load_state_dict(checkpoint_data["model"])
+        if hasattr(model, "get_student_model"):
+            model = model.get_student_model()
+
         if isinstance(model, semi_supervised.SemiSupervisedModel):
             models.append(model.models["src-tgt"])
         else:
