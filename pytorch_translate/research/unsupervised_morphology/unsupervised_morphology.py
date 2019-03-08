@@ -52,7 +52,7 @@ class MorphologyHMMParams(object):
                 self.morph_emit_probs[morph] + self.smoothing_const
             ) / (denom * (1 + self.smoothing_const))
 
-    def zero_out_parmas(self):
+    def zero_out_params(self):
         """
         Resets parameter values for all parameters.
         """

@@ -52,7 +52,7 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             for morph in morph_hmm_model.morph_emit_probs.keys():
                 assert morph_hmm_model.morph_emit_probs[morph] > 0
 
-            morph_hmm_model.zero_out_parmas()
+            morph_hmm_model.zero_out_params()
             for morph in morph_hmm_model.morph_emit_probs.keys():
                 assert morph_hmm_model.morph_emit_probs[morph] == 0
 
