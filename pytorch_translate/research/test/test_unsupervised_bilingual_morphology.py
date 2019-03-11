@@ -9,6 +9,7 @@ from os import path
 from pytorch_translate.research.unsupervised_morphology.unsupervised_bilingual_morphology import (
     BilingualMorphologyHMMParams,
     BilingualMorphologySegmentor,
+    UnsupervisedBilingualMorphology,
 )
 
 
@@ -36,7 +37,7 @@ def get_two_tmp_files():
     return tmp_dir, file1, file2
 
 
-class TestUnsupervisedMorphology(unittest.TestCase):
+class TestUnsupervisedBilingualMorphology(unittest.TestCase):
     def test_morph_init(self):
         morph_hmm_model = BilingualMorphologyHMMParams()
 
@@ -73,9 +74,7 @@ class TestUnsupervisedMorphology(unittest.TestCase):
     def test_bilingual_segmentation(self):
         morph_hmm_model = BilingualMorphologyHMMParams()
 
-        tmp_dir, f1, f2 = get_two_tmp_files(
-            "\n".join(src_txt_content), "\n".join(dst_txt_content)
-        )
+        tmp_dir, f1, f2 = get_two_tmp_files()
         morph_hmm_model.init_params_from_data(f1, f2)
         segmentor = BilingualMorphologySegmentor(morph_hmm_model)
         assert segmentor.segment_viterbi("1234 1234") == [0, 2, 4, 7, 9]
@@ -103,4 +102,13 @@ class TestUnsupervisedMorphology(unittest.TestCase):
         assert morph_hmm_model.len_cost_pow == loaded_params.len_cost_pow
         assert morph_hmm_model.max_morph_len == loaded_params.max_morph_len
         assert morph_hmm_model.translation_probs == loaded_params.translation_probs
+        shutil.rmtree(tmp_dir)
+
+    def test_forward_backward(self):
+        tmp_dir, f1, f2 = get_two_tmp_files()
+        unsupervised_model = UnsupervisedBilingualMorphology(
+            src_file=f1, dst_file=f2, smoothing_const=0.0
+        )
+        print(unsupervised_model.params.smoothing_const)
+        # todo will add stuff here later.
         shutil.rmtree(tmp_dir)
