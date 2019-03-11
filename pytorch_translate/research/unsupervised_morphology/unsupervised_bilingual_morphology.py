@@ -6,10 +6,14 @@ import pickle
 from collections import defaultdict
 from typing import Dict
 
-from pytorch_translate.research.unsupervised_morphology import unsupervised_morphology
+from pytorch_translate.research.unsupervised_morphology.unsupervised_morphology import (
+    MorphologyHMMParams,
+    MorphologySegmentor,
+    UnsupervisedMorphology,
+)
 
 
-class BilingualMorphologyHMMParams(unsupervised_morphology.MorphologyHMMParams):
+class BilingualMorphologyHMMParams(MorphologyHMMParams):
     def __init__(
         self,
         smoothing_const: float = 0.1,
@@ -106,7 +110,7 @@ class BilingualMorphologyHMMParams(unsupervised_morphology.MorphologyHMMParams):
             pickle.dump((e, s, lc, mml, tp), f)
 
 
-class BilingualMorphologySegmentor(unsupervised_morphology.MorphologySegmentor):
+class BilingualMorphologySegmentor(MorphologySegmentor):
     def segment_blingual_viterbi(self, src_sentence: str, dst_sentence: str):
         """
         This is a dynamic programming algorithm for segmenting a sentence by using
@@ -173,3 +177,29 @@ class BilingualMorphologySegmentor(unsupervised_morphology.MorphologySegmentor):
         # We should now reverse the backtracked list.
         indices.reverse()
         return indices
+
+
+class UnsupervisedBilingualMorphology(UnsupervisedMorphology):
+    def __init__(
+        self,
+        src_file: str,
+        dst_file: str,
+        smoothing_const: float = 0.1,
+        use_hardEM: bool = False,
+        max_morph_len: int = 8,
+        len_cost_pow: float = 2.0,
+    ):
+        """
+        Args:
+            use_hardEM: Choosing between soft EM or Viterbi EM (hard EM) algorithm.
+        """
+        self.params = BilingualMorphologyHMMParams(
+            smoothing_const=smoothing_const,
+            max_morph_len=max_morph_len,
+            len_cost_pow=len_cost_pow,
+        )
+        self.use_hardEM = use_hardEM
+        self.params.init_params_from_data(src_file, dst_file)
+        self.segmentor = (
+            BilingualMorphologySegmentor(self.params) if self.use_hardEM else None
+        )
