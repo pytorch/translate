@@ -43,13 +43,12 @@ class TestUnsupervisedBilingualMorphology(unittest.TestCase):
 
         tmp_dir, f1, f2 = get_two_tmp_files()
         morph_hmm_model.init_params_from_data(f1, f2)
-        print(len(morph_hmm_model.morph_emit_probs))
         assert len(morph_hmm_model.morph_emit_probs) == 200
         assert round(morph_hmm_model.morph_emit_probs["1234"], 3) == round(
             0.0062799043062200955, 3
         )
-        v = 1.0 / 200
-        assert round(morph_hmm_model.translation_probs["1234"]["1234"], 3) == v
+        v = 1.0 / 201
+        assert morph_hmm_model.translation_probs["1234"]["1234"] == v
         assert morph_hmm_model.translation_prob("1234", "1234") == v
         assert morph_hmm_model.translation_log_prob("1234", "1234") == math.log(v)
         shutil.rmtree(tmp_dir)
@@ -111,4 +110,26 @@ class TestUnsupervisedBilingualMorphology(unittest.TestCase):
         )
         print(unsupervised_model.params.smoothing_const)
         # todo will add stuff here later.
+        shutil.rmtree(tmp_dir)
+
+    def test_get_morpheme_counts(self):
+        tmp_dir, f1, f2 = get_two_tmp_files()
+        unsupervised_model = UnsupervisedBilingualMorphology(
+            src_file=f1, dst_file=f2, smoothing_const=0.0
+        )
+        morph_counts_with_null = unsupervised_model.params.get_morpheme_counts(
+            "1234", take_log=False, include_null=True
+        )
+        assert len(morph_counts_with_null) == 11
+        morph_counts_without_null = unsupervised_model.params.get_morpheme_counts(
+            "1234", take_log=True, include_null=False
+        )
+        assert len(morph_counts_without_null) == 10
+        assert morph_counts_without_null["12"] == math.log(morph_counts_with_null["12"])
+
+        morph_counts_with_repeats = unsupervised_model.params.get_morpheme_counts(
+            "12312", take_log=False, include_null=True
+        )
+        assert len(morph_counts_with_repeats) == 13
+        assert morph_counts_with_repeats["12"] == 2
         shutil.rmtree(tmp_dir)

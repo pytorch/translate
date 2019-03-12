@@ -35,6 +35,7 @@ class BilingualMorphologyHMMParams(MorphologyHMMParams):
         # Probability of translating morpheme x in source to different possible
         # values y in target: t(y|x)
         self.translation_probs: Dict[str, Dict] = defaultdict()
+        self.null_symbol = "_null_"
 
     def init_params_from_data(self, source_txt_file, target_txt_file):
         """
@@ -46,7 +47,7 @@ class BilingualMorphologyHMMParams(MorphologyHMMParams):
         """
         super().init_params_from_data(input_file_path=source_txt_file)
 
-        target_morphs = set()
+        target_morphs = {self.null_symbol}  # Should have null translation.
         with open(target_txt_file, "r", encoding="utf-8") as input_stream:
             for line in input_stream:
                 sen = line.strip()
@@ -57,7 +58,7 @@ class BilingualMorphologyHMMParams(MorphologyHMMParams):
         # We just initialize the translation probabilities uniformly.
         self.translation_probs: Dict[str, Dict] = defaultdict()
         uniform_target_probability = {
-            morph: 1.0 / len(self.morph_emit_probs) for morph in target_morphs
+            morph: 1.0 / len(target_morphs) for morph in target_morphs
         }
         for source_morph in self.morph_emit_probs.keys():
             self.translation_probs[source_morph] = copy.deepcopy(
@@ -109,6 +110,31 @@ class BilingualMorphologyHMMParams(MorphologyHMMParams):
         with open(file_path, "wb") as f:
             pickle.dump((e, s, lc, mml, tp), f)
 
+    def get_morpheme_counts(
+        self, sentence: str, take_log: bool = False, include_null: bool = True
+    ):
+        """
+        This methods first counts all possible morphemes in a sentence, and then
+        returns their fractional count.
+        """
+        s_len = len(sentence)
+        # We first calculate the relative count of each morpheme in the target
+        # language.
+        target_morpheme_counts: Dict[str, float] = defaultdict(float)
+        for start in range(s_len):
+            # loop over end indices of morphemes.
+            for end in range(start + 1, min(s_len + 1, start + self.max_morph_len)):
+                substr = sentence[start:end]
+                target_morpheme_counts[substr] += 1
+        if include_null:
+            target_morpheme_counts[self.null_symbol] = 1
+
+        if take_log is True:
+            for morph in target_morpheme_counts.keys():
+                target_morpheme_counts[morph] = math.log(target_morpheme_counts[morph])
+
+        return target_morpheme_counts
+
 
 class BilingualMorphologySegmentor(MorphologySegmentor):
     def segment_blingual_viterbi(self, src_sentence: str, dst_sentence: str):
@@ -118,27 +144,14 @@ class BilingualMorphologySegmentor(MorphologySegmentor):
         The main differences to MorphologySegmentor: it uses IBM model parameters
         to find the best segmentation.
         """
-        src_len, dst_len = len(src_sentence), len(dst_sentence)
+        src_len = len(src_sentence)
         pi = [self.params.SMALL_CONST for _ in range(src_len + 1)]
         pi[0] = 0
         back_pointer = [0 for _ in range(src_len + 1)]
 
-        # We first calculate the relative count of each morpheme in the target
-        # language.
-        target_morpheme_counts: Dict[str, float] = defaultdict(float)
-        for dst_start in range(dst_len):
-            # loop over end indices of morphemes.
-            for dst_end in range(
-                dst_start + 1, min(dst_len + 1, dst_start + self.params.max_morph_len)
-            ):
-                substr = dst_sentence[dst_start:dst_end]
-                target_morpheme_counts[substr] += 1
-        denom = sum(target_morpheme_counts.values())
-
-        target_morpheme_log_probs = {
-            morpheme: math.log(target_morpheme_counts[morpheme] / denom)
-            for morpheme in target_morpheme_counts.keys()
-        }
+        target_morpheme_log_probs = self.params.get_morpheme_counts(
+            dst_sentence, take_log=True, include_null=True
+        )
 
         # loop over starting indices of morphemes.
         for src_start in range(src_len):
