@@ -4,6 +4,8 @@ import copy
 import math
 import pickle
 from collections import defaultdict
+from itertools import chain
+from multiprocessing import Pool
 from typing import Dict, Tuple
 
 from pytorch_translate.research.unsupervised_morphology.unsupervised_morphology import (
@@ -346,3 +348,153 @@ class UnsupervisedBilingualMorphology(UnsupervisedMorphology):
             translation_expectations[(substr, target_morphs[i])] += 1
 
         return emission_expectations, translation_expectations
+
+    def expectation_substep(self, sentence_pairs):
+        """
+        This method is subprocess for the expectation method.
+        """
+        emission_expectations = defaultdict(float)
+        translation_expectations: Dict[Tuple, Dict] = defaultdict(float)
+
+        for sen_pair in sentence_pairs:
+            if sen_pair is None:
+                continue
+            src_sentence, dst_sentence = sen_pair
+
+            if self.use_hardEM:
+                e, t = self.get_expectations_from_viterbi(src_sentence, dst_sentence)
+            else:
+                e, t = self.forward_backward(src_sentence, dst_sentence)
+
+            for e_key in e.keys():
+                emission_expectations[e_key] += e[e_key]
+
+            for t_key in t.keys():
+                translation_expectations[t_key] += t[t_key]
+
+        return emission_expectations, translation_expectations
+
+    def expectation(self, pool, train_sens_chunks):
+        """
+        This method runs the expectation step with a chunked list of training
+            sentences.
+        Args:
+            pool: Pool object for multi-threading.
+            train_sens_chunks: a list of sentences (chunked for multi-threading).
+        """
+        expectations = pool.map(self.expectation_substep, train_sens_chunks)
+        emission_expectations: Dict[str, float] = defaultdict(float)
+        translation_expectations: Dict[Tuple, float] = defaultdict(float)
+        for e_key in set(chain(*[list(e[0].keys()) for e in expectations])):
+            emission_expectations[e_key] = sum(e[0][e_key] for e in expectations)
+        for t_key in set(chain(*[list(e[1].keys()) for e in expectations])):
+            translation_expectations[t_key] = sum(e[1][t_key] for e in expectations)
+
+        return emission_expectations, translation_expectations
+
+    def maximization(self, emission_expectations, translation_expectations):
+        """
+        Runs the maximization algorithm.
+        Args:
+            emission_expectations: the expected counts for each morpheme.
+        """
+        smoothing_const = self.params.smoothing_const
+        num_morphs = len(self.params.morph_emit_probs)
+        d = sum(emission_expectations.values())
+        for morpheme in self.params.morph_emit_probs.keys():
+            e = emission_expectations[morpheme]
+            if d > 0 or smoothing_const > 0:
+                self.params.morph_emit_probs[morpheme] = (e + smoothing_const) / (
+                    (num_morphs * smoothing_const) + d
+                )
+            else:  # for cases of underflowing
+                self.params.morph_emit_probs[morpheme] = 1.0 / num_morphs
+
+        for morpheme in self.params.translation_probs.keys():
+            d = sum(translation_expectations[morpheme].values())
+            num_dst_morphs = len(self.params.translation_probs[morpheme])
+            for dst_morph in self.params.translation_probs[morpheme].keys():
+                t = self.params.translation_probs[morpheme][dst_morph]
+                if d > 0 or smoothing_const > 0:
+                    self.params.translation_probs[morpheme][dst_morph] = (
+                        t + smoothing_const
+                    ) / ((num_dst_morphs * smoothing_const) + d)
+                else:  # for cases of underflowing
+                    self.params.translation_probs[morpheme][dst_morph] = (
+                        1.0 / num_dst_morphs
+                    )
+
+    def expectation_maximization(
+        self,
+        src_file_path: str,
+        dst_file_path: str,
+        num_iters: int,
+        num_cpus: int = 10,
+        model_path: str = None,
+    ):
+        """
+        Runs the EM algorithm.
+        Args:
+            num_iters: Number of EM epochs.
+            num_cpus: Number of cpus for parallel executation of the E step.
+        """
+        pool = Pool(num_cpus)
+
+        for epoch in range(num_iters):
+            print("starting epoch %i" % epoch)
+            self.em_step(pool, src_file_path, dst_file_path, num_cpus, model_path)
+
+    def em_step(self, pool, src_file_path, dst_file_path, num_cpus, model_path):
+        """
+        One EM step of the EM algorithm.
+        """
+        print("starting expectation step")
+        train_sentences = []
+        src_morph_expectations = defaultdict(float)
+        translation_expectations: Dict[str, Dict] = defaultdict(dict)
+        dst_file_reader = open(dst_file_path, "r")
+        with open(src_file_path, "r") as train_open:
+            for line in train_open:
+                target_sentece = dst_file_reader.readline().strip()
+                train_sentences.append((line.strip(), target_sentece))
+                # Not allowing to keep many sentences in memory.
+                if len(train_sentences) > 100000:
+                    chunk_size = math.ceil(float(len(train_sentences)) / num_cpus)
+                    train_sens_chunks = UnsupervisedMorphology.group_to(
+                        chunk_size, train_sentences
+                    )
+                    ee, tt = self.expectation(pool, train_sens_chunks)
+                    for key in ee.keys():
+                        src_morph_expectations[key] += ee[key]
+                    for key in tt.keys():
+                        src_morph, dst_morph = key
+                        if src_morph not in translation_expectations:
+                            translation_expectations[src_morph]: Dict[
+                                str, float
+                            ] = defaultdict(float)
+                        translation_expectations[src_morph][dst_morph] += tt[key]
+                    train_sentences = []
+        if len(train_sentences) > 0:
+            chunk_size = math.ceil(float(len(train_sentences)) / num_cpus)
+            train_sens_chunks = UnsupervisedMorphology.group_to(
+                chunk_size, train_sentences
+            )
+            ee, tt = self.expectation(pool, train_sens_chunks)
+            for key in ee.keys():
+                src_morph_expectations[key] += ee[key]
+            for key in tt.keys():
+                src_morph, dst_morph = key
+                if src_morph not in translation_expectations:
+                    translation_expectations[src_morph]: Dict[str, float] = defaultdict(
+                        float
+                    )
+                translation_expectations[src_morph][dst_morph] += tt[key]
+            train_sentences = []
+
+        dst_file_reader.close()
+
+        print("starting maximization step")
+        self.maximization(src_morph_expectations, translation_expectations)
+        print("updated parameters after maximization")
+        if model_path is not None:
+            self.save(model_path)
