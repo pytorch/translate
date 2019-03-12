@@ -328,7 +328,11 @@ class UnsupervisedMorphology(object):
                 self.params.morph_emit_probs[morpheme] = 1.0 / num_morphs
 
     def expectation_maximization(
-        self, input_file_path, num_iters, num_cpus=10, model_path=None
+        self,
+        input_file_path: str,
+        num_iters: int,
+        num_cpus: int = 10,
+        model_path: str = None,
     ):
         """
         Runs the EM algorithm.

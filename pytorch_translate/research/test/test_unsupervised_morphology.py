@@ -225,7 +225,7 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
                 "no_exist_file.txt", smoothing_const=0.0
             )
-            unsupervised_model.expectation_maximization(10, 10)
+            unsupervised_model.expectation_maximization("no_exist_file.txt", 10, 10)
 
         # Running with Viterbi-EM.
         with patch("builtins.open") as mock_open:
@@ -234,7 +234,7 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
                 "no_exist_file.txt", smoothing_const=0.0, use_hardEM=True
             )
-            unsupervised_model.expectation_maximization(10, 10)
+            unsupervised_model.expectation_maximization("no_exist_file.txt", 10, 10)
 
     def test_get_expectations_from_viterbi(self):
         with patch("builtins.open") as mock_open:
