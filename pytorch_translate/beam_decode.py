@@ -655,7 +655,7 @@ class SequenceGenerator(object):
     def _decode(self, tokens, encoder_outs, incremental_states):
         avg_attn = None
         all_translation_tokens = []
-        all_probs = []
+        all_log_probs = []
         for model_weight, model, encoder_out in zip(
             self.model_weights, self.models, encoder_outs
         ):
@@ -677,16 +677,16 @@ class SequenceGenerator(object):
                     # to use get_normalized_probs in adaptive softmax decoder
                     # the sample object is needed. During inference, the target
                     # should be set to None
-                    probs = model_weight * model.get_normalized_probs(
+                    probs = model.get_normalized_probs(
                         decoder_out, log_probs=False, sample={"target": None}
                     )
                     probs = probs[:, -1, :]
+                    log_probs = model_weight * probs.log()
                 else:
-                    probs = model_weight * model.get_normalized_probs(
-                        decoder_out, log_probs=False
-                    )
+                    probs = model.get_normalized_probs(decoder_out, log_probs=False)
+                    log_probs = model_weight * probs.log()
                 all_translation_tokens.append(possible_translation_tokens)
-                all_probs.append(probs)
+                all_log_probs.append(log_probs)
 
             if attn is not None:
                 attn = attn[:, -1, :]
@@ -694,14 +694,14 @@ class SequenceGenerator(object):
                     avg_attn = attn
                 else:
                     avg_attn.add_(attn)
-        avg_probs, possible_translation_tokens = SequenceGenerator.gather_probs(
-            all_translation_tokens=all_translation_tokens, all_probs=all_probs
+
+        avg_log_probs, possible_translation_tokens = SequenceGenerator.gather_probs(
+            all_translation_tokens=all_translation_tokens, all_probs=all_log_probs
         )
-        avg_probs.log_()
         if avg_attn is not None:
             avg_attn.div_(len(self.models))
 
-        return avg_probs, avg_attn, possible_translation_tokens
+        return avg_log_probs, avg_attn, possible_translation_tokens
 
     def diversity_sibling_rank(self, logprobs, gamma):
         """
