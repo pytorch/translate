@@ -77,12 +77,9 @@ class TestUnsupervisedBilingualMorphology(unittest.TestCase):
         morph_hmm_model.init_params_from_data(f1, f2)
         segmentor = BilingualMorphologySegmentor(morph_hmm_model)
         assert segmentor.segment_viterbi("1234 1234") == [0, 2, 4, 7, 9]
-        assert segmentor.segment_blingual_viterbi("1234 1234", "1234 1234") == [
-            0,
-            4,
-            7,
-            9,
-        ]
+        bilingual_segment = segmentor.segment_blingual_viterbi("1234 1234", "1234 1234")
+        assert bilingual_segment[0] == [0, 4, 7, 9]
+        assert bilingual_segment[1] == ["4", "4", "4"]
         shutil.rmtree(tmp_dir)
 
     def test_save_load(self):
@@ -127,12 +124,11 @@ class TestUnsupervisedBilingualMorphology(unittest.TestCase):
         )
         assert morph_expect["12"] > 0
         assert morph_expect["21"] == 0
-        assert len(translation_expect) == 5
-        assert len(translation_expect["122"]) == 7
-        assert translation_expect["12"]["3"] > 0
-        assert translation_expect["12"]["32"] == 0
-        assert translation_expect["12"]["122"] == 0
-        assert translation_expect["12"][unsupervised_model.params.null_symbol] > 0
+        assert len(translation_expect) == 35
+        assert translation_expect[("12", "3")] > 0
+        assert translation_expect[("12", "32")] == 0
+        assert translation_expect[("12", "122")] == 0
+        assert translation_expect[("12", unsupervised_model.params.null_symbol)] > 0
         shutil.rmtree(tmp_dir)
 
     def test_get_morpheme_counts(self):
@@ -155,4 +151,17 @@ class TestUnsupervisedBilingualMorphology(unittest.TestCase):
         )
         assert len(morph_counts_with_repeats) == 13
         assert morph_counts_with_repeats["12"] == 2
+        shutil.rmtree(tmp_dir)
+
+    def test_get_expectations_from_viterbi(self):
+        tmp_dir, f1, f2 = get_two_tmp_files()
+        unsupervised_model = UnsupervisedBilingualMorphology(
+            src_file=f1, dst_file=f2, smoothing_const=0.0, use_hardEM=True
+        )
+        e, t = unsupervised_model.get_expectations_from_viterbi("123", "123 124")
+        assert e["123"] == 1
+        assert e["23"] == 0
+        assert t[("123", "2")] == 1
+        assert t[("23", "2")] == 0
+        assert t[("123", "123")] == 0
         shutil.rmtree(tmp_dir)
