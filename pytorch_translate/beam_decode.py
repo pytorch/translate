@@ -32,7 +32,6 @@ class SequenceGenerator(object):
         sampling_temperature=1,
     ):
         """Generates translations of a given source sentence.
-
         Args:
             models: List of FairseqModel objects. Each one must implement
                 reorder_encoder_output() method to replicate encoder outputs.
@@ -55,6 +54,13 @@ class SequenceGenerator(object):
                 Beam Search.
             diversity_sibling_gamma: The diversity rate of sibling rank (-0.0 by default
                to disable sibling rank penalty)
+            sampling (bool, optional): sample outputs instead of beam search
+                (default: False)
+            sampling_topk (int, optional): only sample among the top-k choices
+                at each step (default: -1)
+            sampling_temperature (float, optional): temperature for sampling,
+                where values >1.0 produces more uniform sampling and values
+                <1.0 produces sharper sampling (default: 1.0)
         """
         self.models = models
         self.pad = tgt_dict.pad()
