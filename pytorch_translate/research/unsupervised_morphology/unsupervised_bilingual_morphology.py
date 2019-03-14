@@ -4,7 +4,7 @@ import copy
 import math
 import pickle
 from collections import defaultdict
-from typing import Dict
+from typing import Dict, Tuple
 
 from pytorch_translate.research.unsupervised_morphology.unsupervised_morphology import (
     MorphologyHMMParams,
@@ -147,7 +147,7 @@ class BilingualMorphologySegmentor(MorphologySegmentor):
         src_len = len(src_sentence)
         pi = [self.params.SMALL_CONST for _ in range(src_len + 1)]
         pi[0] = 0
-        back_pointer = [0 for _ in range(src_len + 1)]
+        back_pointer = [(0, "") for _ in range(src_len + 1)]
 
         target_morpheme_log_probs = self.params.get_morpheme_counts(
             dst_sentence, take_log=True, include_null=True
@@ -163,33 +163,40 @@ class BilingualMorphologySegmentor(MorphologySegmentor):
                 e = self.params.emission_log_prob(substr)
 
                 # Getting max prability with respect to the target side.
-                max_target_prob = max(
-                    target_morpheme_log_probs[morpheme]
-                    + self.params.translation_log_prob(substr, morpheme)
-                    for morpheme in target_morpheme_log_probs.keys()
-                )
+                max_target_prob = self.params.SMALL_CONST
+                max_target_morpheme = self.params.null_symbol
+                for morpheme in target_morpheme_log_probs.keys():
+                    t = target_morpheme_log_probs[
+                        morpheme
+                    ] + self.params.translation_log_prob(substr, morpheme)
+                    if t >= max_target_prob:
+                        max_target_prob = t
+                        max_target_morpheme = morpheme
 
                 log_prob = pi[src_start] + e + max_target_prob
                 if log_prob > pi[src_end]:
                     pi[src_end] = log_prob
                     # Saving backpointer for previous tag and index.
-                    back_pointer[src_end] = src_start
+                    back_pointer[src_end] = src_start, max_target_morpheme
 
         # finalizing the best segmentation.
         indices = [src_len]  # backtracking indices for segmentation.
-        indices.append(back_pointer[-1])
+        target_morphs = [back_pointer[-1][1]]
+        indices.append(back_pointer[-1][0])
         while True:
             last_index = indices[-1]
             if last_index == 0:
                 break
-            start_index = back_pointer[last_index]
+            start_index = back_pointer[last_index][0]
             indices.append(start_index)
+            target_morphs.append(back_pointer[last_index][1])
             if start_index == 0:
                 break
 
         # We should now reverse the backtracked list.
         indices.reverse()
-        return indices
+        target_morphs.reverse()
+        return indices, target_morphs
 
 
 class UnsupervisedBilingualMorphology(UnsupervisedMorphology):
@@ -279,7 +286,7 @@ class UnsupervisedBilingualMorphology(UnsupervisedMorphology):
         backward_values = self.backward(src_sentence, translation_marginal)
 
         emission_expectations: Dict[str, float] = defaultdict(float)
-        translation_expectations: Dict[str, Dict] = defaultdict()
+        translation_expectations: Dict[Tuple, Dict] = defaultdict(float)
         fb_expectations: Dict[str, float] = defaultdict(float)
         src_morphemes = set()
         for start in range(src_len):
@@ -300,23 +307,42 @@ class UnsupervisedBilingualMorphology(UnsupervisedMorphology):
                     forward_values[start] * e * backward_values[end]
                 )
 
-                if src_morph not in translation_expectations:
-                    translation_expectations[src_morph]: Dict[str, float] = defaultdict(
-                        float
-                    )
-
         # E(t(dst_morph|src_morph)) = \sum_{start,end}[(t(dst_morph|src_morph))
         # * count(dst_morph) * e(src_morph) * forward(start)*backward(end)]/ Z
         # where Z is a normalization value.
         for src_morph in fb_expectations.keys():
+            Z = 0.0
             for dst_morph in dst_morph_counts.keys():
-                translation_expectations[src_morph][dst_morph] = (
+                v = (
                     self.params.translation_prob(src_morph, dst_morph)
                     * dst_morph_counts[dst_morph]
                     * fb_expectations[src_morph]
                 )
-            Z = sum(translation_expectations[src_morph].values())
+                translation_expectations[(src_morph, dst_morph)] = v
+                Z += v
             for dst_morph in dst_morph_counts.keys():
-                translation_expectations[src_morph][dst_morph] /= Z
+                translation_expectations[(src_morph, dst_morph)] /= Z
+
+        return emission_expectations, translation_expectations
+
+    def get_expectations_from_viterbi(self, src_sentence, dst_sentence):
+        """
+        This method segments a sentence with the Viterbi algorithm, and assumes that
+        the output of the Viterbi algorithm has an expected count of one, and others
+        will have an expected count of zero. This is in contrast with the
+        forward-backward algorithm where every possible segmentation is taken into
+        account.
+        """
+        emission_expectations = defaultdict(float)
+        translation_expectations: Dict[Tuple, Dict] = defaultdict(float)
+
+        indices, target_morphs = self.segmentor.segment_blingual_viterbi(
+            src_sentence, dst_sentence
+        )
+
+        for i in range(len(indices) - 1):
+            substr = src_sentence[indices[i] : indices[i + 1]]
+            emission_expectations[substr] += 1
+            translation_expectations[(substr, target_morphs[i])] += 1
 
         return emission_expectations, translation_expectations
