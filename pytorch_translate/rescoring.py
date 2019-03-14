@@ -31,23 +31,35 @@ def encode(args, model, encoder_inputs):
     return [encoder_out]
 
 
-def convert_hypos_to_target_tokens_tensor(hypos):
+def convert_hypos_to_target_tokens_tensor(task, hypos, strategy):
     """
     hypos contains target tokens for the original model for each hypothesis.
     we convert them to a tensor, also add eos token to the beginning,
     0's to the end, so that we can run model encoder and decoder on them
     """
+    eos = task.target_dictionary.eos()
+
     max_tgt_len = max(len(hypo["tokens"]) for hypo in hypos)
-    hypos_tokens = torch.zeros(len(hypos), max_tgt_len + 1, dtype=torch.int)
-    hypos_tokens[:, 0] = torch.tensor(2)
-    for i, hypo in enumerate(hypos):
-        start = 1
-        end = start + len(hypo["tokens"])
-        hypos_tokens[i, start:end] = hypo["tokens"]
-    return hypos_tokens.long()
+    target_tokens = torch.zeros(len(hypos), max_tgt_len + 1, dtype=torch.int)
+    target_tokens[:, 0] = torch.tensor(eos)
+
+    if strategy == "reverse":
+        for i, hypo in enumerate(hypos):
+            start = 0
+            end = len(hypo["tokens"])
+
+            target_tokens[i, start:end] = reversed(hypo["tokens"])
+            target_tokens[i, end] = torch.tensor(eos)
+
+    else:
+        for i, hypo in enumerate(hypos):
+            start = 1
+            end = start + len(hypo["tokens"])
+            target_tokens[i, start:end] = hypo["tokens"]
+    return target_tokens.long()
 
 
-def decode(args, model, task, encoder_outs, hypos_tokens):
+def decode(args, model, task, encoder_outs, target_tokens):
     """ Run decoder with the same configurations with beam decoder
     """
     eos = task.target_dictionary.eos()
@@ -65,7 +77,7 @@ def decode(args, model, task, encoder_outs, hypos_tokens):
             else reorder_indices,
         )
 
-    decoder_out = list(model.decoder(hypos_tokens, encoder_outs[0]))
+    decoder_out = list(model.decoder(target_tokens, encoder_outs[0]))
     assert len(decoder_out) == 3, "Rescoring only works with vocab reduction"
 
     logprobs = model.get_normalized_probs(decoder_out, log_probs=True)
@@ -83,14 +95,14 @@ def decode(args, model, task, encoder_outs, hypos_tokens):
         return logprobs, possible_translation_tokens
 
 
-def get_scores(task, hypos_tokens, logprobs, possible_translation_tokens):
+def get_scores(task, target_tokens, logprobs, possible_translation_tokens):
     """ Extract scores from logprobs for each hypothesis
     """
     pad = task.target_dictionary.pad()
 
-    hypos_tokens = hypos_tokens[:, 1:]  # get rid of initial eos token
-    hypos_tokens_probs = torch.zeros(hypos_tokens.shape)
-    for i, hypo_tokens in enumerate(hypos_tokens):
+    target_tokens = target_tokens[:, 1:]  # get rid of initial eos token
+    hypos_tokens_probs = torch.zeros(target_tokens.shape)
+    for i, hypo_tokens in enumerate(target_tokens):
         for j, hypo_token in enumerate(hypo_tokens):
             if hypo_token != pad:
                 hypos_tokens_probs[i][j] = logprobs[i][j][
@@ -109,21 +121,25 @@ def run_rescoring(args, task, hypos, src_tokens, model):
     if model is None:
         return
 
-    hypos_tokens = convert_hypos_to_target_tokens_tensor(hypos)
+    target_tokens = convert_hypos_to_target_tokens_tensor(
+        task, hypos, args.rescoring_strategy
+    )
 
     use_cuda = torch.cuda.is_available() and not args.cpu
     if use_cuda:
         model.cuda()
-        hypos_tokens = hypos_tokens.cuda()
+        target_tokens = target_tokens.cuda()
 
     encoder_inputs = prepare_encoder_inputs(src_tokens)
     encoder_outs = encode(args, model, encoder_inputs)
 
     logprobs, possible_translation_tokens = decode(
-        args, model, task, encoder_outs, hypos_tokens
+        args, model, task, encoder_outs, target_tokens
     )
 
-    hypos_scores = get_scores(task, hypos_tokens, logprobs, possible_translation_tokens)
+    hypos_scores = get_scores(
+        task, target_tokens, logprobs, possible_translation_tokens
+    )
 
     max_score_index = torch.max(hypos_scores, dim=0)[1]
     return hypos[max_score_index]["tokens"].int().cpu()
