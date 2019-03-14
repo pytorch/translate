@@ -280,3 +280,20 @@ def all_gather_from_master(args, data: List) -> List:
                 )
         output_data.append(master_data)
     return output_data
+
+
+def get_source_tokens_tensor(src_tokens):
+    """
+    To enable integration with PyText, src_tokens should be able to support
+    more features than just token embeddings. Hence when dictionary features are
+    passed from PyText it will be passed as a tuple
+    (token_embeddings, dict_feat, ..). Thus, in this case where we need the source
+    tokens tensor (eg to calculate batch size = source_tokens_tensor.size(0)),
+    we get the first element on the tuple which is always guaranteed
+    to be source tokens and do the necessary operation.
+    eg : bsz, _ = get_source_tokens_tensor(source_tokens)[0].size(0)
+    """
+    if type(src_tokens) is tuple:
+        return src_tokens[0]
+    else:
+        return src_tokens

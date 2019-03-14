@@ -50,7 +50,9 @@ def reorder_encoder_output(encoder_out, new_order):
     final_hiddens = final_hiddens.index_select(1, new_order)
     final_cells = final_cells.index_select(1, new_order)
     src_lengths = src_lengths.index_select(0, new_order)
-    src_tokens = src_tokens.index_select(0, new_order)
+    src_tokens = pytorch_translate_utils.get_source_tokens_tensor(
+        src_tokens
+    ).index_select(0, new_order)
     src_embeddings = src_embeddings.index_select(1, new_order)
     return (
         unpacked_output,
@@ -801,7 +803,9 @@ class LSTMSequenceEncoder(FairseqEncoder):
         # some internal variables
         self.tracker.reset()
 
-        bsz, seqlen = src_tokens.size()
+        bsz, seqlen = pytorch_translate_utils.get_source_tokens_tensor(
+            src_tokens
+        ).size()
 
         # embed tokens
         x = self.embed_tokens(src_tokens)
@@ -939,7 +943,9 @@ class RNNEncoder(FairseqEncoder):
             src_tokens = utils.convert_padding_direction(
                 src_tokens, self.padding_idx, left_to_right=True
             )
-        bsz, seqlen = src_tokens.size()
+        bsz, seqlen = pytorch_translate_utils.get_source_tokens_tensor(
+            src_tokens
+        ).size()
 
         # embed tokens
         x = self.embed_tokens(src_tokens)

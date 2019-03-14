@@ -5,6 +5,7 @@ import math
 import torch
 from fairseq import search, utils
 from fairseq.models import FairseqIncrementalDecoder
+from pytorch_translate import utils as pytorch_translate_utils
 
 
 class SequenceGenerator(object):
@@ -196,22 +197,24 @@ class SequenceGenerator(object):
         maxlen=None,
         prefix_tokens=None,
     ):
-        src_tokens = encoder_input["src_tokens"]
+        src_tokens_tensor = pytorch_translate_utils.get_source_tokens_tensor(
+            encoder_input["src_tokens"]
+        )
         beam_size = beam_size if beam_size is not None else self.beam_size
-        bsz = src_tokens.size(0)
+        bsz = src_tokens_tensor.size(0)
         reorder_indices = (
             torch.arange(bsz).view(-1, 1).repeat(1, beam_size).view(-1).long()
         )
         for i, model in enumerate(self.models):
             encoder_outs[i] = model.encoder.reorder_encoder_out(
                 encoder_out=encoder_outs[i],
-                new_order=reorder_indices.type_as(src_tokens),
+                new_order=reorder_indices.type_as(src_tokens_tensor),
             )
         maxlen = min(maxlen, self.maxlen) if maxlen is not None else self.maxlen
         # initialize buffers
-        scores = src_tokens.new(bsz * beam_size, maxlen + 1).float().fill_(0)
+        scores = src_tokens_tensor.new(bsz * beam_size, maxlen + 1).float().fill_(0)
         scores_buf = scores.clone()
-        tokens = src_tokens.new(bsz * beam_size, maxlen + 2).fill_(self.pad)
+        tokens = src_tokens_tensor.new(bsz * beam_size, maxlen + 2).fill_(self.pad)
         tokens_buf = tokens.clone()
         tokens[:, 0] = self.eos
 

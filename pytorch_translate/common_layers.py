@@ -9,9 +9,8 @@ import torch.nn.functional as F
 from fairseq import utils
 from fairseq.models import FairseqIncrementalDecoder, transformer as fairseq_transformer
 from pytorch_translate import rnn_cell  # noqa
-from pytorch_translate import vocab_reduction
+from pytorch_translate import utils as pytorch_translate_utils, vocab_reduction
 from pytorch_translate.research.lexical_choice import lexical_translation
-
 
 class ContextEmbedding(nn.Module):
     """
@@ -598,9 +597,10 @@ class TransformerEmbedding(nn.Module):
     def forward(self, src_tokens, src_lengths):
         # Embed tokens
         x = self.embed_tokens(src_tokens)
+        src_tokens_tensor = pytorch_translate_utils.get_source_tokens_tensor(src_tokens)
         # Add position embeddings and dropout
         x = self.embed_scale * x
-        positions = self.embed_positions(src_tokens)
+        positions = self.embed_positions(src_tokens_tensor)
         x += positions
         x = F.dropout(x, p=self.dropout, training=self.training)
 
@@ -608,7 +608,7 @@ class TransformerEmbedding(nn.Module):
         x = x.transpose(0, 1)
 
         # compute padding mask (B x T)
-        encoder_padding_mask = src_tokens.eq(self.padding_idx)
+        encoder_padding_mask = src_tokens_tensor.eq(self.padding_idx)
         if not encoder_padding_mask.any():
             encoder_padding_mask = None
 
