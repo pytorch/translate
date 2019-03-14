@@ -15,7 +15,7 @@ from fairseq.models import (
     transformer as fairseq_transformer,
 )
 from fairseq.modules import AdaptiveSoftmax, SinusoidalPositionalEmbedding
-from pytorch_translate import vocab_reduction
+from pytorch_translate import utils as pytorch_translate_utils, vocab_reduction
 from pytorch_translate.common_layers import (
     TransformerEmbedding,
     TransformerEncoderGivenEmbeddings,
@@ -294,13 +294,14 @@ class TransformerEncoder(FairseqEncoder):
 
     def reorder_encoder_out(self, encoder_out, new_order):
         (x, src_tokens, encoder_padding_mask) = encoder_out
+        src_tokens_tensor = pytorch_translate_utils.get_source_tokens_tensor(src_tokens)
         if x is not None:
             x = x.index_select(1, new_order)
-        if src_tokens is not None:
-            src_tokens = src_tokens.index_select(0, new_order)
+        if src_tokens_tensor is not None:
+            src_tokens_tensor = src_tokens_tensor.index_select(0, new_order)
         if encoder_padding_mask is not None:
             encoder_padding_mask = encoder_padding_mask.index_select(0, new_order)
-        return (x, src_tokens, encoder_padding_mask)
+        return (x, src_tokens_tensor, encoder_padding_mask)
 
     def max_positions(self):
         """Maximum input length supported by the encoder."""
