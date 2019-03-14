@@ -103,13 +103,36 @@ class TestUnsupervisedBilingualMorphology(unittest.TestCase):
         assert morph_hmm_model.translation_probs == loaded_params.translation_probs
         shutil.rmtree(tmp_dir)
 
+    def test_translation_marginal(self):
+        tmp_dir, f1, f2 = get_two_tmp_files()
+        unsupervised_model = UnsupervisedBilingualMorphology(
+            src_file=f1, dst_file=f2, smoothing_const=0.0
+        )
+        t_marginal, dst_morph_counts = unsupervised_model.get_translation_marginal(
+            "122", "123231223"
+        )
+        assert len(dst_morph_counts) == 34
+        assert unsupervised_model.params.null_symbol in dst_morph_counts
+        assert dst_morph_counts["23"] == 3
+        assert len(t_marginal) == 5
+        shutil.rmtree(tmp_dir)
+
     def test_forward_backward(self):
         tmp_dir, f1, f2 = get_two_tmp_files()
         unsupervised_model = UnsupervisedBilingualMorphology(
             src_file=f1, dst_file=f2, smoothing_const=0.0
         )
-        print(unsupervised_model.params.smoothing_const)
-        # todo will add stuff here later.
+        morph_expect, translation_expect = unsupervised_model.forward_backward(
+            "122", "123"
+        )
+        assert morph_expect["12"] > 0
+        assert morph_expect["21"] == 0
+        assert len(translation_expect) == 5
+        assert len(translation_expect["122"]) == 7
+        assert translation_expect["12"]["3"] > 0
+        assert translation_expect["12"]["32"] == 0
+        assert translation_expect["12"]["122"] == 0
+        assert translation_expect["12"][unsupervised_model.params.null_symbol] > 0
         shutil.rmtree(tmp_dir)
 
     def test_get_morpheme_counts(self):
