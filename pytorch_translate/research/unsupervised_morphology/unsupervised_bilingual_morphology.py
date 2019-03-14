@@ -216,3 +216,107 @@ class UnsupervisedBilingualMorphology(UnsupervisedMorphology):
         self.segmentor = (
             BilingualMorphologySegmentor(self.params) if self.use_hardEM else None
         )
+
+    def get_translation_marginal(self, src_sentence, dst_sentence):
+        """
+        This function gets the expected values for translating from morphemes in
+        the src_sentence wrt the dst_sentence.
+        """
+        dst_morph_counts = self.params.get_morpheme_counts(dst_sentence, take_log=False)
+        translation_marginal = {}
+        n = len(src_sentence)
+        for start in range(n):
+            for end in range(start + 1, min(n + 1, start + self.params.max_morph_len)):
+                src_morph = src_sentence[start:end]
+                if src_morph not in translation_marginal:
+                    e = self.params.emission_prob(src_morph)
+                    translation_sum = sum(
+                        dst_morph_counts[dst_morph]
+                        * self.params.translation_prob(src_morph, dst_morph)
+                        for dst_morph in dst_morph_counts.keys()
+                    )
+                    translation_marginal[src_morph] = translation_sum * e
+        return translation_marginal, dst_morph_counts
+
+    def forward(self, sentence, translation_marginal):
+        """
+        For the forward pass in the forward-backward algorithm.
+        The forward pass is very similar to the Viterbi algorithm. The main difference
+        is that here we use summation instead of argmax.
+        """
+        n = len(sentence)
+        forward_values = UnsupervisedMorphology.init_forward_values(n)
+
+        for start in range(n):
+            for end in range(start + 1, min(n + 1, start + self.params.max_morph_len)):
+                t = translation_marginal[sentence[start:end]]
+                forward_values[end] += forward_values[start] * t
+        return forward_values
+
+    def backward(self, sentence, translation_marginal):
+        """
+        For the backward pass in the forward-backward algorithm.
+        """
+        n = len(sentence)
+        backward_values = UnsupervisedMorphology.init_backward_values(n)
+
+        for start in range(n - 1, -1, -1):
+            for end in range(start + 1, min(n + 1, start + self.params.max_morph_len)):
+                t = translation_marginal[sentence[start:end]]
+                backward_values[start] += backward_values[end] * t
+        return backward_values
+
+    def forward_backward(self, src_sentence, dst_sentence):
+        """
+        Similar to the one in UnsupervisedMorphology but it also takes into account
+        the target sentence.
+        """
+        src_len = len(src_sentence)
+        translation_marginal, dst_morph_counts = self.get_translation_marginal(
+            src_sentence, dst_sentence
+        )
+        forward_values = self.forward(src_sentence, translation_marginal)
+        backward_values = self.backward(src_sentence, translation_marginal)
+
+        emission_expectations: Dict[str, float] = defaultdict(float)
+        translation_expectations: Dict[str, Dict] = defaultdict()
+        fb_expectations: Dict[str, float] = defaultdict(float)
+        src_morphemes = set()
+        for start in range(src_len):
+            for end in range(
+                start + 1, min(src_len + 1, start + self.params.max_morph_len)
+            ):
+                src_morph = src_sentence[start:end]
+                src_morphemes.add(src_morph)
+                e = self.params.emission_prob(src_morph)
+                t_marginal = translation_marginal[src_morph]
+
+                # On morph expectation, we should take care of target translations.
+                # That's why we have t_marginal instead of emission_prob.
+                emission_expectations[src_morph] += (
+                    forward_values[start] * t_marginal * backward_values[end]
+                )
+                fb_expectations[src_morph] += (
+                    forward_values[start] * e * backward_values[end]
+                )
+
+                if src_morph not in translation_expectations:
+                    translation_expectations[src_morph]: Dict[str, float] = defaultdict(
+                        float
+                    )
+
+        # E(t(dst_morph|src_morph)) = \sum_{start,end}[(t(dst_morph|src_morph))
+        # * count(dst_morph) * e(src_morph) * forward(start)*backward(end)]/ Z
+        # where Z is a normalization value.
+        for src_morph in fb_expectations.keys():
+            for dst_morph in dst_morph_counts.keys():
+                translation_expectations[src_morph][dst_morph] = (
+                    self.params.translation_prob(src_morph, dst_morph)
+                    * dst_morph_counts[dst_morph]
+                    * fb_expectations[src_morph]
+                )
+            Z = sum(translation_expectations[src_morph].values())
+            for dst_morph in dst_morph_counts.keys():
+                translation_expectations[src_morph][dst_morph] /= Z
+
+        return emission_expectations, translation_expectations
