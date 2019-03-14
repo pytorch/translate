@@ -56,6 +56,8 @@ class DualDecoderCriterion(FairseqCriterion):
             model, teacher_output, sample, reduce=reduce
         )
 
+        # do not propagate gradient from student loss to teacher output
+        teacher_probs = teacher_probs.detach()
         student_loss, student_nll_loss = self.compute_student_loss(
             model, student_output, sample, teacher_probs, reduce=reduce
         )
