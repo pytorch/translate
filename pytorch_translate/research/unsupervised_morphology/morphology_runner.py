@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 
 import math
+import sys
 from optparse import OptionParser
 
-from pytorch_translate.research.unsupervised_morphology import unsupervised_morphology
+from pytorch_translate.research.unsupervised_morphology import (
+    unsupervised_bilingual_morphology,
+    unsupervised_morphology,
+)
 
 
 def get_arg_parser():
@@ -12,6 +16,13 @@ def get_arg_parser():
         "--train-file",
         dest="train_file",
         help="Raw text as training data.",
+        metavar="FILE",
+        default=None,
+    )
+    parser.add_option(
+        "--target-train-file",
+        dest="target_train_file",
+        help="Raw text as training data in the target language.",
         metavar="FILE",
         default=None,
     )
@@ -52,6 +63,9 @@ def get_arg_parser():
     )
     parser.add_option(
         "--save-checkpoint", action="store_true", dest="save_checkpoint", default=False
+    )
+    parser.add_option(
+        "--bilingual", action="store_true", dest="is_bilingual", default=False
     )
     parser.add_option(
         "--smooth-const",
@@ -97,7 +111,11 @@ def get_arg_parser():
 if __name__ == "__main__":
     arg_parser = get_arg_parser()
     options, args = arg_parser.parse_args()
-    if options.train_file is not None and options.model_path is not None:
+    if options.model_path is None:
+        print("Model path not specified")
+        sys.exit(0)
+
+    if options.train_file is not None and options.target_train_file is None:
         model = unsupervised_morphology.UnsupervisedMorphology(
             input_file=options.train_file,
             smoothing_const=options.smooth_const,
@@ -113,14 +131,39 @@ if __name__ == "__main__":
         )
         if not options.save_checkpoint:
             model.params.save(options.model_path)
+    elif options.train_file is not None and options.target_train_file is not None:
+        model = unsupervised_bilingual_morphology.UnsupervisedBilingualMorphology(
+            src_file=options.train_file,
+            dst_file=options.target_train_file,
+            smoothing_const=options.smooth_const,
+            use_hardEM=options.use_hardEM,
+            max_morph_len=options.max_morph_len,
+            len_cost_pow=options.len_cost_pow,
+        )
+        model.expectation_maximization(
+            src_file_path=options.train_file,
+            dst_file_path=options.target_train_file,
+            num_iters=options.em_iter,
+            num_cpus=options.num_cpus,
+            model_path=options.model_path if options.save_checkpoint else None,
+        )
+        if not options.save_checkpoint:
+            model.params.save(options.model_path)
 
-    if (
-        options.input_file is not None
-        and options.output_file is not None
-        and options.model_path is not None
-    ):
-        model = unsupervised_morphology.MorphologyHMMParams.load(options.model_path)
-        segmentor = unsupervised_morphology.MorphologySegmentor(model)
+    if options.input_file is not None and options.output_file is not None:
+        morphology_class = (
+            unsupervised_bilingual_morphology.BilingualMorphologyHMMParams
+            if options.is_bilingual
+            else unsupervised_morphology.MorphologyHMMParams
+        )
+        segmentor_class = (
+            unsupervised_bilingual_morphology.BilingualMorphologySegmentor
+            if options.is_bilingual
+            else unsupervised_morphology.MorphologySegmentor
+        )
+        model = morphology_class.load(options.model_path)
+        segmentor = segmentor_class(model)
+
         segment_cache = {}
         writer = open(options.output_file, "w", encoding="utf-8")
         with open(options.input_file, "r", encoding="utf-8") as input_stream:
@@ -128,9 +171,20 @@ if __name__ == "__main__":
                 writer.write(segmentor.segment_sentence(line.strip()) + "\n")
         writer.close()
 
-    if options.investigate and options.model_path is not None:
-        model = unsupervised_morphology.MorphologyHMMParams.load(options.model_path)
-        segmentor = unsupervised_morphology.MorphologySegmentor(model)
+    if options.investigate:
+        morphology_class = (
+            unsupervised_bilingual_morphology.BilingualMorphologyHMMParams
+            if options.is_bilingual
+            else unsupervised_morphology.MorphologyHMMParams
+        )
+        segmentor_class = (
+            unsupervised_bilingual_morphology.BilingualMorphologySegmentor
+            if options.is_bilingual
+            else unsupervised_morphology.MorphologySegmentor
+        )
+        model = morphology_class.load(options.model_path)
+        segmentor = segmentor_class(model)
+
         while True:
             message = " ".join(
                 [
