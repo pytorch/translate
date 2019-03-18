@@ -5,6 +5,7 @@ import logging
 import os
 import tempfile
 from collections import defaultdict
+from typing import Optional
 
 import numpy as np
 import onnx
@@ -20,6 +21,7 @@ from caffe2.python.onnx import backend as caffe2_backend
 from caffe2.python.predictor import predictor_exporter
 from fairseq import tasks, utils
 from fairseq.models import ARCH_MODEL_REGISTRY
+from pytorch_translate.char_source_model import CharSourceModel
 from pytorch_translate.research.knowledge_distillation import dual_decoder_kd_model
 from pytorch_translate.tasks.pytorch_translate_task import DictionaryHolderTask
 from pytorch_translate.transformer import TransformerEncoder
@@ -906,9 +908,25 @@ class DecoderBatchedStepEnsemble(nn.Module):
         )
 
 
+class FakeEncoderEnsemble(torch.jit.ScriptModule):
+    @torch.jit.script_method
+    def forward(self, src_tokens, src_lengths) -> None:
+        raise RuntimeError(
+            "Called EncoderEnsemble on a BeamSearch thats not word-source"
+        )
+
+
+class FakeCharSourceEncoderEnsemble(torch.jit.ScriptModule):
+    @torch.jit.script_method
+    def forward(self, src_tokens, src_lengths, char_inds, word_lengths) -> None:
+        raise RuntimeError(
+            "Called CharSourceEncoderEnsemble on a BeamSearch thats not char-source"
+        )
+
+
 class BeamSearch(torch.jit.ScriptModule):
 
-    __constants__ = ["beam_size"]
+    __constants__ = ["beam_size", "is_char_source"]
 
     def __init__(
         self,
@@ -920,6 +938,9 @@ class BeamSearch(torch.jit.ScriptModule):
         word_reward=0,
         unk_reward=0,
         quantize=False,
+        # Tracing inputs for CharSourceModel
+        char_inds=None,
+        word_lengths=None,
     ):
         super().__init__()
         self.models = model_list
@@ -928,14 +949,32 @@ class BeamSearch(torch.jit.ScriptModule):
         self.word_reward = word_reward
         self.unk_reward = unk_reward
 
-        encoder_ens = EncoderEnsemble(self.models)
+        if isinstance(self.models[0], CharSourceModel):
+            encoder_ens = CharSourceEncoderEnsemble(self.models)
+        else:
+            encoder_ens = EncoderEnsemble(self.models)
+
         if quantize:
             encoder_ens = torch.jit.quantized.quantize_linear_modules(encoder_ens)
             encoder_ens = torch.jit.quantized.quantize_rnn_cell_modules(encoder_ens)
-        example_encoder_outs = encoder_ens(src_tokens, src_lengths)
-        self.encoder_ens = torch.jit.trace(
-            encoder_ens, (src_tokens, src_lengths), _force_outplace=True
-        )
+
+        if isinstance(self.models[0], CharSourceModel):
+            self.is_char_source = True
+            enc_inputs = (src_tokens, src_lengths, char_inds, word_lengths)
+            example_encoder_outs = encoder_ens(*enc_inputs)
+            self.encoder_ens = FakeEncoderEnsemble()
+            self.encoder_ens_char_source = torch.jit.trace(
+                encoder_ens, enc_inputs, _force_outplace=True
+            )
+        else:
+            self.is_char_source = False
+            enc_inputs = (src_tokens, src_lengths)
+            example_encoder_outs = encoder_ens(*enc_inputs)
+            self.encoder_ens = torch.jit.trace(
+                encoder_ens, enc_inputs, _force_outplace=True
+            )
+            self.encoder_ens_char_source = FakeCharSourceEncoderEnsemble()
+
         decoder_ens = DecoderBatchedStepEnsemble(
             self.models,
             tgt_dict,
@@ -1010,8 +1049,27 @@ class BeamSearch(torch.jit.ScriptModule):
         attn_weights: torch.Tensor,
         prev_hypos_indices: torch.Tensor,
         num_steps: int,
+        char_inds: Optional[torch.Tensor] = None,
+        word_lengths: Optional[torch.Tensor] = None,
     ):
-        enc_states = self.encoder_ens(src_tokens, src_lengths)
+        if self.is_char_source:
+            if char_inds is None or word_lengths is None:
+                raise RuntimeError(
+                    "char_inds and word_lengths must be specified "
+                    "for char-source models"
+                )
+            char_inds = torch.jit._unwrap_optional(char_inds)
+            word_lengths = torch.jit._unwrap_optional(word_lengths)
+            enc_states = self.encoder_ens_char_source(
+                src_tokens, src_lengths, char_inds, word_lengths
+            )
+        else:
+            enc_states = self.encoder_ens(src_tokens, src_lengths)
+
+        # enc_states ends up being optional because of the above branch, one
+        # side returns None. We should never take the path that returns None
+        # so we unrap the optional type here.
+        enc_states = torch.jit._unwrap_optional(enc_states)
 
         all_tokens = prev_token.repeat(repeats=[self.beam_size]).unsqueeze(dim=0)
         all_scores = prev_scores.repeat(repeats=[self.beam_size]).unsqueeze(dim=0)
