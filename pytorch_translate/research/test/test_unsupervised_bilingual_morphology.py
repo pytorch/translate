@@ -165,3 +165,11 @@ class TestUnsupervisedBilingualMorphology(unittest.TestCase):
         assert t[("23", "2")] == 0
         assert t[("123", "123")] == 0
         shutil.rmtree(tmp_dir)
+
+    def test_EM_algorithm(self):
+        tmp_dir, f1, f2 = get_two_tmp_files()
+        unsupervised_model = UnsupervisedBilingualMorphology(
+            src_file=f1, dst_file=f2, smoothing_const=0.0, use_hardEM=True
+        )
+        unsupervised_model.expectation_maximization(f1, f2, 10, 10)
+        shutil.rmtree(tmp_dir)
