@@ -421,11 +421,14 @@ def setup_training(args, trainer_class=None):
     builtin_print = __builtin__.print
 
     def print(*args, **kwargs):
-        builtin_print(
-            f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}]",
-            *args,
-            **kwargs,
-        )
+        if "file" not in kwargs:
+            builtin_print(
+                f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')}]",
+                *args,
+                **kwargs,
+            )
+        else:
+            builtin_print(*args, **kwargs)
 
     __builtin__.print = print
 

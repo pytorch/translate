@@ -63,7 +63,6 @@ def _softmax(x):  # softmax over 4 dim matrix
         for j in range(x.shape[1]):
             for k in range(x.shape[2]):
                 x_curr = x[i, j, k, :]
-                print(np.amax(x_curr))
                 e_x = np.exp(x_curr - np.amax(x_curr))
                 output[i, j, k, :] = e_x / np.sum(e_x)
     return output

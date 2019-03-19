@@ -119,9 +119,6 @@ Then, try to install ONNX again:
 
 Now you should be able to run the example scripts below!
 
-### Use Our Amazon Machine Image:
-You can launch an AWS instance using the `pytorch_translate_initial_release` image (AMI ID: ami-04ff53cdd573658dc). Once you have ssh'ed to the AWS instance, the example commands below should work after running `cd translate`.
-
 ## Usage Examples
 
 Note: the example commands given assume that you are the root of the cloned
