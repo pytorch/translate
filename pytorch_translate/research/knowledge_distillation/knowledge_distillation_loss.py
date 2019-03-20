@@ -35,22 +35,22 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
             ),
         )
 
-    def get_kd_loss(self, sample, student_probs, lprobs):
+    def get_kd_loss(self, sample, student_lprobs, lprobs):
         """
         The second return argument is used for unit testing.
 
         Args:
             * sample: batched sample that has teacher score keys (top_k_scores and
              top_k_indices)
-            * student_probs: tensor of student probabilities
-            * probs: flat version of student_probs
+            * student_lprobs: tensor of student log probabilities
+            * lprobs: flat version of student_lprobs
         """
         top_k_teacher_probs_normalized = sample["top_k_scores"]
         indices = sample["top_k_indices"]
 
-        assert indices.shape[0:1] == student_probs.shape[0:1]
+        assert indices.shape[0:1] == student_lprobs.shape[0:1]
 
-        topk_mask = torch.zeros(student_probs.shape).type_as(student_probs)
+        topk_mask = torch.zeros(student_lprobs.shape).type_as(student_lprobs)
         topk_probs = topk_mask.scatter(2, indices, top_k_teacher_probs_normalized)
         topk_probs_flat = topk_probs.view(-1, topk_probs.size(-1))
         kd_loss = -torch.sum(topk_probs_flat * lprobs)
@@ -67,15 +67,15 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
 
         # 1. Generate translation using student model
         net_output = model(**sample["net_input"])
-        student_probs = model.get_normalized_probs(net_output, log_probs=True)
+        student_lprobs = model.get_normalized_probs(net_output, log_probs=True)
         # [bsz, seqlen, vocab] -> [bsz*seqlen, vocab]
-        lprobs = student_probs.view(-1, student_probs.size(-1))
+        lprobs = student_lprobs.view(-1, student_lprobs.size(-1))
 
         # 2. Get translation from teacher models and calulate KD loss.
         kd_loss = None
         if "top_k_scores" in sample:
             # top_k_scores is not present in the validation data.
-            kd_loss, _ = self.get_kd_loss(sample, student_probs, lprobs)
+            kd_loss, _ = self.get_kd_loss(sample, student_lprobs, lprobs)
 
         # 3. Compute NLL loss with respect to the ground truth
         target = model.get_targets(sample, net_output).view(-1)
