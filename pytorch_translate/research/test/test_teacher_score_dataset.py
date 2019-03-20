@@ -27,6 +27,7 @@ class TestTeacherScoreDataSet(unittest.TestCase):
         teacher_model = pytorch_translate_utils.maybe_cuda(
             self.task.build_model(test_args)
         )
+        teacher_models = [teacher_model]
 
         d0, d1, d2, d3 = self._dummy_datasets(src_dict.eos(), tgt_dict.eos())
         dataset1 = [d0, d1]
@@ -38,7 +39,7 @@ class TestTeacherScoreDataSet(unittest.TestCase):
         top_k_teacher_indices = {}
         b1 = TeacherDataset.collate(
             dataset1,
-            [teacher_model],
+            teacher_models,
             3,
             src_dict.pad(),
             src_dict.eos(),
@@ -47,7 +48,7 @@ class TestTeacherScoreDataSet(unittest.TestCase):
         )
         TeacherDataset.collate(
             dataset2,
-            [teacher_model],
+            teacher_models,
             3,
             src_dict.pad(),
             src_dict.eos(),
@@ -59,7 +60,7 @@ class TestTeacherScoreDataSet(unittest.TestCase):
 
         TeacherDataset.collate(
             dataset3,
-            [teacher_model],
+            teacher_models,
             3,
             src_dict.pad(),
             src_dict.eos(),
@@ -68,7 +69,7 @@ class TestTeacherScoreDataSet(unittest.TestCase):
         )
         TeacherDataset.collate(
             dataset4,
-            [teacher_model],
+            teacher_models,
             3,
             src_dict.pad(),
             src_dict.eos(),
@@ -84,13 +85,15 @@ class TestTeacherScoreDataSet(unittest.TestCase):
 
         b5 = TeacherDataset.collate(
             dataset1,
-            [teacher_model],
+            teacher_models,
             3,
             src_dict.pad(),
             src_dict.eos(),
             top_k_teacher_scores,
             top_k_teacher_indices,
         )
+
+        assert len(teacher_models) == 0
         probs_before = b1["top_k_scores"].numpy()
         indices_before = b1["top_k_indices"].numpy()
         probs_after = b5["top_k_scores"].numpy()
