@@ -585,12 +585,6 @@ def validate_args(args):
     pytorch_translate_options.validate_generation_args(args)
 
     assert args.path is not None, "--path required for generation!"
-    assert args.source_vocab_file and os.path.isfile(
-        args.source_vocab_file
-    ), "Please specify a valid file for --source-vocab-file"
-    assert args.target_vocab_file and os.path.isfile(
-        args.target_vocab_file
-    ), "Please specify a valid file for --target-vocab_file"
     if args.source_binary_file != "":
         assert args.target_binary_file != ""
         assert os.path.isfile(args.source_binary_file)
