@@ -126,6 +126,9 @@ class SequenceGenerator(object):
             maxlen_b = self.maxlen
 
         for sample in data_itr:
+            if "net_input" not in sample:
+                continue
+
             if cuda:
                 s = utils.move_to_cuda(sample)
             else:
