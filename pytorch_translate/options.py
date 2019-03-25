@@ -672,16 +672,26 @@ def expand_generation_args(group, train=False):
         help=("The diversity rate of sibling_rank for generating diverse beams"),
     )
     group.add_argument(
-        "--rescoring-model-path",
-        default=None,
-        type=str,
-        help=("Provide a path for the rescoring model"),
+        "--enable-rescoring",
+        nargs="?",
+        const=True,
+        default=False,
+        type=utils.bool_flag,
+        help=("Enable running rescoring during beam decoding"),
     )
     group.add_argument(
-        "--rescoring-strategy",
+        "--enable-r2l-rescoring",
+        nargs="?",
+        const=True,
+        default=False,
+        type=utils.bool_flag,
+        help=("Enable R2L model based rescoring of hypos"),
+    )
+    group.add_argument(
+        "--r2l-model-path",
         default=None,
         type=str,
-        help=("Provide the name for rescoring strategy"),
+        help=("Provide a path for the r2l rescoring model"),
     )
 
     # These arguments are only used during training
