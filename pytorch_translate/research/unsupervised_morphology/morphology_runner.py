@@ -82,13 +82,6 @@ def get_arg_parser():
         default=2,
     )
     parser.add_option(
-        "--max-morph-len",
-        type="float",
-        help="Max morphology length.",
-        dest="max_morph_len",
-        default=8,
-    )
-    parser.add_option(
         "--hard-em", action="store_true", dest="use_hardEM", default=False
     )
     parser.add_option(
@@ -120,11 +113,10 @@ if __name__ == "__main__":
             input_file=options.train_file,
             smoothing_const=options.smooth_const,
             use_hardEM=options.use_hardEM,
-            max_morph_len=options.max_morph_len,
             len_cost_pow=options.len_cost_pow,
         )
+        print("Number of training words", len(model.params.word_counts))
         model.expectation_maximization(
-            options.train_file,
             options.em_iter,
             options.num_cpus,
             options.model_path if options.save_checkpoint else None,
@@ -168,7 +160,13 @@ if __name__ == "__main__":
         writer = open(options.output_file, "w", encoding="utf-8")
         with open(options.input_file, "r", encoding="utf-8") as input_stream:
             for line in input_stream:
-                writer.write(segmentor.segment_sentence(line.strip()) + "\n")
+                output = []
+                for word in line.strip().split():
+                    if word not in segment_cache:
+                        segmented = segmentor.segment_word(word)
+                        segment_cache[word] = segmented
+                    output.append(segment_cache[word])
+                writer.write(" ".join(output) + "\n")
         writer.close()
 
     if options.investigate:
@@ -189,7 +187,7 @@ if __name__ == "__main__":
             message = " ".join(
                 [
                     "input options: 1) e [str] for emission probs,",
-                    "2) s [str] for segmenting sentence:\n",
+                    "2) s [str] for segmenting word:\n",
                 ]
             )
             input_command = input(message).strip().split()
@@ -206,5 +204,5 @@ if __name__ == "__main__":
                 emission_prob = model.emission_prob(input_command[1])
                 print(e, cost_coef, e * cost_coef)
             elif len(input_command) > 1 and input_command[0] == "s":
-                segmented = segmentor.segment_sentence(" ".join(input_command[1:]))
+                segmented = segmentor.segment_word(input_command[1])
                 print(segmented)

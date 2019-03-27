@@ -10,26 +10,20 @@ from typing import Dict
 
 
 class MorphologyHMMParams(object):
-    def __init__(
-        self,
-        smoothing_const: float = 0.1,
-        max_morph_len: int = 8,
-        len_cost_pow: float = 2,
-    ):
+    def __init__(self, smoothing_const: float = 0.1, len_cost_pow: float = 2):
         """
         This class contains unigram HMM probabilities for the morphological model.
         Args:
             * smoothing_const: For smoothing the categorical distribution. This is
             mostly useful for unseen observations outside training.
-            * max_morph_len: maximum allowed size of a morpheme.
             * len_cost_pow: used for penalizing long char sequences. Here we use
                 it in emission as exp(- math.pow(len(str)-1, len_cost_pow))
         """
         self.emit_probs: Dict[str, float] = defaultdict(float)
+        self.word_counts: Dict[str, int] = Counter()
         self.smoothing_const = smoothing_const
         self.SMALL_CONST = -10000
         self.len_cost_pow = len_cost_pow
-        self.max_morph_len = max_morph_len
 
     def init_params_from_data(self, input_file_path):
         """
@@ -39,11 +33,15 @@ class MorphologyHMMParams(object):
 
         with open(input_file_path, "r", encoding="utf-8") as input_stream:
             for line in input_stream:
-                sen = line.strip()
-                for i in range(0, len(sen)):
-                    for j in range(i, min(i + self.max_morph_len, len(sen))):
-                        substr = sen[i : j + 1]
-                        self.morph_emit_probs[substr] += 1
+                for word in line.strip().split():
+                    self.word_counts[word] += 1
+
+        for word in self.word_counts:
+            word_count = self.word_counts[word]
+            for i in range(0, len(word)):
+                for j in range(i, len(word)):
+                    substr = word[i : j + 1]
+                    self.morph_emit_probs[substr] += word_count
 
         # Normalizing the initial probabilities.
         denom = sum(self.morph_emit_probs.values())
@@ -81,48 +79,48 @@ class MorphologyHMMParams(object):
     @staticmethod
     def load(file_path):
         with open(file_path, "rb") as f:
-            e, s, lc, mml = pickle.load(f)
+            e, s, c, lc = pickle.load(f)
         m = MorphologyHMMParams(s)
         m.morph_emit_probs = e
+        m.word_counts = c
         m.len_cost_pow = lc
-        m.max_morph_len = mml
         return m
 
     def save(self, file_path):
-        e, s, lc, mml = (
+        e, s, c, lc = (
             self.morph_emit_probs,
             self.smoothing_const,
+            self.word_counts,
             self.len_cost_pow,
-            self.max_morph_len,
         )
         with open(file_path, "wb") as f:
-            pickle.dump((e, s, lc, mml), f)
+            pickle.dump((e, s, c, lc), f)
 
 
 class MorphologySegmentor(object):
     def __init__(self, morphology_hmm_params):
         self.params = morphology_hmm_params
 
-    def segment_viterbi(self, sentence):
+    def segment_viterbi(self, word):
         """
-        This is a dynamic programming algorithm for segmenting a sentence by using a
+        This is a dynamic programming algorithm for segmenting a word by using a
         modified version of the Viterbi algorithm. The main difference here is that
         the segment-Viterbi algorithm is based on segment-HMM where a state can
         emit more than one output. In our case, a state is a morpheme and an output
-        is a substring of a sentence. Because of searching for a substring
+        is a substring of a word. Because of searching for a substring
         the segment-Viterbi algorithm has a slower run-time. The segment-Viterbi
         has a complexity O(n^2). In our case, the model is context-insensitive.
         A pseudo-code for the vanilla Viterbi algorithm:
         http://www.cs.columbia.edu/~mcollins/hmms-spring2013.pdf#page=18
         """
-        n = len(sentence)
+        n = len(word)
         pi = [self.params.SMALL_CONST for _ in range(n + 1)]
         pi[0] = 0
         back_pointer = [0 for _ in range(n + 1)]
+
         for start in range(n):  # loop over starting indices of morphemes.
-            # loop over end indices of morphemes.
-            for end in range(start + 1, min(n + 1, start + self.params.max_morph_len)):
-                e = self.params.emission_log_prob(sentence[start:end])
+            for end in range(start + 1, n + 1):  # loop over end indices of morphemes.
+                e = self.params.emission_log_prob(word[start:end])
                 log_prob = pi[start] + e
                 if log_prob > pi[end]:
                     pi[end] = log_prob
@@ -145,18 +143,15 @@ class MorphologySegmentor(object):
         indices.reverse()
         return indices
 
-    def segment_sentence(self, sentence, space_letter: str = "<space>"):
+    def segment_word(self, word):
         """
-        This method segments sentences based on the Viterbi algorithm. Given an
-        input string, the algorithm segments that sentence to one or more
-        substrings.
-        Args:
-            space_letter: letter to put in place of space.
+        This method segments words based on the Viterbi algorithm. Given an input
+        string, the algorithm segments that word to one or more substrings.
         """
-        indices = self.segment_viterbi(sentence)
+        indices = self.segment_viterbi(word)
         outputs = []
         for i in range(len(indices) - 1):
-            substr = sentence[indices[i] : indices[i + 1]].replace(" ", space_letter)
+            substr = word[indices[i] : indices[i + 1]]
             outputs.append(substr)
 
         return " ".join(outputs)
@@ -168,7 +163,6 @@ class UnsupervisedMorphology(object):
         input_file: str,
         smoothing_const: float = 0.1,
         use_hardEM: bool = False,
-        max_morph_len: int = 8,
         len_cost_pow: float = 2.0,
     ):
         """
@@ -176,9 +170,7 @@ class UnsupervisedMorphology(object):
             use_hardEM: Choosing between soft EM or Viterbi EM (hard EM) algorithm.
         """
         self.params = MorphologyHMMParams(
-            smoothing_const=smoothing_const,
-            max_morph_len=max_morph_len,
-            len_cost_pow=len_cost_pow,
+            smoothing_const=smoothing_const, len_cost_pow=len_cost_pow
         )
         self.use_hardEM = use_hardEM
         self.params.init_params_from_data(input_file)
@@ -196,34 +188,34 @@ class UnsupervisedMorphology(object):
         backward_values[n] = 1.0
         return backward_values
 
-    def forward(self, sentence):
+    def forward(self, word):
         """
         For the forward pass in the forward-backward algorithm.
         The forward pass is very similar to the Viterbi algorithm. The main difference
         is that here we use summation instead of argmax.
         """
-        n = len(sentence)
+        n = len(word)
         forward_values = UnsupervisedMorphology.init_forward_values(n)
         for start in range(n):
-            for end in range(start + 1, min(n + 1, start + self.params.max_morph_len)):
-                e = self.params.emission_prob(sentence[start:end])
+            for end in range(start + 1, n + 1):
+                e = self.params.emission_prob(word[start:end])
                 forward_values[end] += forward_values[start] * e
         return forward_values
 
-    def backward(self, sentence):
+    def backward(self, word):
         """
         For the backward pass in the forward-backward algorithm.
         """
-        n = len(sentence)
+        n = len(word)
         backward_values = UnsupervisedMorphology.init_backward_values(n)
 
         for start in range(n - 1, -1, -1):
-            for end in range(start + 1, min(n + 1, start + self.params.max_morph_len)):
-                e = self.params.emission_prob(sentence[start:end])
+            for end in range(start + 1, n + 1):
+                e = self.params.emission_prob(word[start:end])
                 backward_values[start] += backward_values[end] * e
         return backward_values
 
-    def forward_backward(self, sentence):
+    def forward_backward(self, word):
         """
         The forward-backward algorithm is a dynamic programming algorithm that
         enumerates all possible observations in a sequence and returns the
@@ -238,15 +230,15 @@ class UnsupervisedMorphology(object):
         found here:
         http://www.cs.columbia.edu/~mcollins/courses/6998-2012/lectures/lec6.3.pdf
         """
-        n = len(sentence)
-        forward_values = self.forward(sentence)
-        backward_values = self.backward(sentence)
+        n = len(word)
+        forward_values = self.forward(word)
+        backward_values = self.backward(word)
 
         emission_expectations = defaultdict(float)
 
         for start in range(n):
-            for end in range(start + 1, min(n + 1, start + self.params.max_morph_len)):
-                substr = sentence[start:end]
+            for end in range(start + 1, n + 1):
+                substr = word[start:end]
                 e = self.params.emission_prob(substr)
                 emission_expectations[substr] += (
                     forward_values[start] * e * backward_values[end]
@@ -258,9 +250,9 @@ class UnsupervisedMorphology(object):
     def group_to(max_size, iterable):
         return list(zip_longest(*[iter(iterable)] * max_size, fillvalue=None))
 
-    def get_expectations_from_viterbi(self, sentence):
+    def get_expectations_from_viterbi(self, word):
         """
-        This method segments a sentence with the Viterbi algorithm, and assumes that
+        This method segments a word with the Viterbi algorithm, and assumes that
         the output of the Viterbi algorithm has an expected count of one, and others
         will have an expected count of zero. This is in contrast with the
         forward-backward algorithm where every possible segmentation is taken into
@@ -268,42 +260,43 @@ class UnsupervisedMorphology(object):
         """
         emission_expectations = defaultdict(float)
 
-        indices = self.segmentor.segment_viterbi(sentence)
+        indices = self.segmentor.segment_viterbi(word)
 
         for i in range(len(indices) - 1):
-            substr = sentence[indices[i] : indices[i + 1]]
+            substr = word[indices[i] : indices[i + 1]]
             emission_expectations[substr] += 1
 
         return emission_expectations
 
-    def expectation_substep(self, sens):
+    def expectation_substep(self, words):
         """
         This method is subprocess for the expectation method.
         """
         emission_expectations = defaultdict(float)
-        for sen in sens:
-            if sen is None:
+        for wf in words:
+            if wf is None:
                 continue
+            (word, freq) = wf
 
             if self.use_hardEM:
-                e = self.get_expectations_from_viterbi(sen)
+                e = self.get_expectations_from_viterbi(word)
             else:
-                e = self.forward_backward(sen)
+                e = self.forward_backward(word)
 
             for e_key in e.keys():
-                emission_expectations[e_key] += e[e_key]
+                emission_expectations[e_key] += e[e_key] * freq
 
         return emission_expectations
 
-    def expectation(self, pool, train_sens_chunks):
+    def expectation(self, pool, train_words_chunks):
         """
-        This method runs the expectation step with a chunked list of training
-            sentences.
+        This method runs the expectation step with a chunked list of training words.
         Args:
             pool: Pool object for multi-threading.
-            train_sens_chunks: a list of sentences (chunked for multi-threading).
+            train_words_chunks: a list of word+frequency-lists
+                                (chunked for multi-threading).
         """
-        expectations = pool.map(self.expectation_substep, train_sens_chunks)
+        expectations = pool.map(self.expectation_substep, train_words_chunks)
         emission_expectations = defaultdict(float)
         for e_key in set(chain(*[list(e.keys()) for e in expectations])):
             emission_expectations[e_key] = sum(e[e_key] for e in expectations)
@@ -327,13 +320,7 @@ class UnsupervisedMorphology(object):
             else:  # for cases of underflowing
                 self.params.morph_emit_probs[morpheme] = 1.0 / num_morphs
 
-    def expectation_maximization(
-        self,
-        input_file_path: str,
-        num_iters: int,
-        num_cpus: int = 10,
-        model_path: str = None,
-    ):
+    def expectation_maximization(self, num_iters, num_cpus=10, model_path=None):
         """
         Runs the EM algorithm.
         Args:
@@ -341,43 +328,24 @@ class UnsupervisedMorphology(object):
             num_cpus: Number of cpus for parallel executation of the E step.
         """
         pool = Pool(num_cpus)
-
+        train_words = [
+            (word, self.params.word_counts[word])
+            for word in self.params.word_counts.keys()
+        ]
+        chunk_size = math.ceil(float(len(train_words)) / num_cpus)
+        train_words_chunks = UnsupervisedMorphology.group_to(chunk_size, train_words)
         for epoch in range(num_iters):
             print("starting epoch %i" % epoch)
-            self.em_step(pool, input_file_path, num_cpus, model_path)
+            self.em_step(pool, train_words_chunks, model_path)
 
-    def em_step(self, pool, input_file_path, num_cpus, model_path):
+    def em_step(self, pool, train_words_chunks, model_path):
         """
         One EM step of the EM algorithm.
         """
         print("starting expectation step")
-        train_sentences = []
-        expectations = defaultdict(float)
-        with open(input_file_path, "r") as train_open:
-            for line in train_open:
-                train_sentences.append(line.strip())
-                # Not allowing to keep many sentences in memory.
-                if len(train_sentences) > 100000:
-                    chunk_size = math.ceil(float(len(train_sentences)) / num_cpus)
-                    train_sens_chunks = UnsupervisedMorphology.group_to(
-                        chunk_size, train_sentences
-                    )
-                    ee = self.expectation(pool, train_sens_chunks)
-                    for key in ee.keys():
-                        expectations[key] += ee[key]
-                    train_sentences = []
-        if len(train_sentences) > 0:
-            chunk_size = math.ceil(float(len(train_sentences)) / num_cpus)
-            train_sens_chunks = UnsupervisedMorphology.group_to(
-                chunk_size, train_sentences
-            )
-            ee = self.expectation(pool, train_sens_chunks)
-            for key in ee.keys():
-                expectations[key] += ee[key]
-            train_sentences = []
-
+        ee = self.expectation(pool, train_words_chunks)
         print("starting maximization step")
-        self.maximization(expectations)
+        self.maximization(ee)
         print("updated parameters after maximization")
         if model_path is not None:
             self.save(model_path)

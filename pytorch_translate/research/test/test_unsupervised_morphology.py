@@ -32,9 +32,9 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
             morph_hmm_model.init_params_from_data("no_exist_file.txt")
 
-            assert len(morph_hmm_model.morph_emit_probs) == 200
+            assert len(morph_hmm_model.morph_emit_probs) == 51
             assert round(morph_hmm_model.morph_emit_probs["1234"], 3) == round(
-                0.0062799043062200955, 3
+                0.014141414141414142, 3
             )
 
     def test_zero_out_params(self):
@@ -70,7 +70,7 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             morph_hmm_model.init_params_from_data("no_exist_file.txt")
 
             # todo add more tests
-            e = 0.0062799043062200955
+            e = 0.014141414141414142
             e_r = e * math.exp(-9)
             assert round(morph_hmm_model.emission_prob("1234"), 3) == round(e_r, 3)
 
@@ -88,7 +88,7 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             morph_hmm_model.init_params_from_data("no_exist_file.txt")
 
             # todo add more tests
-            e = 0.0062799043062200955
+            e = 0.014141414141414142
             e_r = e * math.exp(-9)
             assert round(morph_hmm_model.emission_log_prob("1234"), 3) == round(
                 math.log(e_r), 3
@@ -110,7 +110,7 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             morph_hmm_model.init_params_from_data("no_exist_file.txt")
 
             segmentor = unsupervised_morphology.MorphologySegmentor(morph_hmm_model)
-            assert segmentor.segment_viterbi("123123789") == [0, 3, 6, 9]
+            assert segmentor.segment_viterbi("123123789") == [0, 2, 3, 5, 6, 9]
 
     def test_segment_viterbi_w_smoothing(self):
         morph_hmm_model = unsupervised_morphology.MorphologyHMMParams()
@@ -126,9 +126,9 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             morph_hmm_model.init_params_from_data("no_exist_file.txt")
 
             segmentor = unsupervised_morphology.MorphologySegmentor(morph_hmm_model)
-            assert segmentor.segment_viterbi("123123789") == [0, 3, 6, 9]
+            assert segmentor.segment_viterbi("123123789") == [0, 2, 3, 5, 6, 9]
 
-    def test_segment_sentence_no_smoothing(self):
+    def test_segment_word_no_smoothing(self):
         morph_hmm_model = unsupervised_morphology.MorphologyHMMParams(
             smoothing_const=0.0
         )
@@ -144,7 +144,7 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             morph_hmm_model.init_params_from_data("no_exist_file.txt")
 
             segmentor = unsupervised_morphology.MorphologySegmentor(morph_hmm_model)
-            assert segmentor.segment_sentence("123123789789") == "123 123 789 789"
+            assert segmentor.segment_word("123123789789") == "12 3 12 3 789 789"
 
     def check_emission_after_forward_backward(self, str, e, expected_morphemes):
         for str in get_all_substrings(str):
@@ -225,7 +225,7 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
                 "no_exist_file.txt", smoothing_const=0.0
             )
-            unsupervised_model.expectation_maximization("no_exist_file.txt", 10, 10)
+            unsupervised_model.expectation_maximization(10, 10)
 
         # Running with Viterbi-EM.
         with patch("builtins.open") as mock_open:
@@ -234,7 +234,7 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             unsupervised_model = unsupervised_morphology.UnsupervisedMorphology(
                 "no_exist_file.txt", smoothing_const=0.0, use_hardEM=True
             )
-            unsupervised_model.expectation_maximization("no_exist_file.txt", 10, 10)
+            unsupervised_model.expectation_maximization(10, 10)
 
     def test_get_expectations_from_viterbi(self):
         with patch("builtins.open") as mock_open:
@@ -250,9 +250,9 @@ class TestUnsupervisedMorphology(unittest.TestCase):
             um = unsupervised_morphology.UnsupervisedMorphology(
                 "no_exist_file.txt", smoothing_const=0.0, use_hardEM=True
             )
-            assert um.segmentor.segment_viterbi("123123789") == [0, 3, 6, 9]
+            assert um.segmentor.segment_viterbi("123123789") == [0, 2, 3, 5, 6, 9]
             e = um.get_expectations_from_viterbi("123123789")
-            assert e["123"] == 2
+            assert e["12"] == 2
             assert e["789"] == 1
             assert e["89"] == 0
 
@@ -293,10 +293,10 @@ class TestUnsupervisedMorphology(unittest.TestCase):
         assert (
             unsupervised_model.params.morph_emit_probs == loaded_params.morph_emit_probs
         )
+        assert unsupervised_model.params.word_counts == loaded_params.word_counts
         assert (
             unsupervised_model.params.smoothing_const == loaded_params.smoothing_const
         )
         assert unsupervised_model.params.SMALL_CONST == loaded_params.SMALL_CONST
         assert unsupervised_model.params.len_cost_pow == loaded_params.len_cost_pow
-        assert unsupervised_model.params.max_morph_len == loaded_params.max_morph_len
         shutil.rmtree(test_dir)
