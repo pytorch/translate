@@ -131,9 +131,9 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
                     char_offsets.append(char_offsets[-1] + len(char_inds))
 
         self.word_buffer = np.concatenate(word_array_list)
-        self.word_offsets = np.array(word_offsets, dtype=np.int32)
+        self.word_offsets = np.array(word_offsets, dtype=np.int64)
         self.char_buffer = np.concatenate(char_array_list)
-        self.char_offsets = np.array(char_offsets, dtype=np.int32)
+        self.char_offsets = np.array(char_offsets, dtype=np.int64)
         self.sizes = np.array(sizes, dtype=np.int32)
 
         del word_array_list, word_offsets, char_array_list, char_offsets, sizes
