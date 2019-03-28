@@ -3,6 +3,7 @@
 import shutil
 import tempfile
 import unittest
+from collections import defaultdict
 from os import path
 
 from pytorch_translate.research.unsupervised_morphology.ibm_model1 import IBMModel1
@@ -42,4 +43,36 @@ class TestIBMModel1(unittest.TestCase):
         assert len(ibm_model.translation_prob[ibm_model.null_str]) == 9
         assert len(ibm_model.translation_prob["345"]) == 6
         assert ibm_model.translation_prob["122"]["123"] == 1.0 / 4
+        shutil.rmtree(tmp_dir)
+
+    def test_e_step(self):
+        ibm_model = IBMModel1()
+
+        tmp_dir, f1, f2 = get_two_tmp_files()
+        ibm_model.initialize_translation_probs(f1, f2)
+        translation_counts = defaultdict()
+
+        ibm_model.e_step(
+            ["123", "124", "234", "345", ibm_model.null_str],
+            ["123", "124", "234", "345"],
+            translation_counts,
+        )
+        assert translation_counts["123"]["345"] == 1.0 / 4
+        shutil.rmtree(tmp_dir)
+
+    def test_em_step(self):
+        ibm_model = IBMModel1()
+
+        tmp_dir, f1, f2 = get_two_tmp_files()
+        ibm_model.initialize_translation_probs(f1, f2)
+
+        ibm_model.em_step(f1, f2)
+
+        assert ibm_model.translation_prob["456789"]["345"] == 0
+        assert ibm_model.translation_prob["456789"]["456789"] == 0.5
+        assert (
+            ibm_model.translation_prob[ibm_model.null_str]["124"]
+            < ibm_model.translation_prob[ibm_model.null_str]["456789"]
+        )
+
         shutil.rmtree(tmp_dir)
