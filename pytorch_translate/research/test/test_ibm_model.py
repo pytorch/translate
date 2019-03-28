@@ -39,8 +39,7 @@ class TestIBMModel1(unittest.TestCase):
 
         tmp_dir, f1, f2 = get_two_tmp_files()
         ibm_model.initialize_translation_probs(f1, f2)
-        assert len(ibm_model.translation_prob) == 10
-        assert len(ibm_model.translation_prob[ibm_model.null_str]) == 9
+        assert len(ibm_model.translation_prob) == 9
         assert len(ibm_model.translation_prob["345"]) == 6
         assert ibm_model.translation_prob["122"]["123"] == 1.0 / 4
         shutil.rmtree(tmp_dir)
@@ -53,7 +52,7 @@ class TestIBMModel1(unittest.TestCase):
         translation_counts = defaultdict()
 
         ibm_model.e_step(
-            ["123", "124", "234", "345", ibm_model.null_str],
+            ["123", "124", "234", "345"],
             ["123", "124", "234", "345"],
             translation_counts,
         )
@@ -70,10 +69,6 @@ class TestIBMModel1(unittest.TestCase):
 
         assert ibm_model.translation_prob["456789"]["345"] == 0
         assert ibm_model.translation_prob["456789"]["456789"] == 0.5
-        assert (
-            ibm_model.translation_prob[ibm_model.null_str]["124"]
-            < ibm_model.translation_prob[ibm_model.null_str]["456789"]
-        )
 
         shutil.rmtree(tmp_dir)
 
@@ -85,9 +80,4 @@ class TestIBMModel1(unittest.TestCase):
 
         assert ibm_model.translation_prob["456789"]["345"] == 0
         assert ibm_model.translation_prob["456789"]["456789"] == 0.5
-        assert (
-            ibm_model.translation_prob[ibm_model.null_str]["124"]
-            < ibm_model.translation_prob[ibm_model.null_str]["456789"]
-        )
-
         shutil.rmtree(tmp_dir)

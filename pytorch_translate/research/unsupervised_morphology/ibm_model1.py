@@ -10,7 +10,6 @@ class IBMModel1(object):
         the full pseudo-code is available at https://fburl.com/yvp31kuw
         """
         self.translation_prob = defaultdict()
-        self.null_str = "<null>"
 
     def initialize_translation_probs(self, src_path: str, dst_path: str):
         """
@@ -18,7 +17,7 @@ class IBMModel1(object):
         """
         with open(src_path) as src_file, open(dst_path) as dst_file:
             for src_line, dst_line in zip(src_file, dst_file):
-                src_words = set(src_line.strip().split() + [self.null_str])
+                src_words = set(src_line.strip().split())
                 dst_words = set(dst_line.strip().split())
                 for src_word in src_words:
                     if src_word not in self.translation_prob:
@@ -37,7 +36,7 @@ class IBMModel1(object):
         Args:
             num_iters: Number of EM iterations.
         """
-        self.initialize_translation_probs(src_path=src_path,dst_path=dst_path)
+        self.initialize_translation_probs(src_path=src_path, dst_path=dst_path)
         for iter in range(num_iters):
             print("Iteration of IBM model(1):", str(iter + 1))
             self.em_step(src_path=src_path, dst_path=dst_path)
@@ -47,7 +46,7 @@ class IBMModel1(object):
 
         with open(src_path) as src_file, open(dst_path) as dst_file:
             for src_line, dst_line in zip(src_file, dst_file):
-                src_words = src_line.strip().split() + [self.null_str]
+                src_words = src_line.strip().split()
                 dst_words = dst_line.strip().split()
                 self.e_step(src_words, dst_words, translation_expectations)
         self.m_step(translation_expectations)
