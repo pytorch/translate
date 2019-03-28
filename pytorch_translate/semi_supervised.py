@@ -15,15 +15,29 @@ from pytorch_translate import common_layers, constants, utils
 @register_model("semi_supervised")
 class SemiSupervisedModel(FairseqMultiModel):
     """Train RNN models with iterative backtranslations.
+
+    To use, you must extend this class and define single_model_cls as a class
+    variable. Example:
+
+        @register_model("semi_supervised_transformer")
+        class SemiSupervisedTransformerModel(SemiSupervisedModel):
+            # We can't use `self.single_model_cls` because at this point
+            # `__init__` hasn't run. single_model_cls is a static class variable
+            # that is meant to be constant.
+            single_model_cls = TransformerModel
+
+            @staticmethod
+            def add_args(parser):
+                TransformerModel.add_args(parser)
+                SemiSupervisedModel.add_args(parser)
     """
 
     def __init__(self, task, encoders, decoders):
         super().__init__(encoders, decoders)
         self.task = task
         self.models = nn.ModuleDict(
-            # Need to use RNNModel since FairseqModel doesn't define get_targets
             {
-                key: self.single_model_cls(task, encoders[key], decoders[key])
+                key: self.__class__.single_model_cls(task, encoders[key], decoders[key])
                 for key in self.keys
             }
         )
@@ -159,7 +173,7 @@ class SemiSupervisedModel(FairseqMultiModel):
                     decoder_embed_tokens = shared_decoder_embed_tokens
                 lang_decoders[target_lang] = cls.single_model_cls.build_decoder(
                     args_maybe_modified,
-                    task.dicts[source_lang],
+                    task.dicts[target_lang],
                     tgt_dict,
                     embed_tokens=decoder_embed_tokens,
                 )

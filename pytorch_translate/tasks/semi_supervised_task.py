@@ -146,15 +146,12 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
             f"{self.target_lang}-{self.source_lang}",
         ]
         self.training = training
-        # TODO: Generalize this to be able to use other model classes like Transformer
-        self.model_cls = rnn.RNNModel
         self.remove_eos_from_source = not args.append_eos_to_source
         self.args = args
         # This is explicitly set so that we can re-use code from
         # MultilingualTranslationTask
         self.args.lang_pairs = self.lang_pairs
         self.model = None
-        # TODO: Expose this as easy-to-use command line argument
         """
         loss_weights refers to weights given to training loss for constituent
         models for specified number of epochs. If we don't specify a model, they
@@ -449,14 +446,8 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
             )
         forward_pair = "-".join([self.source_lang, self.target_lang])
         backward_pair = "-".join([self.target_lang, self.source_lang])
-        self.forward_model = self.model_cls(
-            self, model.models[forward_pair].encoder, model.models[forward_pair].decoder
-        )
-        self.backward_model = self.model_cls(
-            self,
-            model.models[backward_pair].encoder,
-            model.models[backward_pair].decoder,
-        )
+        self.forward_model = model.models[forward_pair]
+        self.backward_model = model.models[backward_pair]
         return model
 
     def train_step(self, sample, model, criterion, optimizer, ignore_grad=False):
