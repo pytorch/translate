@@ -556,7 +556,13 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
 
 @register_model("semi_supervised_transformer")
-class SemisupervisedTransformerModel(SemiSupervisedModel):
+class SemiSupervisedTransformerModel(SemiSupervisedModel):
+    """
+    We can't use `self.single_model_cls` because at this point `__init__` hasn't
+    run. single_model_cls is a static class variable that is meant to be
+    constant
+    """
+
     single_model_cls = TransformerModel
 
     @staticmethod
