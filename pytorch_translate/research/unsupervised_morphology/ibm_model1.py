@@ -32,6 +32,17 @@ class IBMModel1(object):
             for dst_word in self.translation_prob[src_word].keys():
                 self.translation_prob[src_word][dst_word] = 1.0 / denom
 
+    def learn_ibm_parameters(self, src_path: str, dst_path: str, num_iters: int):
+        """
+        Runs the EM algorithm for IBM model 1.
+        Args:
+            num_iters: Number of EM iterations.
+        """
+        self.initialize_translation_probs(src_path=src_path, dst_path=dst_path)
+        for iter in range(num_iters):
+            print("Iteration of IBM model(1):", str(iter + 1))
+            self.em_step(src_path=src_path, dst_path=dst_path)
+
     def em_step(self, src_path: str, dst_path: str):
         translation_expectations = defaultdict()
 
