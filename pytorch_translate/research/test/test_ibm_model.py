@@ -76,3 +76,18 @@ class TestIBMModel1(unittest.TestCase):
         )
 
         shutil.rmtree(tmp_dir)
+
+    def test_ibm_train(self):
+        ibm_model = IBMModel1()
+
+        tmp_dir, f1, f2 = get_two_tmp_files()
+        ibm_model.learn_ibm_parameters(src_path=f1, dst_path=f2, num_iters=3)
+
+        assert ibm_model.translation_prob["456789"]["345"] == 0
+        assert ibm_model.translation_prob["456789"]["456789"] == 0.5
+        assert (
+            ibm_model.translation_prob[ibm_model.null_str]["124"]
+            < ibm_model.translation_prob[ibm_model.null_str]["456789"]
+        )
+
+        shutil.rmtree(tmp_dir)
