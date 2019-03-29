@@ -1360,14 +1360,18 @@ class BiLSTM(nn.Module):
                 )
             )
 
-    def forward(self, embeddings, lengths):
+    def forward(self, embeddings, lengths, enforce_sorted=True):
+        # enforce_sorted is set to True by default to force input lengths
+        # are sorted in a descending order when pack padded sequence.
         bsz = embeddings.size()[1]
 
         # Generate packed seq to deal with varying source seq length
         # packed_input is of type PackedSequence, which consists of:
         # element [0]: a tensor, the packed data, and
         # element [1]: a list of integers, the batch size for each step
-        packed_input = pack_padded_sequence(embeddings, lengths)
+        packed_input = pack_padded_sequence(
+            embeddings, lengths, enforce_sorted=enforce_sorted
+        )
 
         final_hiddens, final_cells = [], []
         for i, rnn_layer in enumerate(self.layers):
