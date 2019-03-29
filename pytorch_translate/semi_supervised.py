@@ -14,8 +14,7 @@ from pytorch_translate import common_layers, constants, utils
 
 @register_model("semi_supervised")
 class SemiSupervisedModel(FairseqMultiModel):
-    """Train RNN models with iterative backtranslations.
-
+    """
     To use, you must extend this class and define single_model_cls as a class
     variable. Example:
 
