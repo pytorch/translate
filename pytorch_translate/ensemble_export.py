@@ -193,31 +193,15 @@ def merge_transpose_and_batchmatmul(caffe2_backend_rep):
 
 
 def save_caffe2_rep_to_db(
-    caffe2_backend_rep,
-    output_path,
-    input_names,
-    output_names,
-    num_workers,
-    copied_from=None,
+    caffe2_backend_rep, output_path, input_names, output_names, num_workers
 ):
-    """
-    If specified, copied_from is a dictionary with output blobs as keys and
-    input blobs as values, indicating that the former should be copied from the
-    latter.
-    """
     merge_transpose_and_batchmatmul(caffe2_backend_rep)
 
     # netdef external_input includes internally produced blobs
     actual_external_inputs = set()
     produced = set()
     for operator in caffe2_backend_rep.predict_net.op:
-        for i, blob in enumerate(operator.input):
-            # in the case of copied_from, we use the input blob (value) as the
-            # operator input and append a copy operator from input to output
-            # at the end of the network.
-            if copied_from is not None and blob in copied_from:
-                operator.input[i] = copied_from[blob]
-                blob = copied_from[blob]
+        for blob in operator.input:
             if blob not in produced:
                 actual_external_inputs.add(blob)
         for blob in operator.output:
@@ -238,10 +222,6 @@ def save_caffe2_rep_to_db(
             init_net.Copy(param, saved_name)
             predict_net.Copy(saved_name, param)
             param_names[i] = saved_name
-
-    if copied_from is not None:
-        for (output_blob, input_blob) in copied_from.items():
-            predict_net.Copy(input_blob, output_blob)
 
     dummy_shapes = {}
     for blob in output_names:
@@ -280,6 +260,8 @@ class EncoderEnsemble(nn.Module):
                 model = model.get_student_model()
                 self.models[i] = model
             self._modules[f"model_{i}"] = model
+
+        self.enable_precompute_reduced_weights = False
 
     def forward(self, src_tokens, src_lengths):
         outputs = []
@@ -322,7 +304,8 @@ class EncoderEnsemble(nn.Module):
         reduced_weights = {}
         for i, model in enumerate(self.models):
             if (
-                hasattr(model.decoder, "_precompute_reduced_weights")
+                self.enable_precompute_reduced_weights
+                and hasattr(model.decoder, "_precompute_reduced_weights")
                 and possible_translation_tokens is not None
             ):
                 reduced_weights[i] = torch.jit._fork(
@@ -345,7 +328,8 @@ class EncoderEnsemble(nn.Module):
             if hasattr(model.decoder, "_init_prev_states"):
                 states.extend(model.decoder._init_prev_states(encoder_out))
             if (
-                hasattr(model.decoder, "_precompute_reduced_weights")
+                self.enable_precompute_reduced_weights
+                and hasattr(model.decoder, "_precompute_reduced_weights")
                 and possible_translation_tokens is not None
             ):
                 states.extend(torch.jit._wait(reduced_weights[i]))
@@ -447,7 +431,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
         self.tile_internal = tile_internal
 
-        self.copied_from = {}
+        self.enable_precompute_reduced_weights = False
 
     def forward(self, input_tokens, prev_scores, timestep, *inputs):
         """
@@ -505,7 +489,8 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 next_state_input += 1
 
                 if (
-                    hasattr(model.decoder, "_precompute_reduced_weights")
+                    self.enable_precompute_reduced_weights
+                    and hasattr(model.decoder, "_precompute_reduced_weights")
                     and possible_translation_tokens is not None
                 ):
                     # (output_projection_w, output_projection_b)
@@ -832,8 +817,6 @@ class DecoderBatchedStepEnsemble(nn.Module):
             beam_axis = beam_axis_per_state[i]
             if beam_axis is None:
                 next_state = state
-                # to ensure correct Caffe2 export during save_to_db()
-                self.copied_from[f"state_output_{i}"] = f"state_input_{i}"
             else:
                 next_state = state.index_select(dim=beam_axis, index=prev_hypos)
             outputs.append(next_state)
@@ -904,7 +887,6 @@ class DecoderBatchedStepEnsemble(nn.Module):
             input_names=self.input_names,
             output_names=self.output_names,
             num_workers=2 * len(self.models),
-            copied_from=self.copied_from,
         )
 
 
@@ -953,6 +935,7 @@ class BeamSearch(torch.jit.ScriptModule):
             encoder_ens = CharSourceEncoderEnsemble(self.models)
         else:
             encoder_ens = EncoderEnsemble(self.models)
+        encoder_ens.enable_precompute_reduced_weights = True
 
         if quantize:
             encoder_ens = torch.jit.quantized.quantize_linear_modules(encoder_ens)
@@ -983,6 +966,7 @@ class BeamSearch(torch.jit.ScriptModule):
             unk_reward,
             tile_internal=False,
         )
+        decoder_ens.enable_precompute_reduced_weights = True
         if quantize:
             decoder_ens = torch.jit.quantized.quantize_linear_modules(decoder_ens)
             decoder_ens = torch.jit.quantized.quantize_rnn_cell_modules(decoder_ens)
@@ -994,6 +978,7 @@ class BeamSearch(torch.jit.ScriptModule):
             unk_reward,
             tile_internal=True,
         )
+        decoder_ens_tile.enable_precompute_reduced_weights = True
         if quantize:
             decoder_ens_tile = torch.jit.quantized.quantize_linear_modules(
                 decoder_ens_tile
@@ -1223,6 +1208,8 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
         self.vocab_size = vocab_size
         self.unk_token = tgt_dict.unk()
 
+        self.enable_precomput_reduced_weights = False
+
     def forward(self, input_token, target_token, timestep, *inputs):
         """
         Decoder step inputs correspond one-to-one to encoder outputs.
@@ -1253,7 +1240,8 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
             next_state_input += 1
 
             if (
-                hasattr(model.decoder, "_precompute_reduced_weights")
+                self.enable_precomput_reduced_weights
+                and hasattr(model.decoder, "_precompute_reduced_weights")
                 and possible_translation_tokens is not None
             ):
                 # (output_projection_w, output_projection_b)
@@ -1519,6 +1507,8 @@ class CharSourceEncoderEnsemble(nn.Module):
             model.prepare_for_onnx_export_()
             self._modules[f"model_{i}"] = model
 
+        self.enable_precompute_reduced_weights = False
+
     def forward(self, src_tokens, src_lengths, char_inds, word_lengths):
         outputs = []
         output_names = []
@@ -1558,7 +1548,8 @@ class CharSourceEncoderEnsemble(nn.Module):
         reduced_weights = {}
         for i, model in enumerate(self.models):
             if (
-                hasattr(model.decoder, "_precompute_reduced_weights")
+                self.enable_precompute_reduced_weights
+                and hasattr(model.decoder, "_precompute_reduced_weights")
                 and possible_translation_tokens is not None
             ):
                 reduced_weights[i] = torch.jit._fork(
@@ -1580,7 +1571,8 @@ class CharSourceEncoderEnsemble(nn.Module):
             if hasattr(model.decoder, "_init_prev_states"):
                 states.extend(model.decoder._init_prev_states(encoder_out))
             if (
-                hasattr(model.decoder, "_precompute_reduced_weights")
+                self.enable_precompute_reduced_weights
+                and hasattr(model.decoder, "_precompute_reduced_weights")
                 and possible_translation_tokens is not None
             ):
                 states.extend(torch.jit._wait(reduced_weights[i]))
