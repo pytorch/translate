@@ -453,9 +453,6 @@ def base_architecture(args):
     args.encoder_normalize_before = getattr(args, "encoder_normalize_before", False)
     args.decoder_pretrained_embed = getattr(args, "decoder_pretrained_embed", None)
     args.decoder_embed_dim = getattr(args, "decoder_embed_dim", args.encoder_embed_dim)
-    args.decoder_ffn_embed_dim = getattr(
-        args, "decoder_ffn_embed_dim", args.encoder_ffn_embed_dim
-    )
     args.decoder_layers = getattr(args, "decoder_layers", 2)
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 8)
     args.decoder_lstm_units = getattr(args, "decoder_lstm_units", 512)
