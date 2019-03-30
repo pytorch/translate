@@ -693,6 +693,20 @@ def expand_generation_args(group, train=False):
         type=str,
         help=("Provide a path for the r2l rescoring model"),
     )
+    group.add_argument(
+        "--enable-reverse-rescoring",
+        nargs="?",
+        const=True,
+        default=False,
+        type=utils.bool_flag,
+        help=("Enable reverse model based rescoring of hypos"),
+    )
+    group.add_argument(
+        "--reverse-model-path",
+        default=None,
+        type=str,
+        help=("Provide a path for the reverse rescoring model"),
+    )
 
     # These arguments are only used during training
     if train:
