@@ -7,7 +7,7 @@ from typing import List, NamedTuple, Optional
 
 import numpy as np
 import torch
-from fairseq import bleu, data, options, progress_bar, tasks, tokenizer, utils
+from fairseq import bleu, data, options, progress_bar, tasks, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
 from fairseq.models import FairseqModel, FairseqMultiModel
 from pytorch_translate import hybrid_transformer_rnn  # noqa
@@ -404,8 +404,8 @@ def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
                 if align_dict is not None or args.remove_bpe is not None:
                     # Convert back to tokens for evaluation with unk replacement
                     # and/or without BPE
-                    target_tokens = tokenizer.Tokenizer.tokenize(
-                        target_str, task.target_dictionary, add_if_not_exist=True
+                    target_tokens = task.target_dictionary.encode_line(
+                        target_str, add_if_not_exist=True
                     )
                 # The probs score for the hypo_str; whether it's normalized by
                 # sequence length or not depends on normalize_scores, which is

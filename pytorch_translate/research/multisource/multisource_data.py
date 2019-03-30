@@ -2,7 +2,7 @@
 
 import numpy as np
 import torch
-from fairseq import data, tokenizer
+from fairseq import data
 
 
 class MultisourceLanguagePairDataset(data.LanguagePairDataset):
@@ -119,9 +119,8 @@ class IndexedRawTextMultisentDataset(data.IndexedRawTextDataset):
                 file_sizes = []
                 for line in f:
                     file_lines.append(line.strip("\n"))
-                    tokens = tokenizer.Tokenizer.tokenize(
+                    tokens = dictionary.encode_line(
                         line,
-                        dictionary,
                         add_if_not_exist=False,
                         append_eos=self.append_eos,
                         reverse_order=self.reverse_order,
