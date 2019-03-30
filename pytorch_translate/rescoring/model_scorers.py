@@ -7,7 +7,8 @@ from pytorch_translate import utils
 class SimpleModelScorer(object):
     """Rescores source and target tokens based on a model"""
 
-    def __init__(self, args, model_path):
+    def __init__(self, args, model_path, original_task):
+
         self.args = args
         # TODO (T40938917): Allow loading of multiple rescoring models
         (
@@ -15,7 +16,8 @@ class SimpleModelScorer(object):
             rescoring_model_arg,
             rescoring_task,
         ) = utils.load_diverse_ensemble_for_inference([model_path])
-        self.task = rescoring_task
+        self.task = rescoring_task  # e.g p(y), p(x|y) etc.
+        self.original_task = original_task  # p(y|x)
         self.model = rescoring_model[0]
         self.model.eval()
 
@@ -28,7 +30,7 @@ class SimpleModelScorer(object):
         hypos is a list of hypotheses containing elements of type dict.
         each hypothesis dictionary contains target tokens.
         we convert these target tokens to a tensor, also eos token to the
-        left, and padding to the right.
+        left and right, and padding to the end.
         """
         max_tgt_len = max(len(hypo["tokens"]) for hypo in hypos)
         pad = self.task.target_dictionary.pad()
@@ -79,15 +81,43 @@ class SimpleModelScorer(object):
         return (src_tokens, [src_length])
 
     def encode(self, args, encoder_inputs):
+        assert (
+            encoder_inputs[0] == self.task.target_dictionary.eos()
+        ).sum() == 0, "Encoder doesn't expect eos tokens as input"
+
         encoder_out = self.model.encoder(*encoder_inputs)
         return [encoder_out]
 
     def decode(self, args, model, encoder_outs, tgt_tokens):
-        """ Run decoder with the same configurations with beam decoder
+        """ Run model decoder on tgt_tokens and encoder_outputs
+
+        Args:
+          args: model arguments
+          model: given rescoring model
+          encoder_outs: encoder output. list(tuple([[input_length, batch_size,
+            hidden_dim], [batch_size, input_length]))
+          tgt_tokens: target tokens to be rescored. target tokens are expected
+            to start with eos to signal start of the sentence, and expected to
+            to end with eos to score eos. therefore target_size should be equal
+            to number_of_target_tokens + 2, and should return
+            number_of_target_tokens + 1 output. [batch_size, target_length]
+
+        Returns:
+          logprobs: log probabilities for each tgt token [batch_size,
+            target_length, vocab_size]
+          possible_translation_tokens: reduced vocab tokens to original
+            vocab tokens mapping [vocab_size]
+
+        Raises:
+          ValueError: If there is a problem with input.
+          * If tgt_tokens don't start and end with eos.
         """
         eos = self.task.target_dictionary.eos()
         pad = self.task.target_dictionary.pad()
         unk = self.task.target_dictionary.unk()
+
+        if (tgt_tokens == eos).sum() != 2 * tgt_tokens.size()[0]:
+            raise ValueError("Each target should have 2 eos tokens")
 
         reorder_indices = torch.arange(1).view(-1, 1).repeat(1, args.beam).view(-1)
 
@@ -122,6 +152,7 @@ class SimpleModelScorer(object):
         for each hypothesis. here, we extract the logprobs matching the
         target tokens.
         """
+
         def clean_tgt_tokens(tgt_tokens, possible_translation_tokens):
             tgt_tokens_fixed = torch.zeros_like(tgt_tokens)
             for i, hypo_tokens in enumerate(tgt_tokens):
@@ -179,4 +210,42 @@ class R2LModelScorer(SimpleModelScorer):
         tgt_tokens = self.convert_hypos_to_tgt_tokens(hypos).type_as(src_tokens)
         tgt_tokens = self.reverse_tgt_tokens(tgt_tokens)
 
+        return encoder_inputs, tgt_tokens
+
+
+class ReverseModelScorer(SimpleModelScorer):
+    """
+    Scores p(x|y) with a reverse model and switching src and tgt sentences
+    """
+
+    def __init__(self, args, model_path, original_task):
+        super().__init__(args, model_path, original_task)
+
+        assert (original_task.src_dict.indices == self.task.tgt_dict.indices) and (
+            original_task.tgt_dict.indices == self.task.src_dict.indices
+        ), "Original and reverse model dictionaries don't match"
+
+    def prepare_inputs(self, src_tokens, hypo):
+        """
+        For reverse model, we need to switch src_tokens and tgt_tokens.
+        We also make sure source is reversed if original task vs new task
+        has different reverse_source settings.
+        """
+        eos = self.task.target_dictionary.eos()
+
+        # Our decoder expects tgt_tokens to have eos at the beginning and end
+        tgt_tokens = torch.cat(
+            (
+                torch.tensor([eos]).type_as(src_tokens),
+                reversed(src_tokens)
+                if self.task.args.reverse_source
+                == self.original_task.args.reverse_source
+                else src_tokens,
+                torch.tensor([eos]).type_as(src_tokens),
+            ),
+            dim=0,
+        ).view(1, -1)
+        src_tokens = reversed(hypo["tokens"])[1:]  # remove eos
+
+        encoder_inputs = self.prepare_encoder_inputs(src_tokens)
         return encoder_inputs, tgt_tokens
