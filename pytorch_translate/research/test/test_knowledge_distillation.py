@@ -117,3 +117,57 @@ class TestKnowledgeDistillation(unittest.TestCase):
             "ntokens": target_tokens.numel(),
         }
         return sample
+
+    def test_dual_decoder_args(self):
+        test_args = test_utils.ModelParamsDict(arch="dual_decoder_kd")
+        _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        self.task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
+        model = self.task.build_model(test_args)
+
+        assert (
+            model.encoder.transformer_embedding.embed_tokens.embedding_dim
+            == test_args.encoder_embed_dim
+        )
+        assert (
+            model.encoder.transformer_encoder_given_embeddings.layers[
+                0
+            ].fc1.out_features
+            == test_args.encoder_ffn_embed_dim
+        )
+        assert (
+            len(model.encoder.transformer_encoder_given_embeddings.layers)
+            == test_args.encoder_layers
+        )
+        assert (
+            model.encoder.transformer_encoder_given_embeddings.layers[
+                0
+            ].self_attn.num_heads
+            == test_args.encoder_attention_heads
+        )
+        assert (
+            model.teacher_decoder.embed_tokens.embedding_dim
+            == test_args.decoder_embed_dim
+        )
+        assert (
+            model.teacher_decoder.layers[0].fc1.out_features
+            == test_args.decoder_ffn_embed_dim
+        )
+        assert len(model.teacher_decoder.layers) == test_args.decoder_layers
+        assert (
+            model.teacher_decoder.layers[0].self_attn.num_heads
+            == test_args.decoder_attention_heads
+        )
+        assert (
+            model.student_decoder.embed_tokens.embedding_dim
+            == test_args.student_decoder_embed_dim
+        )
+        assert model.student_decoder.num_layers == test_args.student_decoder_layers
+        assert (
+            model.student_decoder.num_attention_heads
+            == test_args.student_decoder_attention_heads
+        )
+        assert model.student_decoder.lstm_units == test_args.student_decoder_lstm_units
+        assert (
+            model.student_decoder.out_embed_dim
+            == test_args.student_decoder_out_embed_dim
+        )
