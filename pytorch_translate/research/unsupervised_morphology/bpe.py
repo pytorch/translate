@@ -13,6 +13,8 @@ class BPE(object):
     def __init__(self):
         self.vocab: Dict[str, float] = Counter()
         self.eow_symbol = "_EOW"  # End of word symbol.
+        # This value will change after building the vocabulary.
+        self.max_bpe_len = 1
 
     def init_vocab(self, txt_path: str):
         self.vocab: Dict[str, float] = Counter()
@@ -77,9 +79,11 @@ class BPE(object):
         # Now we get rid of the current vocab that is based on the corpus (not
         # memory-efficient). We now only keep the final bpe tokens.
         new_vocab: Dict[str, float] = Counter()
+        self.max_bpe_len = 1
         for vocab_entry, freq in self.vocab.items():
             for bpe_token in vocab_entry.split():
                 new_vocab[bpe_token] += freq
+                self.max_bpe_len = max(self.max_bpe_len, len(bpe_token))
         self.vocab = new_vocab
 
         return len(self.vocab)
