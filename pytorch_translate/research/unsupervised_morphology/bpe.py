@@ -20,3 +20,15 @@ class BPE(object):
             for line in input_stream:
                 for word in line.strip().split():
                     self.vocab[" ".join(list(word) + [self.eow_symbol])] += 1
+
+    def get_best_candidate(self):
+        """
+        Calculates frequencies for new candidiates from the current vocabulary,
+        and returns the candidate with the most frequency.
+        """
+        candidates = Counter()
+        for vocab_entry, freq in self.vocab.items():
+            symbols = vocab_entry.split()
+            for i in range(len(symbols) - 1):
+                candidates[(symbols[i], symbols[i + 1])] += freq
+        return max(candidates, key=candidates.get)
