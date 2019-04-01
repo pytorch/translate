@@ -40,3 +40,30 @@ class TestBPE(unittest.TestCase):
             bpe_model.init_vocab(txt_path="no_exist_file.txt")
 
             assert bpe_model.get_best_candidate() == ("1", "2")
+
+    def test_bpe_merge(self):
+        bpe_model = bpe.BPE()
+
+        with patch("builtins.open") as mock_open:
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+            bpe_model.init_vocab(txt_path="no_exist_file.txt")
+
+            # Trying merging a candidate that does not exist.
+            vocab_size = bpe_model.merge_candidate_into_vocab(("3", "1"))
+            assert vocab_size == 10
+
+            # Trying merging a candidate that does exists.
+            vocab_size = bpe_model.merge_candidate_into_vocab(("2", "3"))
+            assert vocab_size == 11
+
+            # Trying merging a candidate that does exists. Entry "3" should remove
+            # from vocab.
+            vocab_size = bpe_model.merge_candidate_into_vocab(("3", "4"))
+            assert vocab_size == 11
+
+            # Trying merging a candidate that does not exist.
+            vocab_size = bpe_model.merge_candidate_into_vocab(
+                ("3", bpe_model.eow_symbol)
+            )
+            assert vocab_size == 11
