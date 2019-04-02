@@ -680,6 +680,12 @@ def expand_generation_args(group, train=False):
         help=("Enable running rescoring during beam decoding"),
     )
     group.add_argument(
+        "--original-model-weight",
+        default=1.0,
+        type=float,
+        help=("Provide a weight for the r2l rescoring model"),
+    )
+    group.add_argument(
         "--enable-r2l-rescoring",
         nargs="?",
         const=True,
@@ -692,6 +698,12 @@ def expand_generation_args(group, train=False):
         default=None,
         type=str,
         help=("Provide a path for the r2l rescoring model"),
+    )
+    group.add_argument(
+        "--r2l-model-weight",
+        default=1.0,
+        type=float,
+        help=("Provide a weight for the r2l rescoring model"),
     )
     group.add_argument(
         "--enable-reverse-rescoring",
@@ -708,6 +720,12 @@ def expand_generation_args(group, train=False):
         help=("Provide a path for the reverse rescoring model"),
     )
     group.add_argument(
+        "--reverse-model-weight",
+        default=1.0,
+        type=float,
+        help=("Provide a weight for the reverse rescoring model"),
+    )
+    group.add_argument(
         "--enable-lm-rescoring",
         nargs="?",
         const=True,
@@ -720,6 +738,12 @@ def expand_generation_args(group, train=False):
         default=None,
         type=str,
         help=("Provide a path for the language model rescoring model"),
+    )
+    group.add_argument(
+        "--lm-model-weight",
+        default=1.0,
+        type=float,
+        help=("Provide a weight for the lm rescoring model"),
     )
 
     # These arguments are only used during training
