@@ -401,9 +401,9 @@ def validate_preprocessing_args(args):
                 or getattr(args, "multiling_train_source_text_file", None)
             )
             and (
-                getattr(args, "train_target_text_file")
-                or getattr(args, "train_target_binary_path")
-                or getattr(args, "multiling_train_target_text_file")
+                getattr(args, "train_target_text_file", None)
+                or getattr(args, "train_target_binary_path", None)
+                or getattr(args, "multiling_train_target_text_file", None)
             )
             and (
                 getattr(args, "eval_source_text_file", None)
