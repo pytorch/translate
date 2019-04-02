@@ -3,13 +3,18 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 from enum import Enum
 
 import numpy
-from pytorch_translate.rescoring.model_scorers import R2LModelScorer, ReverseModelScorer
+from pytorch_translate.rescoring.model_scorers import (
+    LMScorer,
+    R2LModelScorer,
+    ReverseModelScorer,
+)
 
 
 class FeatureList(Enum):
     ORIGINAL_MODEL_SCORE = 0
     R2L_MODEL_SCORE = 1
     REVERSE_MODEL_SCORE = 2
+    LM_SCORE = 3
 
 
 class Rescorer:
@@ -35,6 +40,12 @@ class Rescorer:
                 args, args.reverse_model_path, self.original_task
             )
 
+        if args.enable_lm_rescoring:
+            assert (
+                args.lm_model_path
+            ), "Provide --lm-model-path with --enable-lm-scoring"
+            self.lm_scorer = LMScorer(args, args.lm_model_path, self.original_task)
+
     def optimize(self, scores):
         """combine scores from different models"""
         return numpy.argmax(scores.sum(axis=1))
@@ -45,6 +56,7 @@ class Rescorer:
 
         self.compute_r2l_model_scores(src_tokens, hypos, scores)
         self.compute_reverse_model_scores(src_tokens, hypos, scores)
+        self.compute_lm_scores(src_tokens, hypos, scores)
 
         max_score_index = self.optimize(scores)
         return hypos[max_score_index]["tokens"].int().cpu()
@@ -64,3 +76,11 @@ class Rescorer:
             scores[
                 i, FeatureList.REVERSE_MODEL_SCORE.value
             ] = self.reverse_model_scorer.score(src_tokens, hypo)
+
+    def compute_lm_scores(self, src_tokens, hypos, scores):
+        """computes p(x|y) for each hypothesis. """
+        if not self.args.enable_lm_rescoring:
+            return
+
+        lm_scores = self.lm_scorer.score(src_tokens, hypos).cpu().numpy()
+        scores[:, FeatureList.LM_SCORE.value] = lm_scores[:]
