@@ -106,6 +106,18 @@ class ModelParamsDict:
         self.left_pad_source = "False"
         self.fp16 = False
         self.cpu = None
+        # Rescoring params
+        self.enable_rescoring = False
+        self.original_model_weight = None
+        self.enable_r2l_rescoring = False
+        self.r2l_model_path = None
+        self.r2l_model_weight = None
+        self.enable_reverse_rescoring = False
+        self.reverse_model_path = None
+        self.reverse_model_weight = None
+        self.enable_lm_rescoring = False
+        self.lm_model_path = None
+        self.lm_model_weight = None
         # Modified params
         for param, value in kwargs.items():
             assert hasattr(

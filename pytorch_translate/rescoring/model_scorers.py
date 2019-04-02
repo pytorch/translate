@@ -300,7 +300,4 @@ class LMScorer(SimpleModelScorer):
         pad = self.task.dictionary.pad_index
         hypos_tokens_probs = (tgt_tokens != pad).float() * hypos_tokens_probs
 
-        hypos_scores = hypos_tokens_probs.sum(dim=1) / (hypos_tokens_probs != 0).sum(
-            dim=1, dtype=torch.float
-        )
-        return hypos_scores
+        return hypos_tokens_probs.sum(dim=1)
