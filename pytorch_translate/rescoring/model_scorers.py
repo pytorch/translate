@@ -229,10 +229,6 @@ class ReverseModelScorer(SimpleModelScorer):
     def __init__(self, args, model_path, original_task):
         super().__init__(args, model_path, original_task)
 
-        assert (original_task.src_dict.indices == self.task.tgt_dict.indices) and (
-            original_task.tgt_dict.indices == self.task.src_dict.indices
-        ), "Original and reverse model dictionaries don't match"
-
     def prepare_inputs(self, src_tokens, hypo):
         """
         For reverse model, we need to switch src_tokens and tgt_tokens.
@@ -241,19 +237,30 @@ class ReverseModelScorer(SimpleModelScorer):
         """
         eos = self.task.target_dictionary.eos()
 
+        # Map token ids from original dictionary to reverse model dictionary
+        src_string = self.original_task.src_dict.string(src_tokens)
+        src_tokens_mapped = self.task.tgt_dict.encode_line(
+            src_string, add_if_not_exist=False
+        )
+
+        tgt_string = self.original_task.tgt_dict.string(hypo["tokens"])
+        tgt_tokens_mapped = self.task.src_dict.encode_line(
+            tgt_string, add_if_not_exist=False
+        )
+
+        # Swap target and source tokens with necessary modifications
         # Our decoder expects tgt_tokens to have eos at the beginning and end
         tgt_tokens = torch.cat(
             (
-                torch.tensor([eos]).type_as(src_tokens),
-                reversed(src_tokens)
+                torch.tensor([eos]).type_as(src_tokens_mapped),
+                reversed(src_tokens_mapped)
                 if self.task.args.reverse_source
-                == self.original_task.args.reverse_source
-                else src_tokens,
-                torch.tensor([eos]).type_as(src_tokens),
+                != self.original_task.args.reverse_source
+                else src_tokens_mapped,
             ),
             dim=0,
-        ).view(1, -1)
-        src_tokens = reversed(hypo["tokens"])[1:]  # remove eos
+        ).view(1, -1).type_as(src_tokens)
+        src_tokens = tgt_tokens_mapped[:-1].type_as(src_tokens)
 
         encoder_inputs = self.prepare_encoder_inputs(src_tokens)
         return encoder_inputs, tgt_tokens
