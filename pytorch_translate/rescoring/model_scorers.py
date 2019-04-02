@@ -5,10 +5,20 @@ from pytorch_translate import utils
 
 
 class SimpleModelScorer(object):
-    """Rescores source and target tokens based on a model"""
+    """ Rescores source and target tokens based on a model"""
 
     def __init__(self, args, model_path, original_task):
+        """ Initialize a rescorer model
 
+        Args:
+          args: model arguments
+          model_path: checkpoint path for rescoring model
+          original_task: original task is required to map the differences
+            between the original model and rescoring model. currently, we pass
+            original source tokens and hypotheses from the original model
+            to rescoring model. therefore, this class needs to know how to map
+            original model tokens to rescoring model tokens
+        """
         self.args = args
         # TODO (T40938917): Allow loading of multiple rescoring models
         (
@@ -33,11 +43,11 @@ class SimpleModelScorer(object):
         left and right, and padding to the end.
         """
         max_tgt_len = max(len(hypo["tokens"]) for hypo in hypos)
-        pad = self.task.target_dictionary.pad()
+        pad = self.original_task.target_dictionary.pad()
         tgt_tokens = torch.full(
-            (len(hypos), max_tgt_len + 1), fill_value=pad, dtype=torch.int
+            (len(hypos), max_tgt_len + 1), fill_value=pad, dtype=torch.long
         )
-        eos = self.task.target_dictionary.eos()
+        eos = self.original_task.target_dictionary.eos()
         tgt_tokens[:, 0] = torch.tensor(eos)
 
         for i, hypo in enumerate(hypos):
@@ -45,7 +55,7 @@ class SimpleModelScorer(object):
             end = start + len(hypo["tokens"])
             tgt_tokens[i, start:end] = hypo["tokens"]
 
-        return tgt_tokens.long()
+        return tgt_tokens
 
     def reverse_tgt_tokens(self, tgt_tokens):
         # TODO (T41749218): Add unit tests for rescoring
@@ -68,7 +78,7 @@ class SimpleModelScorer(object):
         def roll(x, n):
             return torch.cat((x[-n:], x[:-n]))
 
-        pad = self.task.tgt_dict.pad()
+        pad = self.original_task.tgt_dict.pad()
         for i, row in enumerate(tgt_tokens):
             pad_count = len(row) - sum(row == pad)
             reversed_tgt_tokens[i] = reversed(roll(row, pad_count))
@@ -249,3 +259,48 @@ class ReverseModelScorer(SimpleModelScorer):
 
         encoder_inputs = self.prepare_encoder_inputs(src_tokens)
         return encoder_inputs, tgt_tokens
+
+
+class LMScorer(SimpleModelScorer):
+    def convert_hypos_to_tgt_tokens(self, hypos):
+        """
+        Converts target tokens from the translation model dictionary
+        to language model dictionary
+        """
+        # TODO: (T41818693) Map translation model vs LM model differences
+        # and come up with a solution
+        max_tgt_len = max(len(hypo["tokens"]) for hypo in hypos)
+        pad = self.task.dictionary.pad_index
+        tgt_tokens = torch.full(
+            (len(hypos), max_tgt_len), fill_value=pad, dtype=torch.long
+        )
+
+        for i, hypo in enumerate(hypos):
+            tgt_string = self.original_task.tgt_dict.string(hypo["tokens"])
+            tgt_mapped = self.task.dictionary.encode_line(
+                tgt_string, add_if_not_exist=False
+            )
+            tgt_tokens[i, : len(tgt_mapped)] = tgt_mapped
+
+        return tgt_tokens
+
+    @torch.no_grad()
+    def score(self, src_tokens, hypos):
+        if self.model is None:
+            return
+
+        _, tgt_tokens = self.prepare_inputs(src_tokens, hypos)
+
+        decoder_out = self.model.decoder(tgt_tokens)
+        logprobs = self.model.get_normalized_probs(decoder_out, log_probs=True)
+        hypos_tokens_probs = logprobs.gather(
+            dim=2, index=tgt_tokens.unsqueeze(2)
+        ).squeeze(2)
+
+        pad = self.task.dictionary.pad_index
+        hypos_tokens_probs = (tgt_tokens != pad).float() * hypos_tokens_probs
+
+        hypos_scores = hypos_tokens_probs.sum(dim=1) / (hypos_tokens_probs != 0).sum(
+            dim=1, dtype=torch.float
+        )
+        return hypos_scores

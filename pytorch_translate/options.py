@@ -707,6 +707,20 @@ def expand_generation_args(group, train=False):
         type=str,
         help=("Provide a path for the reverse rescoring model"),
     )
+    group.add_argument(
+        "--enable-lm-rescoring",
+        nargs="?",
+        const=True,
+        default=False,
+        type=utils.bool_flag,
+        help=("Enable language model based rescoring of hypos"),
+    )
+    group.add_argument(
+        "--lm-model-path",
+        default=None,
+        type=str,
+        help=("Provide a path for the language model rescoring model"),
+    )
 
     # These arguments are only used during training
     if train:
