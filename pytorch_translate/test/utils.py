@@ -106,6 +106,7 @@ class ModelParamsDict:
         self.left_pad_source = "False"
         self.fp16 = False
         self.cpu = None
+        self.reverse_source = False
         # Rescoring params
         self.enable_rescoring = False
         self.original_model_weight = None
