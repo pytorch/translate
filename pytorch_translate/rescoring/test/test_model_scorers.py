@@ -95,3 +95,31 @@ class TestModelScorers(unittest.TestCase):
                 ).unsqueeze(dim=0),
                 tgt_tokens,
             )
+
+    def test_compute_scores(self):
+        # TODO(halilakin): Verify behaviour in batch mode
+        test_args = test_utils.ModelParamsDict()
+        _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        task = tasks.PytorchTranslateTask(test_args, src_dict, tgt_dict)
+        model = task.build_model(test_args)
+
+        with patch(
+            "pytorch_translate.utils.load_diverse_ensemble_for_inference",
+            return_value=([model], test_args, task),
+        ):
+            scorer = SimpleModelScorer(test_args, None, task)
+            tgt_tokens = torch.tensor([[2, 11, 22, 0], [2, 33, 44, 55]])
+            logprobs = torch.zeros(
+                tgt_tokens.shape[0], tgt_tokens.shape[1], len(tgt_dict)
+            )
+            logprobs[0, 0, 11] = 0.5
+            logprobs[0, 1, 22] = 1.5
+            logprobs[0, 3, :] = 5
+
+            logprobs[1, 0, 33] = 0.5
+            logprobs[1, 1, 44] = 1.5
+            logprobs[1, 2, 55] = 2.5
+
+            hypos_scores = scorer.compute_scores(tgt_tokens, logprobs)
+            assert hypos_scores[0] == 2.0
+            assert hypos_scores[1] == 4.5
