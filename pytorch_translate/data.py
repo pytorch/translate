@@ -182,7 +182,7 @@ class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
                         sizes.append(len(inds))
 
         self.buffer = np.concatenate(array_list)
-        self.offsets = np.array(offsets, dtype=np.int32)
+        self.offsets = np.array(offsets, dtype=np.int64)
         self.sizes = np.array(sizes, dtype=np.int32)
         del array_list
         del offsets
