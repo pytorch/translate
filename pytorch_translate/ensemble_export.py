@@ -276,16 +276,9 @@ class EncoderEnsemble(nn.Module):
             # evaluation mode
             model.eval()
 
-            # TODO(jamesreed): transformer encodder returns a None output, and
-            # the fork/join API doesn't handle that well. We should figure out
-            # a way to annotate outputs as Optional and record that in fork/join
-            # traces.
-            if isinstance(model.encoder, TransformerEncoder):
-                futures.append(model.encoder(src_tokens_seq_first, src_lengths))
-            else:
-                futures.append(
-                    torch.jit._fork(model.encoder, src_tokens_seq_first, src_lengths)
-                )
+            futures.append(
+                torch.jit._fork(model.encoder, src_tokens_seq_first, src_lengths)
+            )
 
         # underlying assumption is each model has same vocab_reduction_module
         vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
@@ -317,10 +310,7 @@ class EncoderEnsemble(nn.Module):
         # ready. If you're trying to add more ops, they should probably not
         # go in this loop!
         for i, (model, future) in enumerate(zip(self.models, futures)):
-            if isinstance(model.encoder, TransformerEncoder):
-                encoder_out = future
-            else:
-                encoder_out = torch.jit._wait(future)
+            encoder_out = torch.jit._wait(future)
             # "primary" encoder output (vector representations per source token)
             encoder_outputs = encoder_out[0]
             outputs.append(encoder_outputs)

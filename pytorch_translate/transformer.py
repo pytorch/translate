@@ -290,6 +290,11 @@ class TransformerEncoder(FairseqEncoder):
             x=x, positions=positions, encoder_padding_mask=encoder_padding_mask
         )
 
+        # TODO(jamesreed): this is kinda a hack because we can't annotate an
+        # Optional[Tensor] output for encoder_padding_mask
+        if encoder_padding_mask is None:
+            encoder_padding_mask = torch.empty([])
+
         return x, src_tokens, encoder_padding_mask
 
     def reorder_encoder_out(self, encoder_out, new_order):
@@ -299,6 +304,8 @@ class TransformerEncoder(FairseqEncoder):
             x = x.index_select(1, new_order)
         if src_tokens_tensor is not None:
             src_tokens_tensor = src_tokens_tensor.index_select(0, new_order)
+        if encoder_padding_mask.shape == torch.Size([]):
+            encoder_padding_mask = None
         if encoder_padding_mask is not None:
             encoder_padding_mask = encoder_padding_mask.index_select(0, new_order)
         return (x, src_tokens_tensor, encoder_padding_mask)
