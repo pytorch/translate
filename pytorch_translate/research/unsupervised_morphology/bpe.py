@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
+import re
 from collections import Counter
-from typing import Dict
+from typing import Dict, Tuple
 
 
 class BPE(object):
@@ -36,3 +37,33 @@ class BPE(object):
             for i in range(len(symbols) - 1):
                 candidates[(symbols[i], symbols[i + 1])] += freq
         return max(candidates, key=candidates.get)
+
+    @staticmethod
+    def get_merge_pattern(candidate_str):
+        return re.compile(r"(?<!\S)" + re.escape(candidate_str) + r"(?!\S)")
+
+    def merge_candidate_into_vocab(self, candidate: Tuple[str, str]) -> int:
+        """
+        Returns the vocabulary size (number of BPE types).
+        Args:
+            candidate: a pair of strings to be merged in all entries.
+        """
+        candidate_str = " ".join(candidate)
+        candidate_replacement = "".join(candidate)
+        pattern = BPE.get_merge_pattern(candidate_str)
+
+        new_vocab: Dict[str, int] = Counter()
+        new_bpe_entries = set()
+        for vocab_entry, freq in self.vocab.items():
+            new_entry = vocab_entry
+            if candidate_str in vocab_entry:
+                # Regex is usually slow. We just apply it on words that have the
+                # potential of replacement.
+                new_entry = pattern.sub(candidate_replacement, vocab_entry)
+
+            new_vocab[new_entry] = freq
+            for entry in new_entry.split():
+                new_bpe_entries.add(entry)
+
+        self.vocab = new_vocab
+        return len(new_bpe_entries)
