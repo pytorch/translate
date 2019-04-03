@@ -2,7 +2,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 from enum import Enum
 
-import numpy
+import torch
 from pytorch_translate.rescoring.model_scorers import (
     LMScorer,
     R2LModelScorer,
@@ -46,25 +46,45 @@ class Rescorer:
             ), "Provide --lm-model-path with --enable-lm-scoring"
             self.lm_scorer = LMScorer(args, args.lm_model_path, self.original_task)
 
-    def optimize(self, scores):
+    def combine_weighted_scores(self, scores, src_tokens, hypos):
         """combine scores from different models"""
-        return numpy.argmax(scores.sum(axis=1))
+        src_len = torch.tensor(len(src_tokens), dtype=torch.float)
+        tgt_len = torch.tensor(
+            [len(hypo["tokens"]) for hypo in hypos], dtype=torch.float
+        )
+
+        scores[:, FeatureList.ORIGINAL_MODEL_SCORE.value] *= (
+            self.args.original_model_weight / tgt_len
+        )
+        scores[:, FeatureList.R2L_MODEL_SCORE.value] *= (
+            self.args.r2l_model_weight / tgt_len
+        )
+        scores[:, FeatureList.REVERSE_MODEL_SCORE.value] *= (
+            self.args.reverse_model_weight / src_len
+        )
+        scores[:, FeatureList.LM_SCORE.value] *= self.args.lm_model_weight / src_len
+        return scores.sum(dim=1).max(0)[1]
 
     def score(self, src_tokens, hypos):
         """run models and compute scores based on p(y), p(x|y) etc."""
-        scores = numpy.zeros(shape=(len(hypos), len(FeatureList)))
+        scores = torch.zeros((len(hypos), len(FeatureList)), dtype=torch.float)
 
+        self.compute_original_model_scores(src_tokens, hypos, scores)
         self.compute_r2l_model_scores(src_tokens, hypos, scores)
         self.compute_reverse_model_scores(src_tokens, hypos, scores)
         self.compute_lm_scores(src_tokens, hypos, scores)
 
-        max_score_index = self.optimize(scores)
+        max_score_index = self.combine_weighted_scores(scores, src_tokens, hypos)
         return hypos[max_score_index]["tokens"].int().cpu()
+
+    def compute_original_model_scores(self, src_tokens, hypos, scores):
+        for i, hypo in enumerate(hypos):
+            scores[i, FeatureList.ORIGINAL_MODEL_SCORE.value] = hypo["score"]
 
     def compute_r2l_model_scores(self, src_tokens, hypos, scores):
         if not self.args.enable_r2l_rescoring:
             return
-        r2l_scores = self.r2l_model_scorer.score(src_tokens, hypos).numpy()
+        r2l_scores = self.r2l_model_scorer.score(src_tokens, hypos)
         scores[:, FeatureList.R2L_MODEL_SCORE.value] = r2l_scores[:]
 
     def compute_reverse_model_scores(self, src_tokens, hypos, scores):
@@ -82,5 +102,5 @@ class Rescorer:
         if not self.args.enable_lm_rescoring:
             return
 
-        lm_scores = self.lm_scorer.score(src_tokens, hypos).cpu().numpy()
+        lm_scores = self.lm_scorer.score(src_tokens, hypos)
         scores[:, FeatureList.LM_SCORE.value] = lm_scores[:]
