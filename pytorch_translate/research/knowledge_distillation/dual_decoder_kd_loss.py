@@ -80,7 +80,7 @@ class DualDecoderCriterion(FairseqCriterion):
             "student_nll_loss": utils.item(student_nll_loss.data)
             if reduce
             else student_nll_loss.data,
-            "total_loss": utils.item(total_loss.data) if reduce else total_loss.data,
+            "loss": utils.item(total_loss.data) if reduce else total_loss.data,
             "ntokens": sample["ntokens"],
             "nsentences": sample["target"].size(0),
             "sample_size": sample_size,
@@ -140,7 +140,7 @@ class DualDecoderCriterion(FairseqCriterion):
             )
             / ntokens
             / math.log(2),
-            "total_loss": sum(log.get("total_loss", 0) for log in logging_outputs)
+            "loss": sum(log.get("loss", 0) for log in logging_outputs)
             / sample_size
             / math.log(2),
             "ntokens": ntokens,
