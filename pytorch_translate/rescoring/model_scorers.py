@@ -35,7 +35,6 @@ class SimpleModelScorer(object):
             utils.maybe_cuda(self.model)
 
     def convert_hypos_to_tgt_tokens(self, hypos):
-        # TODO (T41749218): Add unit tests for rescoring
         """
         hypos is a list of hypotheses containing elements of type dict.
         each hypothesis dictionary contains target tokens.
@@ -58,7 +57,6 @@ class SimpleModelScorer(object):
         return tgt_tokens
 
     def reverse_tgt_tokens(self, tgt_tokens):
-        # TODO (T41749218): Add unit tests for rescoring
         """
         tgt_tokens has paddings to the right since they are batched.
         while reversing, we should roll first to keep paddings.
@@ -80,8 +78,8 @@ class SimpleModelScorer(object):
 
         pad = self.original_task.tgt_dict.pad()
         for i, row in enumerate(tgt_tokens):
-            pad_count = len(row) - sum(row == pad)
-            reversed_tgt_tokens[i] = reversed(roll(row, pad_count))
+            pad_count = sum(row == pad)
+            reversed_tgt_tokens[i] = reversed(roll(row, int(pad_count)))
 
         return reversed_tgt_tokens
 
