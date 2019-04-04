@@ -132,22 +132,6 @@ def build_sequence_generator(args, task, models):
     return translator
 
 
-def get_eval_itr(args, models, task, dataset):
-    return task.get_eval_batch_iterator(
-        dataset=dataset,
-        max_tokens=args.max_tokens,
-        max_sentences=args.max_sentences,
-        max_positions=utils.resolve_max_positions(
-            task.max_positions(), *[model.max_positions() for model in models]
-        ),
-        ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
-        required_batch_size_multiple=8,
-        num_shards=args.num_shards,
-        shard_id=args.shard_id,
-        num_workers=args.num_workers,
-    ).next_epoch_itr(shuffle=False)
-
-
 def _generate_score(models, args, task, dataset, optimize=True):
     use_cuda = torch.cuda.is_available() and not args.cpu
 
@@ -184,7 +168,20 @@ def _generate_score(models, args, task, dataset, optimize=True):
         scorer = bleu.SacrebleuScorer()
     else:
         scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
-    itr = get_eval_itr(args, models, task, dataset)
+
+    itr = task.get_batch_iterator(
+        dataset=dataset,
+        max_tokens=args.max_tokens,
+        max_sentences=args.max_sentences,
+        max_positions=utils.resolve_max_positions(
+            task.max_positions(), *[model.max_positions() for model in models]
+        ),
+        ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
+        required_batch_size_multiple=8,
+        num_shards=args.num_shards,
+        shard_id=args.shard_id,
+        num_workers=args.num_workers,
+    ).next_epoch_itr(shuffle=False)
 
     oracle_scorer = None
     if args.report_oracle_bleu:
