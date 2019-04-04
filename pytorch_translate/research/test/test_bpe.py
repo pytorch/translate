@@ -81,3 +81,27 @@ class TestBPE(unittest.TestCase):
         assert (
             pattern3.sub("x|x", "^d@ @c x| x ?^d@ @c c ^d") == "^d@ @c x|x ?^d@ @c c ^d"
         )
+
+    def test_build_vocab(self):
+        bpe_model = bpe.BPE()
+
+        with patch("builtins.open") as mock_open:
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+
+            # Trying to build a vocab more than the possible size
+            vocab_size = bpe_model.build_vocab(
+                txt_path="no_exist_file.txt", vocab_size=200
+            )
+            # Asserting that we go back to the original size (number of word types.)
+            assert vocab_size == 9
+
+        with patch("builtins.open") as mock_open:
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+            # Trying to build a vocab with an acceptable size.
+            vocab_size = bpe_model.build_vocab(
+                txt_path="no_exist_file.txt", vocab_size=12
+            )
+            # asserting that the size is as expected.
+            assert vocab_size == 12
