@@ -36,7 +36,7 @@ class BPE(object):
             symbols = vocab_entry.split()
             for i in range(len(symbols) - 1):
                 candidates[(symbols[i], symbols[i + 1])] += freq
-        return max(candidates, key=candidates.get)
+        return max(candidates, key=candidates.get) if len(candidates) > 0 else None
 
     @staticmethod
     def get_merge_pattern(candidate_str):
@@ -67,3 +67,23 @@ class BPE(object):
 
         self.vocab = new_vocab
         return len(new_bpe_entries)
+
+    def build_vocab(self, txt_path: str, vocab_size: int) -> int:
+        """
+        After building the vocab, sends the current number of bpe types.
+
+        Args:
+            txt_path: Raw text file.
+            vocab_size: The maximum number of vocabulary items we need to have.
+        """
+        self.init_vocab(txt_path=txt_path)
+        cur_v_size = 0
+        while True:
+            merge_candidate = self.get_best_candidate()
+            if merge_candidate is not None:
+                cur_v_size = self.merge_candidate_into_vocab(merge_candidate)
+                if cur_v_size >= vocab_size:
+                    return cur_v_size
+            else:
+                # No more merges possible
+                return cur_v_size
