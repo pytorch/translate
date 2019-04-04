@@ -148,7 +148,7 @@ def get_eval_itr(args, models, task, dataset):
     ).next_epoch_itr(shuffle=False)
 
 
-def _generate_score(models, args, task, dataset, optimize=True):
+def _generate_score(models, args, task, dataset):
     use_cuda = torch.cuda.is_available() and not args.cpu
 
     # Load ensemble
@@ -156,12 +156,11 @@ def _generate_score(models, args, task, dataset, optimize=True):
         print("| loading model(s) from {}".format(", ".join(args.path.split(":"))))
 
     # Optimize ensemble for generation
-    if optimize:
-        for model in models:
-            model.make_generation_fast_(
-                beamable_mm_beam_size=None if args.no_beamable_mm else args.beam,
-                need_attn=True,
-            )
+    for model in models:
+        model.make_generation_fast_(
+            beamable_mm_beam_size=None if args.no_beamable_mm else args.beam,
+            need_attn=True,
+        )
 
     translator = build_sequence_generator(args, task, models)
     # Load alignment dictionary for unknown word replacement
