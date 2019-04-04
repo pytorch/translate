@@ -95,7 +95,7 @@ class DualDecoderKDModel(FairseqModel):
         )
 
         encoder = pytorch_translate_transformer.TransformerEncoder(
-            args, src_dict, encoder_embed_tokens, proj_to_decoder=False
+            args, src_dict, encoder_embed_tokens, proj_to_decoder=True
         )
 
         teacher_decoder = pytorch_translate_transformer.TransformerModel.build_decoder(
@@ -136,9 +136,12 @@ class StudentHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
         self.embed_tokens = embed_tokens
 
         self.lstm_units = args.student_decoder_lstm_units
-        self.attention_dim = args.encoder_embed_dim
         self.num_layers = args.student_decoder_layers
         self.initial_input_dim = embed_dim
+
+        # for compatibility with transformer dimensions in encoder
+        # and teacher decoder are different
+        self.attention_dim = args.decoder_embed_dim
         self.input_dim = self.lstm_units + self.attention_dim
 
         self.num_attention_heads = args.student_decoder_attention_heads
