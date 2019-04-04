@@ -85,7 +85,7 @@ class WeightedEpochBatchIterator(iterators.EpochBatchIterator):
                 that :attr:`dataset` supports prefetching. Default:
                 ``False``
         """
-        if self.weights:
+        if self.weights and isinstance(self.dataset, RoundRobinZipDatasets):
             """
             Set dataset weight based on schedule and current epoch
             """
@@ -562,32 +562,6 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
             shard_id=shard_id,
             num_workers=num_workers,
             weights=self.loss_weights,
-        )
-
-    def get_eval_batch_iterator(
-        self,
-        dataset,
-        max_tokens=None,
-        max_sentences=None,
-        max_positions=None,
-        ignore_invalid_inputs=False,
-        required_batch_size_multiple=1,
-        seed=1,
-        num_shards=1,
-        shard_id=0,
-        num_workers=0,
-    ):
-        return super(PytorchTranslateSemiSupervised, self).get_batch_iterator(
-            dataset=dataset,
-            max_tokens=max_tokens,
-            max_sentences=max_sentences,
-            max_positions=max_positions,
-            ignore_invalid_inputs=ignore_invalid_inputs,
-            required_batch_size_multiple=required_batch_size_multiple,
-            seed=seed,
-            num_shards=num_shards,
-            shard_id=shard_id,
-            num_workers=num_workers,
         )
 
     @property
