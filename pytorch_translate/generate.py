@@ -133,7 +133,7 @@ def build_sequence_generator(args, task, models):
 
 
 def get_eval_itr(args, models, task, dataset):
-    return task.get_eval_batch_iterator(
+    return task.get_batch_iterator(
         dataset=dataset,
         max_tokens=args.max_tokens,
         max_sentences=args.max_sentences,
