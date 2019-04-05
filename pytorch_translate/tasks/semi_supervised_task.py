@@ -456,25 +456,7 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
         )
 
     def valid_step(self, sample, model, criterion):
-        """
-        Calculate and collect loss from all models in the task on the eval dataset
-        This method is copied from MultilingualTranslationTask, except we make a
-        direct reference to self.eval_lang_pairs
-        """
-        model.eval()
-        with torch.no_grad():
-            agg_loss, agg_sample_size, agg_logging_output = 0.0, 0.0, {}
-            for lang_pair in self.eval_lang_pairs:
-                if sample[lang_pair] is None or len(sample[lang_pair]) == 0:
-                    continue
-                loss, sample_size, logging_output = criterion(
-                    model.models[lang_pair], sample[lang_pair]
-                )
-                agg_loss += loss.data.item()
-                # TODO make summing of the sample sizes configurable
-                agg_sample_size += sample_size
-                agg_logging_output[lang_pair] = logging_output
-        return agg_loss, agg_sample_size, agg_logging_output
+        return MultilingualTranslationTask.valid_step(self, sample, model, criterion)
 
     def init_logging_output(self, sample):
         return MultilingualTranslationTask.init_logging_output(sample)
@@ -483,38 +465,9 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
         return MultilingualTranslationTask.grad_denom(self, sample_sizes, criterion)
 
     def aggregate_logging_outputs(self, logging_outputs, criterion):
-        """
-        Aggregate logging outputs for each language pair
-        This method is copied from MultilingualTranslationTask, except we make a
-        direct reference to self.eval_lang_pairs
-        """
-        agg_logging_outputs = {
-            lang_pair: criterion.__class__.aggregate_logging_outputs(
-                [
-                    logging_output.get(lang_pair, {})
-                    for logging_output in logging_outputs
-                ]
-            )
-            for lang_pair in self.eval_lang_pairs
-        }
-
-        def sum_over_languages(key):
-            return sum(
-                logging_output[key] for logging_output in agg_logging_outputs.values()
-            )
-
-        # flatten logging outputs
-        flat_logging_output = {
-            "{}:{}".format(lang_pair, k): v
-            for lang_pair, agg_logging_output in agg_logging_outputs.items()
-            for k, v in agg_logging_output.items()
-        }
-        flat_logging_output["loss"] = sum_over_languages("loss")
-        flat_logging_output["nll_loss"] = sum_over_languages("nll_loss")
-        flat_logging_output["sample_size"] = sum_over_languages("sample_size")
-        flat_logging_output["nsentences"] = sum_over_languages("nsentences")
-        flat_logging_output["ntokens"] = sum_over_languages("ntokens")
-        return flat_logging_output
+        return MultilingualTranslationTask.aggregate_logging_outputs(
+            self, logging_outputs, criterion
+        )
 
     def get_batch_iterator(
         self,
