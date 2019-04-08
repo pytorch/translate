@@ -15,7 +15,6 @@ from fairseq.modules import AdaptiveSoftmax
 from pytorch_translate import rnn_cell  # noqa
 from pytorch_translate import (
     attention,
-    data as pytorch_translate_data,
     dictionary as pytorch_translate_dictionary,
     utils as pytorch_translate_utils,
     vocab_reduction,
@@ -28,6 +27,7 @@ from pytorch_translate.common_layers import (
     RNNLayer,
     VariableTracker,
 )
+from pytorch_translate.data import data as pytorch_translate_data
 from pytorch_translate.multi_model import MultiDecoder, MultiEncoder
 from pytorch_translate.multilingual import MultilingualDecoder, MultilingualEncoder
 from pytorch_translate.ngram import NGramDecoder

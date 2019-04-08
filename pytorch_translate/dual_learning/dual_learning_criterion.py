@@ -6,7 +6,7 @@ import torch
 from fairseq import bleu, utils
 from fairseq.criterions import FairseqCriterion, register_criterion
 from pytorch_translate import beam_decode
-from pytorch_translate.weighted_data import WeightedLanguagePairDataset
+from pytorch_translate.data.weighted_data import WeightedLanguagePairDataset
 
 
 @register_criterion("unsupervised_criterion")

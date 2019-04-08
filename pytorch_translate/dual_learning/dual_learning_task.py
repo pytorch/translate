@@ -7,7 +7,8 @@ from fairseq import optim, utils
 from fairseq.criterions import CRITERION_REGISTRY
 from fairseq.data import LanguagePairDataset, RoundRobinZipDatasets
 from fairseq.tasks import FairseqTask, register_task
-from pytorch_translate import data_utils, dictionary as pytorch_translate_dictionary
+from pytorch_translate import dictionary as pytorch_translate_dictionary
+from pytorch_translate.data import utils as data_utils
 from pytorch_translate.dual_learning import dual_learning_models
 from pytorch_translate.dual_learning.dual_learning_criterion import (
     UnsupervisedCriterion,

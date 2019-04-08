@@ -3,7 +3,8 @@
 import torch
 import torch.nn as nn
 from fairseq.models import FairseqEncoder, FairseqIncrementalDecoder
-from pytorch_translate import data as pytorch_translate_data, utils
+from pytorch_translate import utils
+from pytorch_translate.data import data as pytorch_translate_data
 
 
 def rescale_grad_hook(module, idx, grad):

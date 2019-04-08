@@ -3,7 +3,11 @@
 import os
 from typing import Optional
 
-from pytorch_translate import char_data, data as pytorch_translate_data, weighted_data
+from pytorch_translate.data import (
+    char_data,
+    data as pytorch_translate_data,
+    weighted_data,
+)
 
 
 def load_parallel_dataset(
