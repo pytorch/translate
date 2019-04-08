@@ -5,12 +5,8 @@ import os
 import tempfile
 from typing import List, Optional
 
-from pytorch_translate import (
-    char_data,
-    constants,
-    data as pytorch_translate_data,
-    options as pytorch_translate_options,
-)
+from pytorch_translate import constants, options as pytorch_translate_options
+from pytorch_translate.data import char_data, data as pytorch_translate_data
 from pytorch_translate.dictionary import Dictionary
 
 

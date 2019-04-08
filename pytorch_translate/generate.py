@@ -15,15 +15,14 @@ from pytorch_translate import rnn  # noqa
 from pytorch_translate import transformer  # noqa
 from pytorch_translate import (
     beam_decode,
-    char_data,
     char_source_hybrid,
     char_source_model,
     char_source_transformer_model,
-    data as pytorch_translate_data,
     dictionary as pytorch_translate_dictionary,
     options as pytorch_translate_options,
     utils as pytorch_translate_utils,
 )
+from pytorch_translate.data import data as pytorch_translate_data
 from pytorch_translate.dual_learning.dual_learning_models import DualLearningModel
 from pytorch_translate.rescoring.rescorer import Rescorer
 from pytorch_translate.research.beam_search import competing_completed

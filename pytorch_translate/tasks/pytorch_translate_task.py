@@ -6,11 +6,11 @@ from typing import List, Optional
 
 from fairseq import data, options
 from fairseq.tasks import FairseqTask, register_task
-from pytorch_translate import (
+from pytorch_translate import dictionary as pytorch_translate_dictionary
+from pytorch_translate.data import (
     char_data,
     data as pytorch_translate_data,
-    data_utils,
-    dictionary as pytorch_translate_dictionary,
+    utils as data_utils,
     weighted_data,
 )
 from pytorch_translate.research.multisource import multisource_data

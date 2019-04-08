@@ -5,11 +5,10 @@ from typing import Dict
 import numpy as np
 import torch
 from fairseq.tasks import register_task
-from pytorch_translate import (
-    constants,
+from pytorch_translate import constants, utils as pytorch_translate_utils
+from pytorch_translate.data import (
     data as pytorch_translate_data,
-    data_utils,
-    utils as pytorch_translate_utils,
+    utils as data_utils,
     weighted_data,
 )
 from pytorch_translate.research.knowledge_distillation.teacher_score_data import (
