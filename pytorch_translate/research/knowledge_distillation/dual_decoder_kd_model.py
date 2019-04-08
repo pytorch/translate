@@ -66,6 +66,14 @@ class DualDecoderKDModel(FairseqModel):
             metavar="N",
             help="[student RNN] decoder output embedding dimension",
         )
+        parser.add_argument(
+            "--student-decoder-reduced-attention-dim",
+            type=int,
+            default=None,
+            metavar="N",
+            help="if specified, computes attention with this dimensionality "
+            "in the student decoder (instead of using encoder output dims)",
+        )
 
     @classmethod
     def build_model(cls, args, task):
@@ -141,7 +149,11 @@ class StudentHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
 
         # for compatibility with transformer dimensions in encoder
         # and teacher decoder are different
-        self.attention_dim = args.decoder_embed_dim
+        self.encoder_output_dim = args.decoder_embed_dim
+        if args.student_decoder_reduced_attention_dim is None:
+            self.attention_dim = self.encoder_output_dim
+        else:
+            self.attention_dim = args.student_decoder_reduced_attention_dim
         self.input_dim = self.lstm_units + self.attention_dim
 
         self.num_attention_heads = args.student_decoder_attention_heads
@@ -159,4 +171,7 @@ def base_architecture(args):
     args.student_decoder_lstm_units = getattr(args, "student_decoder_lstm_units", 128)
     args.student_decoder_out_embed_dim = getattr(
         args, "student_decoder_out_embed_dim", 128
+    )
+    args.student_decoder_reduced_attention_dim = getattr(
+        args, "student_decoder_reduced_attention_dim", None
     )

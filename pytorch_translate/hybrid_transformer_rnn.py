@@ -200,8 +200,9 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         self.num_layers = args.decoder_layers
         self.initial_input_dim = embed_dim
 
+        self.encoder_output_dim = args.encoder_embed_dim
         if args.decoder_reduced_attention_dim is None:
-            self.attention_dim = args.encoder_embed_dim
+            self.attention_dim = self.encoder_output_dim
         else:
             self.attention_dim = args.decoder_reduced_attention_dim
         self.input_dim = self.lstm_units + self.attention_dim
@@ -215,9 +216,9 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         )
 
         self.proj_encoder_layer = None
-        if self.attention_dim != args.encoder_embed_dim:
+        if self.attention_dim != self.encoder_output_dim:
             self.proj_encoder_layer = fairseq_transformer.Linear(
-                args.encoder_embed_dim, self.attention_dim
+                self.encoder_output_dim, self.attention_dim
             )
 
         self.proj_layer = None
