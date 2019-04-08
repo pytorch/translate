@@ -22,10 +22,12 @@ from fairseq.tasks.multilingual_translation import MultilingualTranslationTask
 from pytorch_translate import (
     beam_decode,
     constants,
-    data as ptt_data,
-    data_utils as ptt_data_utils,
     dictionary as pytorch_translate_dictionary,
     rnn,
+)
+from pytorch_translate.data import (
+    data as ptt_data,
+    utils as ptt_data_utils,
     weighted_data,
 )
 from pytorch_translate.tasks.pytorch_translate_task import PytorchTranslateTask
