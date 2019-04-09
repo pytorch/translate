@@ -107,3 +107,21 @@ class TestBPE(unittest.TestCase):
             # asserting that the size is as expected.
             assert vocab_size == 12
             assert bpe_model.max_bpe_len == len(bpe_model.eow_symbol)
+
+    def test_segment_word(self):
+        bpe_model = bpe.BPE()
+
+        with patch("builtins.open") as mock_open:
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+
+            bpe_model.build_vocab(txt_path="no_exist_file.txt", vocab_size=12)
+            assert bpe_model.segment_word("1234") == ["12", "34", bpe_model.eow_symbol]
+
+            # Giving unknown character sequence
+            assert bpe_model.segment_word("12634") == [
+                "12",
+                "6",
+                "34",
+                bpe_model.eow_symbol,
+            ]
