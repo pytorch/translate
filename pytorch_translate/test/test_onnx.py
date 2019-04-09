@@ -489,8 +489,9 @@ class TestONNX(unittest.TestCase):
         test_args = test_utils.ModelParamsDict(arch="dual_decoder_kd")
         self._test_ensemble_encoder_export(test_args)
 
-    def test_batched_beam_decoder_dual_decoder_vocab_reduction(self):
-        test_args = test_utils.ModelParamsDict(arch="dual_decoder_kd")
+    def test_batched_beam_decoder_hybrid_reduced_attention(self):
+        test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
+        test_args.decoder_reduced_attention_dim = 10
         lexical_dictionaries = test_utils.create_lexical_dictionaries()
         test_args.vocab_reduction_params = {
             "lexical_dictionaries": lexical_dictionaries,
@@ -499,9 +500,8 @@ class TestONNX(unittest.TestCase):
         }
         self._test_batched_beam_decoder_step(test_args)
 
-    def test_batched_beam_decoder_hybrid_reduced_attention(self):
-        test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
-        test_args.decoder_reduced_attention_dim = 10
+    def test_batched_beam_decoder_dual_decoder_vocab_reduction(self):
+        test_args = test_utils.ModelParamsDict(arch="dual_decoder_kd")
         lexical_dictionaries = test_utils.create_lexical_dictionaries()
         test_args.vocab_reduction_params = {
             "lexical_dictionaries": lexical_dictionaries,
