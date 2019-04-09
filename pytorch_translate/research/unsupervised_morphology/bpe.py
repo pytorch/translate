@@ -2,7 +2,7 @@
 
 import re
 from collections import Counter
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 
 class BPE(object):
@@ -103,3 +103,22 @@ class BPE(object):
         self.vocab = new_vocab
 
         return len(self.vocab)
+
+    def segment_word(self, word: str) -> List[str]:
+        """
+        The current segmentation is greedy based on picking the longest possible
+        character sequences first. The original work picks based on the most
+        frequent character sequence.
+        """
+        word_chars = list(word) + [self.eow_symbol]
+        start_idx, end_idx = 0, min(len(word_chars), self.max_bpe_len)
+        subwords = []
+        while start_idx < len(word_chars):
+            subword = "".join(word_chars[start_idx:end_idx])
+            if subword in self.vocab or end_idx - start_idx == 1:
+                subwords.append(subword)
+                start_idx = end_idx
+                end_idx = min(len(word_chars), start_idx + self.max_bpe_len)
+            else:
+                end_idx -= 1
+        return subwords
