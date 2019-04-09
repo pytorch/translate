@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 
+import shutil
+import tempfile
 import unittest
 from collections import Counter
+from os import path
 from unittest.mock import Mock, patch
 
 from pytorch_translate.research.unsupervised_morphology import bpe
@@ -125,3 +128,31 @@ class TestBPE(unittest.TestCase):
                 "34",
                 bpe_model.eow_symbol,
             ]
+
+    def test_segment_file(self):
+        bpe_model = bpe.BPE()
+
+        tmp_dir = tempfile.mkdtemp()
+        input_file, output_file = (
+            path.join(tmp_dir, "test.in"),
+            path.join(tmp_dir, "test1.out"),
+        )
+
+        with open(input_file, "w", encoding="utf-8") as writer:
+            writer.write("\n".join(txt_content))
+        bpe_model.build_vocab(txt_path=input_file, vocab_size=12)
+
+        output = []
+        for line in txt_content:
+            cur_line_output = []
+            for word in line.strip().split():
+                cur_line_output.append(" ".join(bpe_model.segment_word(word)))
+            output.append(" ".join(cur_line_output))
+            output.append("\n")
+        expected_output = "".join(output).strip()
+
+        bpe_model.segment_txt(input_path=input_file, output_path=output_file)
+        model_output = open(output_file, "r", encoding="utf-8").read().strip()
+        assert expected_output == model_output
+
+        shutil.rmtree(tmp_dir)

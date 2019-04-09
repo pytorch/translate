@@ -122,3 +122,16 @@ class BPE(object):
             else:
                 end_idx -= 1
         return subwords
+
+    def segment_txt(self, input_path: str, output_path: str):
+        segmentation_cache = {}
+        with open(output_path, "w", encoding="utf-8") as writer:
+            with open(input_path, "r", encoding="utf-8") as input_file:
+                for line in input_file:
+                    output_bpe_tokens = []
+                    for word in line.strip().split():
+                        if word not in segmentation_cache:
+                            segmentation_cache[word] = self.segment_word(word)
+                        output_bpe_tokens += segmentation_cache[word]
+                    writer.write(" ".join(output_bpe_tokens))
+                    writer.write("\n")
