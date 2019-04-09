@@ -95,6 +95,7 @@ class TestBPE(unittest.TestCase):
             )
             # Asserting that we go back to the original size (number of word types.)
             assert vocab_size == 9
+            assert bpe_model.max_bpe_len == 9 + len(bpe_model.eow_symbol)
 
         with patch("builtins.open") as mock_open:
             mock_open.return_value.__enter__ = mock_open
@@ -105,3 +106,4 @@ class TestBPE(unittest.TestCase):
             )
             # asserting that the size is as expected.
             assert vocab_size == 12
+            assert bpe_model.max_bpe_len == len(bpe_model.eow_symbol)
