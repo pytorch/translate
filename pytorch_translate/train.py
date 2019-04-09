@@ -263,8 +263,6 @@ def setup_training_model(args):
         )
     elif args.task == "dual_learning_task":
         task.load_dataset(split=args.train_subset, seed=args.seed)
-    elif args.task == "dual_learning_task":
-        task.load_dataset(split=args.train_subset, seed=args.seed)
     elif args.task == "pytorch_translate_knowledge_distillation":
         task.load_dataset(
             split=args.train_subset,
