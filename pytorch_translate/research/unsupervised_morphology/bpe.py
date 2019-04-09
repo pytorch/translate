@@ -14,6 +14,11 @@ class BPE(object):
         self.vocab: Dict[str, int] = Counter()
         self.eow_symbol = "_EOW"  # End of word symbol.
 
+        # This value will change after building the vocabulary. We use this value
+        # for greedy segmentation where we start by looking at the longest possible
+        # character sequence wrt max_bpe_len.
+        self.max_bpe_len = 1
+
     def init_vocab(self, txt_path: str):
         self.vocab: Dict[str, int] = Counter()
 
@@ -77,13 +82,24 @@ class BPE(object):
             vocab_size: The maximum number of vocabulary items we need to have.
         """
         self.init_vocab(txt_path=txt_path)
-        cur_v_size = 0
         while True:
             merge_candidate = self.get_best_candidate()
             if merge_candidate is not None:
                 cur_v_size = self.merge_candidate_into_vocab(merge_candidate)
                 if cur_v_size >= vocab_size:
-                    return cur_v_size
+                    break
             else:
                 # No more merges possible
-                return cur_v_size
+                break
+
+        # Now we get rid of the current vocab that is based on the corpus (not
+        # memory-efficient). We now only keep the final bpe tokens.
+        new_vocab: Dict[str, int] = Counter()
+        self.max_bpe_len = 1
+        for vocab_entry, freq in self.vocab.items():
+            for bpe_token in vocab_entry.split():
+                new_vocab[bpe_token] += freq
+                self.max_bpe_len = max(self.max_bpe_len, len(bpe_token))
+        self.vocab = new_vocab
+
+        return len(self.vocab)
