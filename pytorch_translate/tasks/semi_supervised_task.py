@@ -373,7 +373,8 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
             )
 
             def generate_fn(generator):
-                def _generate_fn(net_input):
+                def _generate_fn(sample):
+                    net_input = sample["net_input"]
                     maxlen = int(
                         self.args.max_len_a * net_input["src_tokens"].size(1)
                         + self.args.max_len_b
@@ -393,6 +394,7 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
                         # Remove EOS from the input before backtranslation.
                         remove_eos_from_src=True,
                     ),
+                    src_dict=self.source_dictionary,
                     backtranslation_fn=generate_fn(bwd_generator),
                     output_collater=TransformEosDataset(
                         dataset=tgt_dataset,
@@ -412,6 +414,7 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
             ] = weighted_data.WeightedBacktranslationDataset(
                 dataset=BacktranslationDataset(
                     tgt_dataset=src_dataset,
+                    src_dict=self.source_dictionary,
                     backtranslation_fn=generate_fn(fwd_generator),
                     output_collater=TransformEosDataset(
                         dataset=src_dataset,
