@@ -2,7 +2,34 @@
 
 import re
 from collections import Counter
+from optparse import OptionParser
 from typing import Dict, List, Tuple
+
+
+def get_arg_parser():
+    parser = OptionParser()
+    parser.add_option(
+        "--train",
+        dest="train_file",
+        help="Raw text as training data.",
+        metavar="FILE",
+        default=None,
+    )
+    parser.add_option(
+        "--vocab-size",
+        type="int",
+        dest="vocab_size",
+        help="Vocabulary Size.",
+        default=20000,
+    )
+    parser.add_option(
+        "--train-out",
+        dest="train_output_file",
+        help="BPE tokenized train file.",
+        metavar="FILE",
+        default=None,
+    )
+    return parser
 
 
 class BPE(object):
@@ -82,6 +109,7 @@ class BPE(object):
             vocab_size: The maximum number of vocabulary items we need to have.
         """
         self.init_vocab(txt_path=txt_path)
+        step = 0
         while True:
             merge_candidate = self.get_best_candidate()
             if merge_candidate is not None:
@@ -91,6 +119,9 @@ class BPE(object):
             else:
                 # No more merges possible
                 break
+            step += 1
+            if step % 100 == 0:
+                print("BPE merging step", step, "current vocabulary size", cur_v_size)
 
         # Now we get rid of the current vocab that is based on the corpus (not
         # memory-efficient). We now only keep the final bpe tokens.
@@ -102,6 +133,7 @@ class BPE(object):
                 self.max_bpe_len = max(self.max_bpe_len, len(bpe_token))
         self.vocab = new_vocab
 
+        print("BPE vocab built with size", len(self.vocab))
         return len(self.vocab)
 
     def segment_word(self, word: str) -> List[str]:
@@ -135,3 +167,13 @@ class BPE(object):
                         output_bpe_tokens += segmentation_cache[word]
                     writer.write(" ".join(output_bpe_tokens))
                     writer.write("\n")
+
+
+if __name__ == "__main__":
+    arg_parser = get_arg_parser()
+    options, args = arg_parser.parse_args()
+    bpe_model = BPE()
+    bpe_model.build_vocab(txt_path=options.train_file, vocab_size=options.vocab_size)
+    bpe_model.segment_txt(
+        input_path=options.train_file, output_path=options.train_output_file
+    )
