@@ -22,7 +22,10 @@ from caffe2.python.predictor import predictor_exporter
 from fairseq import tasks, utils
 from fairseq.models import ARCH_MODEL_REGISTRY
 from pytorch_translate.char_source_model import CharSourceModel
-from pytorch_translate.research.knowledge_distillation import dual_decoder_kd_model
+from pytorch_translate.research.knowledge_distillation import (
+    dual_decoder_kd_model,
+    hybrid_dual_decoder_kd_model,
+)
 from pytorch_translate.tasks.pytorch_translate_task import DictionaryHolderTask
 from pytorch_translate.transformer import TransformerEncoder
 from pytorch_translate.word_prediction import word_prediction_model
@@ -107,6 +110,10 @@ def load_models_from_checkpoints(
             )
         elif architecture == "dual_decoder_kd":
             model = dual_decoder_kd_model.DualDecoderKDModel.build_model(
+                checkpoint_data["args"], task
+            )
+        elif architecture == "hybrid_dual_decoder_kd":
+            model = hybrid_dual_decoder_kd_model.HybridDualDecoderKDModel.build_model(
                 checkpoint_data["args"], task
             )
         elif "semi_supervised" in architecture:
