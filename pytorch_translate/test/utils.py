@@ -54,7 +54,24 @@ class ModelParamsDict:
             self.student_decoder_layers = 2
             self.student_decoder_attention_heads = 2
             self.student_decoder_lstm_units = 7
-            self.student_dcoder_out_embed_dim = 4
+            self.student_decoder_out_embed_dim = 4
+            self.student_decoder_reduced_attention_dim = 8
+        elif arch == "hybrid_dual_decoder_kd":
+            self.arch = "hybrid_dual_decoder_kd"
+            self.encoder_embed_dim = 10
+            self.encoder_ffn_embed_dim = 16
+            self.encoder_layers = 2
+            self.encoder_attention_heads = 2
+            self.decoder_embed_dim = 10
+            self.decoder_lstm_units = 16
+            self.decoder_layers = 2
+            self.decoder_attention_heads = 2
+            self.student_decoder_embed_dim = 5
+            self.student_decoder_layers = 2
+            self.student_decoder_attention_heads = 2
+            self.student_decoder_lstm_units = 7
+            self.student_decoder_out_embed_dim = 4
+            self.student_decoder_reduced_attention_dim = 8
         else:
             self.arch = "rnn"
             self.encoder_embed_dim = 10
