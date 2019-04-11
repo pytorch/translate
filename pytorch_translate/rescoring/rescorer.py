@@ -92,10 +92,9 @@ class Rescorer:
         if not self.args.enable_reverse_rescoring:
             return
 
-        for i, hypo in enumerate(hypos):
-            scores[
-                i, FeatureList.REVERSE_MODEL_SCORE.value
-            ] = self.reverse_model_scorer.score(src_tokens, hypo)
+        scores[
+            :, FeatureList.REVERSE_MODEL_SCORE.value
+        ] = self.reverse_model_scorer.score(src_tokens, hypos)
 
     def compute_lm_scores(self, src_tokens, hypos, scores):
         """computes p(x|y) for each hypothesis. """
