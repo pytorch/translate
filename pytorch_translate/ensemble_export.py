@@ -1205,7 +1205,7 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
         self.vocab_size = vocab_size
         self.unk_token = tgt_dict.unk()
 
-        self.enable_precomput_reduced_weights = False
+        self.enable_precompute_reduced_weights = False
 
     def forward(self, input_token, target_token, timestep, *inputs):
         """
@@ -1237,7 +1237,7 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
             next_state_input += 1
 
             if (
-                self.enable_precomput_reduced_weights
+                self.enable_precompute_reduced_weights
                 and hasattr(model.decoder, "_precompute_reduced_weights")
                 and possible_translation_tokens is not None
             ):
