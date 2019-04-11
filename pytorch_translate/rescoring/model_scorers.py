@@ -83,16 +83,22 @@ class SimpleModelScorer(object):
 
         return reversed_tgt_tokens
 
-    def prepare_encoder_inputs(self, src_tokens):
+    def prepare_encoder_inputs(self, src_tokens, number_of_hypos):
+        """ Prepare encoder inputs as inputs to the encoder
+
+        Args:
+          src_tokens: source tokens
+          number_of_hypos: repeat src_tokens by number_of_hypos
+
+        Returns:
+          Tuple containing src_tokens [number_of_hypos, source_length] and
+          [src_length]
+        """
         src_length = len(src_tokens)
-        src_tokens = src_tokens.unsqueeze(0)  # batch dimension
+        src_tokens = src_tokens.repeat(number_of_hypos, 1)
         return (src_tokens, [src_length])
 
-    def encode(self, args, encoder_inputs):
-        assert (
-            encoder_inputs[0] == self.task.target_dictionary.eos()
-        ).sum() == 0, "Encoder doesn't expect eos tokens as input"
-
+    def encode(self, encoder_inputs):
         encoder_out = self.model.encoder(*encoder_inputs)
         return [encoder_out]
 
@@ -125,17 +131,6 @@ class SimpleModelScorer(object):
         if (tgt_tokens == eos).sum() != 2 * tgt_tokens.size()[0]:
             raise ValueError("Each target should have 2 eos tokens")
 
-        reorder_indices = torch.arange(1).view(-1, 1).repeat(1, args.beam).view(-1)
-
-        for i, encoder_out in enumerate(encoder_outs):
-            # expand outputs for each example beam_size times
-            encoder_outs[i] = model.encoder.reorder_encoder_out(
-                encoder_out=encoder_out,
-                new_order=reorder_indices.cuda()
-                if encoder_out[0].is_cuda
-                else reorder_indices,
-            )
-
         decoder_out = list(model.decoder(tgt_tokens, encoder_outs[0]))
         assert (
             len(decoder_out) == 2 or decoder_out[2] is None
@@ -165,9 +160,8 @@ class SimpleModelScorer(object):
         return hypos_scores
 
     def prepare_inputs(self, src_tokens, hypos):
-        encoder_inputs = self.prepare_encoder_inputs(src_tokens)
+        encoder_inputs = self.prepare_encoder_inputs(src_tokens, len(hypos))
         tgt_tokens = self.convert_hypos_to_tgt_tokens(hypos).type_as(src_tokens)
-
         return encoder_inputs, tgt_tokens
 
     @torch.no_grad()
@@ -179,7 +173,7 @@ class SimpleModelScorer(object):
             return
 
         encoder_inputs, tgt_tokens = self.prepare_inputs(src_tokens, hypos)
-        encoder_outs = self.encode(self.args, encoder_inputs)
+        encoder_outs = self.encode(encoder_inputs)
         logprobs = self.decode(self.args, self.model, encoder_outs, tgt_tokens)
         hypos_scores = self.compute_scores(tgt_tokens, logprobs)
 
@@ -192,7 +186,7 @@ class R2LModelScorer(SimpleModelScorer):
     """
 
     def prepare_inputs(self, src_tokens, hypos):
-        encoder_inputs = self.prepare_encoder_inputs(src_tokens)
+        encoder_inputs = self.prepare_encoder_inputs(src_tokens, len(hypos))
         tgt_tokens = self.convert_hypos_to_tgt_tokens(hypos).type_as(src_tokens)
         tgt_tokens = self.reverse_tgt_tokens(tgt_tokens)
 
@@ -204,10 +198,7 @@ class ReverseModelScorer(SimpleModelScorer):
     Scores p(x|y) with a reverse model and switching src and tgt sentences
     """
 
-    def __init__(self, args, model_path, original_task):
-        super().__init__(args, model_path, original_task)
-
-    def prepare_inputs(self, src_tokens, hypo):
+    def prepare_inputs(self, src_tokens, hypos):
         """
         For reverse model, we need to switch src_tokens and tgt_tokens.
         We also make sure source is reversed if original task vs new task
@@ -215,17 +206,12 @@ class ReverseModelScorer(SimpleModelScorer):
         """
         eos = self.task.target_dictionary.eos()
 
+        # Prepare target tokens
         # Map token ids from original dictionary to reverse model dictionary
         src_string = self.original_task.src_dict.string(src_tokens)
         src_tokens_mapped = self.task.tgt_dict.encode_line(
             src_string, add_if_not_exist=False
         )
-
-        tgt_string = self.original_task.tgt_dict.string(hypo["tokens"])
-        tgt_tokens_mapped = self.task.src_dict.encode_line(
-            tgt_string, add_if_not_exist=False
-        )
-
         # Swap target and source tokens with necessary modifications
         tgt_tokens = (
             torch.cat(
@@ -241,9 +227,27 @@ class ReverseModelScorer(SimpleModelScorer):
             .view(1, -1)
             .type_as(src_tokens)
         )
-        src_tokens = tgt_tokens_mapped[:-1].type_as(src_tokens)
+        # In reverse model, tgt_tokens are repeated instead of source
+        tgt_tokens = tgt_tokens.repeat(len(hypos), 1)
 
-        encoder_inputs = self.prepare_encoder_inputs(src_tokens)
+        # Prepare source tokens
+        max_tgt_len = max(len(hypo["tokens"]) for hypo in hypos)
+        pad = self.task.target_dictionary.pad()
+        src_tokens = torch.full(
+            (len(hypos), max_tgt_len), fill_value=pad, dtype=torch.long
+        ).type_as(tgt_tokens)
+
+        for i, hypo in enumerate(hypos):
+            tgt_string = self.original_task.tgt_dict.string(hypo["tokens"])
+            tgt_tokens_mapped = self.task.src_dict.encode_line(
+                tgt_string, add_if_not_exist=False
+            )
+            if not self.args.append_eos_to_source:
+                tgt_tokens_mapped = tgt_tokens_mapped[:-1]
+            src_tokens[i, : len(tgt_tokens_mapped)] = tgt_tokens_mapped
+
+        src_length = src_tokens.shape[1]
+        encoder_inputs = (src_tokens, [src_length])
         return encoder_inputs, tgt_tokens
 
 
