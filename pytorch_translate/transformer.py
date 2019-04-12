@@ -323,6 +323,9 @@ class TransformerEncoder(FairseqEncoder):
             state_dict[
                 f"{name}.transformer_embedding.embed_positions._float_tensor"
             ] = torch.FloatTensor(1)
+        self.transformer_encoder_given_embeddings.upgrade_state_dict_named(
+            state_dict, f"{name}.transformer_encoder_given_embeddings"
+        )
         return state_dict
 
     def set_gradient_tracking_mode(self, mode=True):
