@@ -24,6 +24,10 @@ class Rescorer:
         self.args = args
         self.original_task = original_task
 
+        assert (
+            self.args.word_reward == 0.0 and self.args.length_penalty != 0.0
+        ), "For rescoring, original model should be scored with length penalty"
+
         if args.enable_r2l_rescoring:
             assert (
                 args.r2l_model_path
@@ -53,9 +57,11 @@ class Rescorer:
             [len(hypo["tokens"]) for hypo in hypos], dtype=torch.float
         )
 
-        scores[:, FeatureList.ORIGINAL_MODEL_SCORE.value] *= (
-            self.args.original_model_weight / tgt_len
-        )
+        scores[
+            :, FeatureList.ORIGINAL_MODEL_SCORE.value
+        ] *= (
+            self.args.original_model_weight
+        )  # Original model score should be length normalized already
         scores[:, FeatureList.R2L_MODEL_SCORE.value] *= (
             self.args.r2l_model_weight / tgt_len
         )
