@@ -20,13 +20,13 @@ class TestBPE(unittest.TestCase):
         with patch("builtins.open") as mock_open:
             mock_open.return_value.__enter__ = mock_open
             mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
-            bpe_model.init_vocab(txt_path="no_exist_file.txt")
+            bpe_model._init_vocab(txt_path="no_exist_file.txt")
 
             vocab_items = Counter()
-            for vocab_entry in bpe_model.vocab.keys():
+            for vocab_entry, freq in bpe_model.current_train_data:
                 items = vocab_entry.split()
                 for item in items:
-                    vocab_items[item] += bpe_model.vocab[vocab_entry]
+                    vocab_items[item] += freq
 
             assert vocab_items[bpe_model.eow_symbol] == 11
             assert vocab_items["3"] == 7
@@ -40,7 +40,7 @@ class TestBPE(unittest.TestCase):
         with patch("builtins.open") as mock_open:
             mock_open.return_value.__enter__ = mock_open
             mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
-            bpe_model.init_vocab(txt_path="no_exist_file.txt")
+            bpe_model._init_vocab(txt_path="no_exist_file.txt")
 
             assert bpe_model.get_best_candidate() == ("1", "2")
 
@@ -50,7 +50,7 @@ class TestBPE(unittest.TestCase):
         with patch("builtins.open") as mock_open:
             mock_open.return_value.__enter__ = mock_open
             mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
-            bpe_model.init_vocab(txt_path="no_exist_file.txt")
+            bpe_model._init_vocab(txt_path="no_exist_file.txt")
 
             # Trying merging a candidate that does not exist.
             vocab_size = bpe_model.merge_candidate_into_vocab(("3", "1"))
