@@ -41,14 +41,18 @@ class BPE(object):
         self.vocab: Dict[str, int] = Counter()
         self.eow_symbol = "_EOW"  # End of word symbol.
 
+        # This data structure holds current segmentation of training data. This
+        # is useful for faster parallel computation during training.
+        # str is the current segmentation, int is the frequency.
+        self.current_train_data: List[Tuple[str, int]] = []
+
         # This value will change after building the vocabulary. We use this value
         # for greedy segmentation where we start by looking at the longest possible
         # character sequence wrt max_bpe_len.
         self.max_bpe_len = 1
 
-    def init_vocab(self, txt_path: str):
-        self.vocab: Dict[str, int] = Counter()
-
+    def _init_vocab(self, txt_path: str):
+        data_freq: Dict[str, int] = Counter()
         with open(txt_path, "r", encoding="utf-8") as input_stream:
             for line in input_stream:
                 for word in line.strip().split():
@@ -56,7 +60,11 @@ class BPE(object):
                     # token. It can potentially attach to previous letters
                     # depending on the frequencies of data. If it is attached,
                     # that is a clear indicator of a suffix.
-                    self.vocab[" ".join(list(word) + [self.eow_symbol])] += 1
+                    data_freq[" ".join(list(word) + [self.eow_symbol])] += 1
+
+        self.current_train_data: List[Tuple[str, int]] = []
+        for segmentation, freq in data_freq.items():
+            self.current_train_data.append((segmentation, freq))
 
     def get_best_candidate(self):
         """
@@ -64,8 +72,8 @@ class BPE(object):
         and returns the candidate with the most frequency.
         """
         candidates = Counter()
-        for vocab_entry, freq in self.vocab.items():
-            symbols = vocab_entry.split()
+        for (segmentation, freq) in self.current_train_data:
+            symbols = segmentation.split()
             for i in range(len(symbols) - 1):
                 candidates[(symbols[i], symbols[i + 1])] += freq
         return max(candidates, key=candidates.get) if len(candidates) > 0 else None
@@ -84,20 +92,19 @@ class BPE(object):
         candidate_replacement = "".join(candidate)
         pattern = BPE.get_merge_pattern(candidate_str)
 
-        new_vocab: Dict[str, int] = Counter()
         new_bpe_entries = set()
-        for vocab_entry, freq in self.vocab.items():
+        for i in range(len(self.current_train_data)):
+            vocab_entry, freq = self.current_train_data[i]
             new_entry = vocab_entry
             if candidate_str in vocab_entry:
                 # Regex is usually slow. We just apply it on words that have the
                 # potential of replacement.
                 new_entry = pattern.sub(candidate_replacement, vocab_entry)
 
-            new_vocab[new_entry] = freq
+            self.current_train_data[i] = (new_entry, freq)
             for entry in new_entry.split():
                 new_bpe_entries.add(entry)
 
-        self.vocab = new_vocab
         return len(new_bpe_entries)
 
     def build_vocab(self, txt_path: str, vocab_size: int) -> int:
@@ -108,7 +115,7 @@ class BPE(object):
             txt_path: Raw text file.
             vocab_size: The maximum number of vocabulary items we need to have.
         """
-        self.init_vocab(txt_path=txt_path)
+        self._init_vocab(txt_path=txt_path)
         step = 0
         while True:
             merge_candidate = self.get_best_candidate()
@@ -125,13 +132,12 @@ class BPE(object):
 
         # Now we get rid of the current vocab that is based on the corpus (not
         # memory-efficient). We now only keep the final bpe tokens.
-        new_vocab: Dict[str, int] = Counter()
+        self.vocab: Dict[str, int] = Counter()
         self.max_bpe_len = 1
-        for vocab_entry, freq in self.vocab.items():
+        for (vocab_entry, freq) in self.current_train_data:
             for bpe_token in vocab_entry.split():
-                new_vocab[bpe_token] += freq
+                self.vocab[bpe_token] += freq
                 self.max_bpe_len = max(self.max_bpe_len, len(bpe_token))
-        self.vocab = new_vocab
 
         print("BPE vocab built with size", len(self.vocab))
         return len(self.vocab)
