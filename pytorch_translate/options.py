@@ -539,6 +539,14 @@ def expand_optimization_args(group):
         help="Beam size to use for 'sequence_nll' loss and 'sequence_risk' "
         "loss. If zero, use --beam.",
     )
+    group.add_argument(
+        "--disable-eval-bleu",
+        nargs="?",
+        const=True,
+        default=False,
+        type=utils.bool_flag,
+        help=("disable bleu score evaluation on tune dataset"),
+    )
 
     return group
 
