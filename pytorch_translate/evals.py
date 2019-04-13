@@ -168,6 +168,9 @@ def eval_tune_loss(args, trainer, task, subset, extra_state):
 def evaluate_bleu(
     args, task, extra_state: Dict[str, Any], trainer, averaged_params: OrderedDict
 ) -> Tuple[Dict[str, Any], bool, bool, List]:
+    if args.disable_eval_bleu:
+        extra_state["tune_bleu"]["current"] = 0.0
+        return (extra_state, False, False, None)
     epoch, offset = extra_state["epoch"], extra_state["batch_offset"]
     if args.log_verbose:
         print(
