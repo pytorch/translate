@@ -168,7 +168,6 @@ class CharSourceHybridModel(hybrid_transformer_rnn.HybridTransformerRNNModel):
                 args, "finetune_pretrained_weights", False
             ),
             weights_file=getattr(args, "pretrained_weights_file", ""),
-            left_pad=False,
         )
 
         decoder_embed_tokens = pytorch_translate_transformer.build_embedding(
@@ -215,7 +214,6 @@ class CharCNNEncoder(FairseqEncoder):
         use_pretrained_weights=False,
         finetune_pretrained_weights=False,
         weights_file=None,
-        left_pad=False,
     ):
         super().__init__(dictionary)
 
@@ -259,7 +257,6 @@ class CharCNNEncoder(FairseqEncoder):
             1024,
             args.encoder_embed_dim,
             self.padding_idx,
-            left_pad=left_pad,
             learned=args.encoder_learned_pos,
         )
 

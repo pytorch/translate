@@ -585,7 +585,7 @@ def TransformerTokenEmbedding(
 
 
 class TransformerEmbedding(nn.Module):
-    def __init__(self, args, embed_tokens, left_pad):
+    def __init__(self, args, embed_tokens):
         super().__init__()
         self.dropout = args.dropout
         embed_dim = embed_tokens.embedding_dim
@@ -596,7 +596,6 @@ class TransformerEmbedding(nn.Module):
             1024,
             embed_dim,
             self.padding_idx,
-            left_pad=left_pad,
             learned=args.encoder_learned_pos,
         )
 

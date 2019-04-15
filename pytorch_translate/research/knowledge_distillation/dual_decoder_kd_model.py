@@ -137,7 +137,7 @@ class StudentHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
     (dropout, attention_dropout, and vocab reduction params shared with teacher.)
     """
 
-    def _init_dims(self, args, src_dict, dst_dict, embed_tokens, left_pad):
+    def _init_dims(self, args, src_dict, dst_dict, embed_tokens):
         self.dropout = args.dropout
 
         embed_dim = embed_tokens.embedding_dim

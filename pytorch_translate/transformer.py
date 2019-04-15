@@ -259,11 +259,11 @@ class TransformerEncoder(FairseqEncoder):
     """Transformer encoder."""
 
     def __init__(
-        self, args, dictionary, embed_tokens, left_pad=False, proj_to_decoder=True
+        self, args, dictionary, embed_tokens, proj_to_decoder=True
     ):
         super().__init__(dictionary)
         self.transformer_embedding = TransformerEmbedding(
-            args=args, embed_tokens=embed_tokens, left_pad=left_pad
+            args=args, embed_tokens=embed_tokens,
         )
 
         self.transformer_encoder_given_embeddings = TransformerEncoderGivenEmbeddings(
@@ -343,7 +343,7 @@ class TransformerEncoder(FairseqEncoder):
 class TransformerDecoder(FairseqIncrementalDecoder):
     """Transformer decoder."""
 
-    def __init__(self, args, src_dict, dst_dict, embed_tokens, left_pad=False):
+    def __init__(self, args, src_dict, dst_dict, embed_tokens):
         super().__init__(dst_dict)
         self.dropout = args.dropout
         self.share_input_output_embed = args.share_decoder_input_output_embed
@@ -357,7 +357,6 @@ class TransformerDecoder(FairseqIncrementalDecoder):
             1024,
             embed_dim,
             padding_idx,
-            left_pad=left_pad,
             learned=args.decoder_learned_pos,
         )
 

@@ -190,7 +190,7 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
     https://arxiv.org/abs/1804.09849
     """
 
-    def _init_dims(self, args, src_dict, dst_dict, embed_tokens, left_pad):
+    def _init_dims(self, args, src_dict, dst_dict, embed_tokens):
         self.dropout = args.dropout
 
         embed_dim = embed_tokens.embedding_dim
@@ -210,7 +210,7 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         self.num_attention_heads = args.decoder_attention_heads
         self.out_embed_dim = args.decoder_out_embed_dim
 
-    def _init_components(self, args, src_dict, dst_dict, embed_tokens, left_pad):
+    def _init_components(self, args, src_dict, dst_dict, embed_tokens):
         self.initial_rnn_layer = nn.LSTM(
             input_size=self.initial_input_dim, hidden_size=self.lstm_units
         )
@@ -252,10 +252,10 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
 
         self.onnx_trace = False
 
-    def __init__(self, args, src_dict, dst_dict, embed_tokens, left_pad=False):
+    def __init__(self, args, src_dict, dst_dict, embed_tokens):
         super().__init__(dst_dict)
-        self._init_dims(args, src_dict, dst_dict, embed_tokens, left_pad)
-        self._init_components(args, src_dict, dst_dict, embed_tokens, left_pad)
+        self._init_dims(args, src_dict, dst_dict, embed_tokens)
+        self._init_components(args, src_dict, dst_dict, embed_tokens)
 
     # Enable dependency injection by subclasses
     def _unpack_encoder_out(self, encoder_out):

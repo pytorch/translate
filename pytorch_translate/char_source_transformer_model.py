@@ -184,7 +184,6 @@ class CharSourceTransformerModel(transformer.TransformerModel):
                 args, "finetune_pretrained_weights", False
             ),
             weights_file=getattr(args, "pretrained_weights_file", ""),
-            left_pad=False,
         )
         decoder = transformer.TransformerDecoder(
             args=args,
@@ -226,7 +225,6 @@ class CharCNNEncoder(FairseqEncoder):
         use_pretrained_weights=False,
         finetune_pretrained_weights=False,
         weights_file=None,
-        left_pad=False,
     ):
         super().__init__(dictionary)
 
@@ -270,7 +268,6 @@ class CharCNNEncoder(FairseqEncoder):
             1024,
             args.encoder_embed_dim,
             self.padding_idx,
-            left_pad=left_pad,
             learned=args.encoder_learned_pos,
         )
 
