@@ -12,7 +12,7 @@ from typing import Dict, List, Set, Tuple
 def get_arg_parser():
     parser = OptionParser()
     parser.add_option(
-        "--train",
+        "--train-file",
         dest="train_file",
         help="Raw text as training data.",
         metavar="FILE",
@@ -31,6 +31,13 @@ def get_arg_parser():
         help="BPE tokenized train file.",
         metavar="FILE",
         default=None,
+    )
+    parser.add_option(
+        "--num-cpus",
+        type="int",
+        dest="num_cpus",
+        help="Number of cpus for multi-processing.",
+        default=3,
     )
     return parser
 
@@ -69,17 +76,38 @@ class BPE(object):
         for segmentation, freq in data_freq.items():
             self.current_train_data.append((segmentation, freq))
 
-    def get_best_candidate(self):
+    def _best_candidate_substep(self, start_end_indices: Tuple[int, int]):
+        """
+        Args:
+            first and end index for part of self.current_train_data to search for.
+        """
+        start_index, end_index = start_end_indices[0], start_end_indices[1]
+        assert start_index <= end_index
+
+        candidates = Counter()
+        for (seg, freq) in self.current_train_data[start_index:end_index]:
+            symbols = seg.split()
+            for i in range(len(symbols) - 1):
+                candidates[(symbols[i], symbols[i + 1])] += freq
+        return candidates
+
+    def get_best_candidate(self, num_cpus: int):
         """
         Calculates frequencies for new candidiates from the current vocabulary,
         and returns the candidate with the most frequency.
         """
-        candidates = Counter()
-        for (segmentation, freq) in self.current_train_data:
-            symbols = segmentation.split()
-            for i in range(len(symbols) - 1):
-                candidates[(symbols[i], symbols[i + 1])] += freq
-        return max(candidates, key=candidates.get) if len(candidates) > 0 else None
+        with Pool(processes=num_cpus) as pool:
+            data_chunk_size = max(1, math.ceil(len(self.current_train_data) / num_cpus))
+            indices = [
+                (
+                    i * data_chunk_size,
+                    min(data_chunk_size * (i + 1), len(self.current_train_data)),
+                )
+                for i in range(num_cpus)
+            ]
+            results = pool.map(self._best_candidate_substep, indices)
+            candidates = sum(results, Counter())
+            return max(candidates, key=candidates.get) if len(candidates) > 0 else None
 
     @staticmethod
     def get_merge_pattern(candidate_str):
@@ -153,7 +181,7 @@ class BPE(object):
         self._init_vocab(txt_path=txt_path)
         step = 0
         while True:
-            merge_candidate = self.get_best_candidate()
+            merge_candidate = self.get_best_candidate(num_cpus=num_cpus)
             if merge_candidate is not None:
                 cur_v_size = self.merge_candidate_into_vocab(
                     candidate=merge_candidate, num_cpus=num_cpus
@@ -217,7 +245,9 @@ if __name__ == "__main__":
     options, args = arg_parser.parse_args()
     bpe_model = BPE()
     bpe_model.build_vocab(
-        txt_path=options.train_file, vocab_size=options.vocab_size, num_cpus=3
+        txt_path=options.train_file,
+        vocab_size=options.vocab_size,
+        num_cpus=options.num_cpus,
     )
     bpe_model.segment_txt(
         input_path=options.train_file, output_path=options.train_output_file
