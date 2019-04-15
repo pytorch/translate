@@ -53,21 +53,27 @@ class TestBPE(unittest.TestCase):
             bpe_model._init_vocab(txt_path="no_exist_file.txt")
 
             # Trying merging a candidate that does not exist.
-            vocab_size = bpe_model.merge_candidate_into_vocab(("3", "1"))
+            vocab_size = bpe_model.merge_candidate_into_vocab(
+                candidate=("3", "1"), num_cpus=3
+            )
             assert vocab_size == 10
 
             # Trying merging a candidate that does exists.
-            vocab_size = bpe_model.merge_candidate_into_vocab(("2", "3"))
+            vocab_size = bpe_model.merge_candidate_into_vocab(
+                candidate=("2", "3"), num_cpus=3
+            )
             assert vocab_size == 11
 
             # Trying merging a candidate that does exists. Entry "3" should remove
             # from vocab.
-            vocab_size = bpe_model.merge_candidate_into_vocab(("3", "4"))
+            vocab_size = bpe_model.merge_candidate_into_vocab(
+                candidate=("3", "4"), num_cpus=3
+            )
             assert vocab_size == 11
 
             # Trying merging a candidate that does not exist.
             vocab_size = bpe_model.merge_candidate_into_vocab(
-                ("3", bpe_model.eow_symbol)
+                candidate=("3", bpe_model.eow_symbol), num_cpus=3
             )
             assert vocab_size == 11
 
@@ -94,7 +100,7 @@ class TestBPE(unittest.TestCase):
 
             # Trying to build a vocab more than the possible size
             vocab_size = bpe_model.build_vocab(
-                txt_path="no_exist_file.txt", vocab_size=200
+                txt_path="no_exist_file.txt", vocab_size=20, num_cpus=3
             )
             # Asserting that we go back to the original size (number of word types.)
             assert vocab_size == 9
@@ -105,7 +111,7 @@ class TestBPE(unittest.TestCase):
             mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
             # Trying to build a vocab with an acceptable size.
             vocab_size = bpe_model.build_vocab(
-                txt_path="no_exist_file.txt", vocab_size=12
+                txt_path="no_exist_file.txt", vocab_size=12, num_cpus=3
             )
             # asserting that the size is as expected.
             assert vocab_size == 12
@@ -118,7 +124,9 @@ class TestBPE(unittest.TestCase):
             mock_open.return_value.__enter__ = mock_open
             mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
 
-            bpe_model.build_vocab(txt_path="no_exist_file.txt", vocab_size=12)
+            bpe_model.build_vocab(
+                txt_path="no_exist_file.txt", vocab_size=12, num_cpus=3
+            )
             assert bpe_model.segment_word("1234") == ["12", "34", bpe_model.eow_symbol]
 
             # Giving unknown character sequence
@@ -140,7 +148,7 @@ class TestBPE(unittest.TestCase):
 
         with open(input_file, "w", encoding="utf-8") as writer:
             writer.write("\n".join(txt_content))
-        bpe_model.build_vocab(txt_path=input_file, vocab_size=12)
+        bpe_model.build_vocab(txt_path=input_file, vocab_size=12, num_cpus=3)
 
         output = []
         for line in txt_content:
