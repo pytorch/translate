@@ -125,6 +125,8 @@ class ModelParamsDict:
         self.cpu = None
         self.reverse_source = False
         self.append_eos_to_source = False
+        self.word_reward = 0.0
+        self.length_penalty = 0.0
         # Rescoring params
         self.enable_rescoring = False
         self.original_model_weight = None
