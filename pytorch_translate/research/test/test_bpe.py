@@ -42,7 +42,7 @@ class TestBPE(unittest.TestCase):
             mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
             bpe_model._init_vocab(txt_path="no_exist_file.txt")
 
-            assert bpe_model.get_best_candidate() == ("1", "2")
+            assert bpe_model.get_best_candidate(num_cpus=3) == ("1", "2")
 
     def test_bpe_merge(self):
         bpe_model = bpe.BPE()
