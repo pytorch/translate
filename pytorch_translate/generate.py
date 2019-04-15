@@ -3,6 +3,7 @@
 import argparse
 import collections
 import os
+import pickle
 from typing import List, NamedTuple, Optional
 
 import numpy as np
@@ -86,6 +87,7 @@ class TranslationInfo(NamedTuple):
     hypo_score: float
     best_hypo_tokens: Optional[torch.Tensor]
     hypo_tokens_after_rescoring: Optional[torch.Tensor]
+    hypos: List[dict]
 
 
 def build_sequence_generator(args, task, models):
@@ -195,6 +197,7 @@ def _generate_score(models, args, task, dataset):
 
     num_sentences = 0
     translation_samples = []
+    translation_info_list = []
     with progress_bar.build_progress_bar(args, itr) as t:
         wps_meter = TimeMeter()
         gen_timer = StopwatchMeter()
@@ -227,6 +230,14 @@ def _generate_score(models, args, task, dataset):
                 output_hypos_token_arrays[
                     trans_info.sample_id
                 ] = trans_info.best_hypo_tokens
+            if args.translation_info_export_path is not None:
+                translation_info_list.append(
+                    {
+                        "src_tokens": trans_info.src_tokens,
+                        "target_tokens": trans_info.target_tokens,
+                        "hypos": trans_info.hypos,
+                    }
+                )
             translation_samples.append(
                 collections.OrderedDict(
                     {
@@ -246,6 +257,10 @@ def _generate_score(models, args, task, dataset):
         output_dataset = pytorch_translate_data.InMemoryNumpyDataset()
         output_dataset.load_from_sequences(output_hypos_token_arrays)
         output_dataset.save(args.output_hypos_binary_path)
+    if args.translation_info_export_path is not None:
+        f = open(args.translation_info_export_path, "wb")
+        pickle.dump(translation_info_list, f)
+        f.close()
 
     # If applicable, save the translations to the output file
     # For eg. external evaluation
@@ -425,6 +440,12 @@ def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
             rescorer.score(src_tokens, hypos) if rescorer else None
         )
 
+        # Strip expensive data from hypotheses before yielding
+        hypos_stripped = [
+            {k: v for k, v in hypo.items() if k in ["tokens", "score"]}
+            for hypo in hypos
+        ]
+
         yield TranslationInfo(
             sample_id=sample_id,
             src_tokens=src_tokens,
@@ -436,6 +457,7 @@ def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
             hypo_score=hypo_score,
             best_hypo_tokens=best_hypo_tokens,
             hypo_tokens_after_rescoring=hypo_tokens_after_rescoring,
+            hypos=hypos_stripped,
         )
 
 

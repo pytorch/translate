@@ -674,6 +674,12 @@ def expand_generation_args(group, train=False):
         ),
     )
     group.add_argument(
+        "--translation-info-export-path",
+        default=None,
+        type=str,
+        help=("Optional path to save translation info output in pickled format"),
+    )
+    group.add_argument(
         "--diversity-sibling-gamma",
         type=float,
         default=0.0,
