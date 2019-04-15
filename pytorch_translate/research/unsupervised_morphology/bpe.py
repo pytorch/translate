@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 
+import math
 import re
 from collections import Counter
+from itertools import chain
+from multiprocessing import Pool
 from optparse import OptionParser
-from typing import Dict, List, Tuple
+from typing import Dict, List, Set, Tuple
 
 
 def get_arg_parser():
@@ -82,18 +85,21 @@ class BPE(object):
     def get_merge_pattern(candidate_str):
         return re.compile(r"(?<!\S)" + re.escape(candidate_str) + r"(?!\S)")
 
-    def merge_candidate_into_vocab(self, candidate: Tuple[str, str]) -> int:
+    def merge_substep(
+        self, merge_candidate: Tuple[str, str], start_end_index: Tuple[int, int]
+    ) -> Tuple[List[Tuple[str, int]], Set]:
         """
-        Returns the vocabulary size (number of BPE types).
-        Args:
-            candidate: a pair of strings to be merged in all entries.
+        Returns Bpe types in the current substep.
         """
-        candidate_str = " ".join(candidate)
-        candidate_replacement = "".join(candidate)
+        candidate_str = " ".join(merge_candidate)
+        candidate_replacement = "".join(merge_candidate)
         pattern = BPE.get_merge_pattern(candidate_str)
+        offset, stop_index = start_end_index
+        assert offset < stop_index
 
         new_bpe_entries = set()
-        for i in range(len(self.current_train_data)):
+        new_data: List[Tuple[str, int]] = [None] * (stop_index - offset)
+        for i in range(offset, stop_index):
             vocab_entry, freq = self.current_train_data[i]
             new_entry = vocab_entry
             if candidate_str in vocab_entry:
@@ -101,13 +107,42 @@ class BPE(object):
                 # potential of replacement.
                 new_entry = pattern.sub(candidate_replacement, vocab_entry)
 
-            self.current_train_data[i] = (new_entry, freq)
+            new_data[i - offset] = (new_entry, freq)
             for entry in new_entry.split():
                 new_bpe_entries.add(entry)
+        return (new_data, new_bpe_entries)
 
-        return len(new_bpe_entries)
+    def merge_candidate_into_vocab(
+        self, candidate: Tuple[str, str], num_cpus: int
+    ) -> int:
+        """
+        Returns the vocabulary size (number of BPE types).
+        Args:
+            candidate: a pair of strings to be merged in all entries.
+        """
+        with Pool(processes=num_cpus) as pool:
+            data_chunk_size = max(1, math.ceil(len(self.current_train_data) / num_cpus))
+            candidate_str_list = [
+                (
+                    (candidate[0], candidate[1]),
+                    (
+                        i * data_chunk_size,
+                        min(data_chunk_size * (i + 1), len(self.current_train_data)),
+                    ),
+                )
+                for i in range(num_cpus)
+            ]
 
-    def build_vocab(self, txt_path: str, vocab_size: int) -> int:
+            results = pool.starmap(self.merge_substep, candidate_str_list)
+
+            # Each first element in results is a List[Tuple[str, int]]. By using
+            # the * operation with chain we concatenate the lists in order to
+            # reconstruct the training data.
+            self.current_train_data = list(chain(*[result[0] for result in results]))
+            bpe_types_union = set.union(*[result[1] for result in results])
+            return len(bpe_types_union)
+
+    def build_vocab(self, txt_path: str, vocab_size: int, num_cpus: int) -> int:
         """
         After building the vocab, sends the current number of bpe types.
 
@@ -120,7 +155,9 @@ class BPE(object):
         while True:
             merge_candidate = self.get_best_candidate()
             if merge_candidate is not None:
-                cur_v_size = self.merge_candidate_into_vocab(merge_candidate)
+                cur_v_size = self.merge_candidate_into_vocab(
+                    candidate=merge_candidate, num_cpus=num_cpus
+                )
                 if cur_v_size >= vocab_size:
                     break
             else:
@@ -179,7 +216,9 @@ if __name__ == "__main__":
     arg_parser = get_arg_parser()
     options, args = arg_parser.parse_args()
     bpe_model = BPE()
-    bpe_model.build_vocab(txt_path=options.train_file, vocab_size=options.vocab_size)
+    bpe_model.build_vocab(
+        txt_path=options.train_file, vocab_size=options.vocab_size, num_cpus=3
+    )
     bpe_model.segment_txt(
         input_path=options.train_file, output_path=options.train_output_file
     )
