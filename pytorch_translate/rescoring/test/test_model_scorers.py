@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import torch
 from pytorch_translate.rescoring.model_scorers import (
+    R2LModelScorer,
     ReverseModelScorer,
     SimpleModelScorer,
 )
@@ -23,7 +24,7 @@ class TestModelScorers(unittest.TestCase):
             "pytorch_translate.utils.load_diverse_ensemble_for_inference",
             return_value=([model], test_args, task),
         ):
-            scorer = SimpleModelScorer(test_args, None, task)
+            scorer = R2LModelScorer(test_args, None)
 
             pad = task.tgt_dict.pad()
             tgt_tokens = torch.Tensor([[1, 2, 3], [1, 2, pad], [1, pad, pad]])
@@ -41,7 +42,7 @@ class TestModelScorers(unittest.TestCase):
             "pytorch_translate.utils.load_diverse_ensemble_for_inference",
             return_value=([model], test_args, task),
         ):
-            scorer = SimpleModelScorer(test_args, None, task)
+            scorer = SimpleModelScorer(test_args, None)
 
             hypos = [
                 {"tokens": torch.Tensor([1, 2, 3, 4, 5])},
@@ -76,7 +77,7 @@ class TestModelScorers(unittest.TestCase):
             "pytorch_translate.utils.load_diverse_ensemble_for_inference",
             return_value=([model], test_args, task),
         ):
-            scorer = SimpleModelScorer(test_args, None, task)
+            scorer = SimpleModelScorer(test_args, None)
             tgt_tokens = torch.tensor([[2, 11, 22, 0], [2, 33, 44, 55]])
             logprobs = torch.zeros(
                 tgt_tokens.shape[0], tgt_tokens.shape[1], len(tgt_dict)
