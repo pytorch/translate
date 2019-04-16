@@ -34,6 +34,11 @@ class TestBPE(unittest.TestCase):
             assert "12" not in vocab_items
             assert "123" not in vocab_items
 
+            assert len(bpe_model.vocab) == 10
+            assert bpe_model.vocab[bpe_model.eow_symbol] == 11.0 / 56
+            assert bpe_model.vocab["3"] == 7.0 / 56
+            assert "12" not in bpe_model.vocab
+
     def test_best_candidate(self):
         bpe_model = bpe.BPE()
 
@@ -53,29 +58,23 @@ class TestBPE(unittest.TestCase):
             bpe_model._init_vocab(txt_path="no_exist_file.txt")
 
             # Trying merging a candidate that does not exist.
-            vocab_size = bpe_model.merge_candidate_into_vocab(
-                candidate=("3", "1"), num_cpus=3
-            )
-            assert vocab_size == 10
+            bpe_model.merge_candidate_into_vocab(candidate=("3", "1"), num_cpus=3)
+            assert len(bpe_model.vocab) == 10
 
             # Trying merging a candidate that does exists.
-            vocab_size = bpe_model.merge_candidate_into_vocab(
-                candidate=("2", "3"), num_cpus=3
-            )
-            assert vocab_size == 11
+            bpe_model.merge_candidate_into_vocab(candidate=("2", "3"), num_cpus=3)
+            assert len(bpe_model.vocab) == 11
 
             # Trying merging a candidate that does exists. Entry "3" should remove
             # from vocab.
-            vocab_size = bpe_model.merge_candidate_into_vocab(
-                candidate=("3", "4"), num_cpus=3
-            )
-            assert vocab_size == 11
+            bpe_model.merge_candidate_into_vocab(candidate=("3", "4"), num_cpus=3)
+            assert len(bpe_model.vocab) == 11
 
             # Trying merging a candidate that does not exist.
-            vocab_size = bpe_model.merge_candidate_into_vocab(
+            bpe_model.merge_candidate_into_vocab(
                 candidate=("3", bpe_model.eow_symbol), num_cpus=3
             )
-            assert vocab_size == 11
+            assert len(bpe_model.vocab) == 11
 
     def test_merge_pattern(self):
         pattern1 = bpe.BPE.get_merge_pattern("c c")
@@ -99,22 +98,22 @@ class TestBPE(unittest.TestCase):
             mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
 
             # Trying to build a vocab more than the possible size
-            vocab_size = bpe_model.build_vocab(
+            bpe_model.build_vocab(
                 txt_path="no_exist_file.txt", vocab_size=20, num_cpus=3
             )
             # Asserting that we go back to the original size (number of word types.)
-            assert vocab_size == 9
+            assert len(bpe_model.vocab) == 9
             assert bpe_model.max_bpe_len == 9 + len(bpe_model.eow_symbol)
 
         with patch("builtins.open") as mock_open:
             mock_open.return_value.__enter__ = mock_open
             mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
             # Trying to build a vocab with an acceptable size.
-            vocab_size = bpe_model.build_vocab(
+            bpe_model.build_vocab(
                 txt_path="no_exist_file.txt", vocab_size=12, num_cpus=3
             )
             # asserting that the size is as expected.
-            assert vocab_size == 12
+            assert len(bpe_model.vocab) == 12
             assert bpe_model.max_bpe_len == len(bpe_model.eow_symbol)
 
     def test_segment_word(self):

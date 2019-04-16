@@ -2,7 +2,7 @@
 
 import math
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from itertools import chain
 from multiprocessing import Pool
 from optparse import OptionParser
@@ -48,7 +48,7 @@ class BPE(object):
     """
 
     def __init__(self):
-        self.vocab: Dict[str, int] = Counter()
+        self.vocab: Dict[str, float] = defaultdict(float)
         self.eow_symbol = "_EOW"  # End of word symbol.
 
         # This data structure holds current segmentation of training data. This
@@ -62,6 +62,8 @@ class BPE(object):
         self.max_bpe_len = 1
 
     def _init_vocab(self, txt_path: str):
+        self.vocab: Dict[str, float] = defaultdict(float)
+        self.max_bpe_len = 1
         data_freq: Dict[str, int] = Counter()
         with open(txt_path, "r", encoding="utf-8") as input_stream:
             for line in input_stream:
@@ -74,7 +76,13 @@ class BPE(object):
 
         self.current_train_data: List[Tuple[str, int]] = []
         for segmentation, freq in data_freq.items():
+            for bpe_type in segmentation.split():
+                self.vocab[bpe_type] += freq
             self.current_train_data.append((segmentation, freq))
+
+        bpe_type_count = sum(self.vocab.values())
+        for bpe_type in self.vocab.keys():
+            self.vocab[bpe_type] /= bpe_type_count
 
     def _best_candidate_substep(self, start_end_indices: Tuple[int, int]):
         """
@@ -115,9 +123,10 @@ class BPE(object):
 
     def merge_substep(
         self, merge_candidate: Tuple[str, str], start_end_index: Tuple[int, int]
-    ) -> Tuple[List[Tuple[str, int]], Set]:
+    ) -> Tuple[List[Tuple[str, int]], Dict[str, int]]:
         """
-        Returns Bpe types in the current substep.
+        Returns 1) new data in the partition, 2) bpe types in the current substep
+        with their count.
         """
         candidate_str = " ".join(merge_candidate)
         candidate_replacement = "".join(merge_candidate)
@@ -125,7 +134,7 @@ class BPE(object):
         offset, stop_index = start_end_index
         assert offset < stop_index
 
-        new_bpe_entries = set()
+        new_bpe_entries = Counter()
         new_data: List[Tuple[str, int]] = [None] * (stop_index - offset)
         for i in range(offset, stop_index):
             vocab_entry, freq = self.current_train_data[i]
@@ -137,12 +146,12 @@ class BPE(object):
 
             new_data[i - offset] = (new_entry, freq)
             for entry in new_entry.split():
-                new_bpe_entries.add(entry)
+                new_bpe_entries[entry] += freq
         return (new_data, new_bpe_entries)
 
     def merge_candidate_into_vocab(
         self, candidate: Tuple[str, str], num_cpus: int
-    ) -> int:
+    ) -> None:
         """
         Returns the vocabulary size (number of BPE types).
         Args:
@@ -167,10 +176,15 @@ class BPE(object):
             # the * operation with chain we concatenate the lists in order to
             # reconstruct the training data.
             self.current_train_data = list(chain(*[result[0] for result in results]))
-            bpe_types_union = set.union(*[result[1] for result in results])
-            return len(bpe_types_union)
 
-    def build_vocab(self, txt_path: str, vocab_size: int, num_cpus: int) -> int:
+            new_vocab = sum([result[1] for result in results], Counter())
+            bpe_sum_count = sum(new_vocab.values())
+            self.vocab = defaultdict(float)
+            for bpe_type in new_vocab.keys():
+                self.vocab[bpe_type] = new_vocab[bpe_type] / bpe_sum_count
+                self.max_bpe_len = max(self.max_bpe_len, len(bpe_type))
+
+    def build_vocab(self, txt_path: str, vocab_size: int, num_cpus: int) -> None:
         """
         After building the vocab, sends the current number of bpe types.
 
@@ -183,29 +197,19 @@ class BPE(object):
         while True:
             merge_candidate = self.get_best_candidate(num_cpus=num_cpus)
             if merge_candidate is not None:
-                cur_v_size = self.merge_candidate_into_vocab(
+                self.merge_candidate_into_vocab(
                     candidate=merge_candidate, num_cpus=num_cpus
                 )
-                if cur_v_size >= vocab_size:
+                if len(self.vocab) >= vocab_size:
                     break
             else:
                 # No more merges possible
                 break
             step += 1
             if step % 100 == 0:
-                print("BPE merging step", step, "current vocabulary size", cur_v_size)
-
-        # Now we get rid of the current vocab that is based on the corpus (not
-        # memory-efficient). We now only keep the final bpe tokens.
-        self.vocab: Dict[str, int] = Counter()
-        self.max_bpe_len = 1
-        for (vocab_entry, freq) in self.current_train_data:
-            for bpe_token in vocab_entry.split():
-                self.vocab[bpe_token] += freq
-                self.max_bpe_len = max(self.max_bpe_len, len(bpe_token))
-
-        print("BPE vocab built with size", len(self.vocab))
-        return len(self.vocab)
+                print(
+                    "BPE merging step", step, "current vocabulary size", len(self.vocab)
+                )
 
     def segment_word(self, word: str) -> List[str]:
         """
