@@ -694,10 +694,16 @@ def expand_generation_args(group, train=False):
         help=("Enable running rescoring during beam decoding"),
     )
     group.add_argument(
-        "--original-model-weight",
+        "--l2r-model-path",
+        default=None,
+        type=str,
+        help=("Provide a path for the l2r rescoring model"),
+    )
+    group.add_argument(
+        "--l2r-model-weight",
         default=1.0,
         type=float,
-        help=("Provide a weight for the r2l rescoring model"),
+        help=("Provide a weight for the l2r rescoring model"),
     )
     group.add_argument(
         "--enable-r2l-rescoring",
