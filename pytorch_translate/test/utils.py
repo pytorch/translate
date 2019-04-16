@@ -129,7 +129,8 @@ class ModelParamsDict:
         self.length_penalty = 0.0
         # Rescoring params
         self.enable_rescoring = False
-        self.original_model_weight = None
+        self.l2r_model_path = None
+        self.l2r_model_weight = None
         self.enable_r2l_rescoring = False
         self.r2l_model_path = None
         self.r2l_model_weight = None

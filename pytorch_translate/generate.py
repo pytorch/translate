@@ -190,7 +190,7 @@ def _generate_score(models, args, task, dataset):
     rescorer = None
     rescoring_bleu_scorer = None
     if args.enable_rescoring:
-        rescorer = Rescorer(args, task)
+        rescorer = Rescorer(args)
         rescoring_bleu_scorer = bleu.Scorer(
             dst_dict.pad(), dst_dict.eos(), dst_dict.unk()
         )

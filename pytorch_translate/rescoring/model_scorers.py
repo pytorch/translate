@@ -7,17 +7,12 @@ from pytorch_translate import utils
 class SimpleModelScorer(object):
     """ Rescores source and target tokens based on a model"""
 
-    def __init__(self, args, model_path, original_task):
+    def __init__(self, args, model_path):
         """ Initialize a rescorer model
 
         Args:
           args: model arguments
           model_path: checkpoint path for rescoring model
-          original_task: original task is required to map the differences
-            between the original model and rescoring model. currently, we pass
-            original source tokens and hypotheses from the original model
-            to rescoring model. therefore, this class needs to know how to map
-            original model tokens to rescoring model tokens
         """
         self.args = args
         # TODO (T40938917): Allow loading of multiple rescoring models
@@ -27,7 +22,6 @@ class SimpleModelScorer(object):
             rescoring_task,
         ) = utils.load_diverse_ensemble_for_inference([model_path])
         self.task = rescoring_task  # e.g p(y), p(x|y) etc.
-        self.original_task = original_task  # p(y|x)
         self.model = rescoring_model[0]
         self.model.eval()
 
@@ -42,11 +36,11 @@ class SimpleModelScorer(object):
         left and right, and padding to the end.
         """
         max_tgt_len = max(len(hypo["tokens"]) for hypo in hypos)
-        pad = self.original_task.target_dictionary.pad()
+        pad = self.task.target_dictionary.pad()
         tgt_tokens = torch.full(
             (len(hypos), max_tgt_len + 1), fill_value=pad, dtype=torch.long
         )
-        eos = self.original_task.target_dictionary.eos()
+        eos = self.task.target_dictionary.eos()
         tgt_tokens[:, 0] = torch.tensor(eos)
 
         for i, hypo in enumerate(hypos):
@@ -55,33 +49,6 @@ class SimpleModelScorer(object):
             tgt_tokens[i, start:end] = hypo["tokens"]
 
         return tgt_tokens
-
-    def reverse_tgt_tokens(self, tgt_tokens):
-        """
-        tgt_tokens has paddings to the right since they are batched.
-        while reversing, we should roll first to keep paddings.
-
-        Note:
-            input:
-                [1 2 3]
-                [1 2 0]
-                [1 0 0]
-            output:
-                [3 2 1]
-                [2 1 0]
-                [1 0 0]
-        """
-        reversed_tgt_tokens = torch.zeros_like(tgt_tokens)
-
-        def roll(x, n):
-            return torch.cat((x[-n:], x[:-n]))
-
-        pad = self.original_task.tgt_dict.pad()
-        for i, row in enumerate(tgt_tokens):
-            pad_count = sum(row == pad)
-            reversed_tgt_tokens[i] = reversed(roll(row, int(pad_count)))
-
-        return reversed_tgt_tokens
 
     def prepare_encoder_inputs(self, src_tokens, number_of_hypos):
         """ Prepare encoder inputs as inputs to the encoder
@@ -185,6 +152,33 @@ class R2LModelScorer(SimpleModelScorer):
     R2L model works by reversing target tokens to right to left direction
     """
 
+    def reverse_tgt_tokens(self, tgt_tokens):
+        """
+        tgt_tokens has paddings to the right since they are batched.
+        while reversing, we should roll first to keep paddings.
+
+        Note:
+            input:
+                [1 2 3]
+                [1 2 0]
+                [1 0 0]
+            output:
+                [3 2 1]
+                [2 1 0]
+                [1 0 0]
+        """
+        reversed_tgt_tokens = torch.zeros_like(tgt_tokens)
+
+        def roll(x, n):
+            return torch.cat((x[-n:], x[:-n]))
+
+        pad = self.task.tgt_dict.pad()
+        for i, row in enumerate(tgt_tokens):
+            pad_count = sum(row == pad)
+            reversed_tgt_tokens[i] = reversed(roll(row, int(pad_count)))
+
+        return reversed_tgt_tokens
+
     def prepare_inputs(self, src_tokens, hypos):
         encoder_inputs = self.prepare_encoder_inputs(src_tokens, len(hypos))
         tgt_tokens = self.convert_hypos_to_tgt_tokens(hypos).type_as(src_tokens)
@@ -198,6 +192,10 @@ class ReverseModelScorer(SimpleModelScorer):
     Scores p(x|y) with a reverse model and switching src and tgt sentences
     """
 
+    def __init__(self, args, model_path, forward_task):
+        super().__init__(args, model_path)
+        self.forward_task = forward_task
+
     def prepare_inputs(self, src_tokens, hypos):
         """
         For reverse model, we need to switch src_tokens and tgt_tokens.
@@ -208,7 +206,7 @@ class ReverseModelScorer(SimpleModelScorer):
 
         # Prepare target tokens
         # Map token ids from original dictionary to reverse model dictionary
-        src_string = self.original_task.src_dict.string(src_tokens)
+        src_string = self.forward_task.src_dict.string(src_tokens)
         src_tokens_mapped = self.task.tgt_dict.encode_line(
             src_string, add_if_not_exist=False
         )
@@ -219,7 +217,7 @@ class ReverseModelScorer(SimpleModelScorer):
                     torch.tensor([eos]).type_as(src_tokens_mapped),
                     reversed(src_tokens_mapped)
                     if self.task.args.reverse_source
-                    != self.original_task.args.reverse_source
+                    != self.forward_task.args.reverse_source
                     else src_tokens_mapped,
                 ),
                 dim=0,
@@ -238,7 +236,7 @@ class ReverseModelScorer(SimpleModelScorer):
         ).type_as(tgt_tokens)
 
         for i, hypo in enumerate(hypos):
-            tgt_string = self.original_task.tgt_dict.string(hypo["tokens"])
+            tgt_string = self.forward_task.tgt_dict.string(hypo["tokens"])
             tgt_tokens_mapped = self.task.src_dict.encode_line(
                 tgt_string, add_if_not_exist=False
             )
@@ -252,6 +250,10 @@ class ReverseModelScorer(SimpleModelScorer):
 
 
 class LMScorer(SimpleModelScorer):
+    def __init__(self, args, model_path, forward_task):
+        super().__init__(args, model_path)
+        self.forward_task = forward_task
+
     def convert_hypos_to_tgt_tokens(self, hypos):
         """
         Converts target tokens from the translation model dictionary
@@ -266,7 +268,7 @@ class LMScorer(SimpleModelScorer):
         )
 
         for i, hypo in enumerate(hypos):
-            tgt_string = self.original_task.tgt_dict.string(hypo["tokens"])
+            tgt_string = self.forward_task.tgt_dict.string(hypo["tokens"])
             tgt_mapped = self.task.dictionary.encode_line(
                 tgt_string, add_if_not_exist=False
             )
