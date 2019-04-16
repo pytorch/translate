@@ -34,24 +34,18 @@ class Rescorer:
         self.l2r_model_scorer = SimpleModelScorer(args, args.l2r_model_path)
         self.forward_task = self.l2r_model_scorer.task
 
-        if args.enable_r2l_rescoring:
-            assert (
-                args.r2l_model_path
-            ), "Provide --r2l-model-path with --enable_r2l_scoring"
+        self.r2l_model_scorer = None
+        if args.r2l_model_path:
             self.r2l_model_scorer = R2LModelScorer(args, args.r2l_model_path)
 
-        if args.enable_reverse_rescoring:
-            assert (
-                args.reverse_model_path
-            ), "Provide --reverse-model-path with --enable-reverse-scoring"
+        self.reverse_model_scorer = None
+        if args.reverse_model_path:
             self.reverse_model_scorer = ReverseModelScorer(
                 args, args.reverse_model_path, self.forward_task
             )
 
-        if args.enable_lm_rescoring:
-            assert (
-                args.lm_model_path
-            ), "Provide --lm-model-path with --enable-lm-scoring"
+        self.lm_scorer = None
+        if args.lm_model_path:
             self.lm_scorer = LMScorer(args, args.lm_model_path, self.forward_task)
 
     def combine_weighted_scores(self, scores, src_tokens, hypos):
@@ -92,14 +86,14 @@ class Rescorer:
             scores[i, FeatureList.L2R_MODEL_SCORE.value] = hypo["score"]
 
     def compute_r2l_model_scores(self, src_tokens, hypos, scores):
-        if not self.args.enable_r2l_rescoring:
+        if not self.r2l_model_scorer:
             return
         r2l_scores = self.r2l_model_scorer.score(src_tokens, hypos)
         scores[:, FeatureList.R2L_MODEL_SCORE.value] = r2l_scores[:]
 
     def compute_reverse_model_scores(self, src_tokens, hypos, scores):
         """computes p(x|y) for each hypothesis. """
-        if not self.args.enable_reverse_rescoring:
+        if not self.reverse_model_scorer:
             return
 
         scores[
@@ -108,7 +102,7 @@ class Rescorer:
 
     def compute_lm_scores(self, src_tokens, hypos, scores):
         """computes p(x|y) for each hypothesis. """
-        if not self.args.enable_lm_rescoring:
+        if not self.lm_scorer:
             return
 
         lm_scores = self.lm_scorer.score(src_tokens, hypos)
@@ -138,13 +132,6 @@ def get_arg_parser():
         help=("Provide a weight for the l2r rescoring model"),
     )
     parser.add_argument(
-        "--enable-r2l-rescoring",
-        nargs="?",
-        const=True,
-        default=False,
-        help=("Enable R2L model based rescoring of hypos"),
-    )
-    parser.add_argument(
         "--r2l-model-path",
         default=None,
         type=str,
@@ -157,13 +144,6 @@ def get_arg_parser():
         help=("Provide a weight for the r2l rescoring model"),
     )
     parser.add_argument(
-        "--enable-reverse-rescoring",
-        nargs="?",
-        const=True,
-        default=False,
-        help=("Enable reverse model based rescoring of hypos"),
-    )
-    parser.add_argument(
         "--reverse-model-path",
         default=None,
         type=str,
@@ -174,13 +154,6 @@ def get_arg_parser():
         default=1.0,
         type=float,
         help=("Provide a weight for the reverse rescoring model"),
-    )
-    parser.add_argument(
-        "--enable-lm-rescoring",
-        nargs="?",
-        const=True,
-        default=False,
-        help=("Enable language model based rescoring of hypos"),
     )
     parser.add_argument(
         "--lm-model-path",
