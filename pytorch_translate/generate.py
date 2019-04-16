@@ -25,7 +25,6 @@ from pytorch_translate import (
 )
 from pytorch_translate.data import data as pytorch_translate_data
 from pytorch_translate.dual_learning.dual_learning_models import DualLearningModel
-from pytorch_translate.rescoring.rescorer import Rescorer
 from pytorch_translate.research.beam_search import competing_completed
 from pytorch_translate.research.multisource import multisource_data, multisource_decode
 from pytorch_translate.tasks.semi_supervised_task import PytorchTranslateSemiSupervised
@@ -86,7 +85,6 @@ class TranslationInfo(NamedTuple):
     hypo_str: str
     hypo_score: float
     best_hypo_tokens: Optional[torch.Tensor]
-    hypo_tokens_after_rescoring: Optional[torch.Tensor]
     hypos: List[dict]
 
 
@@ -188,13 +186,6 @@ def _generate_score(models, args, task, dataset):
         oracle_scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
 
     rescorer = None
-    rescoring_bleu_scorer = None
-    if args.enable_rescoring:
-        rescorer = Rescorer(args)
-        rescoring_bleu_scorer = bleu.Scorer(
-            dst_dict.pad(), dst_dict.eos(), dst_dict.unk()
-        )
-
     num_sentences = 0
     translation_samples = []
     translation_info_list = []
@@ -219,10 +210,6 @@ def _generate_score(models, args, task, dataset):
                 scorer.add(trans_info.target_tokens, trans_info.hypo_tokens)
             if oracle_scorer is not None:
                 oracle_scorer.add(trans_info.target_tokens, trans_info.best_hypo_tokens)
-            if rescoring_bleu_scorer is not None:
-                rescoring_bleu_scorer.add(
-                    trans_info.target_tokens, trans_info.hypo_tokens_after_rescoring
-                )
 
             translated_sentences[trans_info.sample_id] = trans_info.hypo_str
             translated_scores[trans_info.sample_id] = trans_info.hypo_score
@@ -276,11 +263,6 @@ def _generate_score(models, args, task, dataset):
 
     if oracle_scorer is not None:
         print(f"| Oracle BLEU (best hypo in beam): {oracle_scorer.result_string()}")
-
-    if rescoring_bleu_scorer is not None:
-        print(
-            f"| Rescoring BLEU (top hypo in beam after rescoring):{rescoring_bleu_scorer.result_string()}"
-        )
 
     return scorer, num_sentences, gen_timer, translation_samples
 
@@ -436,10 +418,6 @@ def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
         if not collect_oracle_hypos:
             best_hypo_tokens = top_hypo_tokens
 
-        hypo_tokens_after_rescoring = (
-            rescorer.score(src_tokens, hypos) if rescorer else None
-        )
-
         # Strip expensive data from hypotheses before yielding
         hypos_stripped = [
             {k: v for k, v in hypo.items() if k in ["tokens", "score"]}
@@ -456,7 +434,6 @@ def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
             hypo_str=hypo_str,
             hypo_score=hypo_score,
             best_hypo_tokens=best_hypo_tokens,
-            hypo_tokens_after_rescoring=hypo_tokens_after_rescoring,
             hypos=hypos_stripped,
         )
 

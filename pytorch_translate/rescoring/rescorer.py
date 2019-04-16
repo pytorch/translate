@@ -1,14 +1,18 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
+import argparse
+import pickle
 from enum import Enum
 
 import torch
+from fairseq import bleu
 from pytorch_translate.rescoring.model_scorers import (
     LMScorer,
     R2LModelScorer,
     ReverseModelScorer,
     SimpleModelScorer,
 )
+from tqdm import tqdm
 
 
 class FeatureList(Enum):
@@ -23,10 +27,6 @@ class Rescorer:
 
     def __init__(self, args):
         self.args = args
-
-        assert (
-            self.args.word_reward == 0.0 and self.args.length_penalty != 0.0
-        ), "For rescoring, L2R model should be scored with length penalty"
 
         assert (
             args.l2r_model_path is not None
@@ -113,3 +113,119 @@ class Rescorer:
 
         lm_scores = self.lm_scorer.score(src_tokens, hypos)
         scores[:, FeatureList.LM_SCORE.value] = lm_scores[:]
+
+
+def get_arg_parser():
+    parser = argparse.ArgumentParser(
+        description=("Rescore generated hypotheses with extra models")
+    )
+    parser.add_argument(
+        "--translation-info-export-path",
+        default=None,
+        type=str,
+        help=("Optional path to save translation info output in pickled format"),
+    )
+    parser.add_argument(
+        "--l2r-model-path",
+        default=None,
+        type=str,
+        help=("Provide a path for the l2r rescoring model"),
+    )
+    parser.add_argument(
+        "--l2r-model-weight",
+        default=1.0,
+        type=float,
+        help=("Provide a weight for the l2r rescoring model"),
+    )
+    parser.add_argument(
+        "--enable-r2l-rescoring",
+        nargs="?",
+        const=True,
+        default=False,
+        help=("Enable R2L model based rescoring of hypos"),
+    )
+    parser.add_argument(
+        "--r2l-model-path",
+        default=None,
+        type=str,
+        help=("Provide a path for the r2l rescoring model"),
+    )
+    parser.add_argument(
+        "--r2l-model-weight",
+        default=1.0,
+        type=float,
+        help=("Provide a weight for the r2l rescoring model"),
+    )
+    parser.add_argument(
+        "--enable-reverse-rescoring",
+        nargs="?",
+        const=True,
+        default=False,
+        help=("Enable reverse model based rescoring of hypos"),
+    )
+    parser.add_argument(
+        "--reverse-model-path",
+        default=None,
+        type=str,
+        help=("Provide a path for the reverse rescoring model"),
+    )
+    parser.add_argument(
+        "--reverse-model-weight",
+        default=1.0,
+        type=float,
+        help=("Provide a weight for the reverse rescoring model"),
+    )
+    parser.add_argument(
+        "--enable-lm-rescoring",
+        nargs="?",
+        const=True,
+        default=False,
+        help=("Enable language model based rescoring of hypos"),
+    )
+    parser.add_argument(
+        "--lm-model-path",
+        default=None,
+        type=str,
+        help=("Provide a path for the language model rescoring model"),
+    )
+    parser.add_argument(
+        "--lm-model-weight",
+        default=1.0,
+        type=float,
+        help=("Provide a weight for the lm rescoring model"),
+    )
+    return parser
+
+
+def main():
+    args = get_arg_parser().parse_args()
+
+    assert (
+        args.translation_info_export_path is not None
+    ), "--translation_info_export_path is required for rescoring"
+
+    rescorer = Rescorer(args)
+    dst_dict = rescorer.forward_task.tgt_dict
+    base_bleu_scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
+    rescoring_bleu_scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
+
+    translation_info_list = pickle.load(open(args.translation_info_export_path, "rb"))
+    for trans_info in tqdm(translation_info_list):
+        base_bleu_scorer.add(
+            trans_info["target_tokens"].int().cpu(),
+            trans_info["hypos"][0]["tokens"].int().cpu(),
+        )
+
+        rescoring_top_tokens = rescorer.score(
+            trans_info["src_tokens"], trans_info["hypos"]
+        )
+        rescoring_bleu_scorer.add(
+            trans_info["target_tokens"].int().cpu(), rescoring_top_tokens.int().cpu()
+        )
+
+    print("| Base ", base_bleu_scorer.result_string())
+    print("| Rescoring ", rescoring_bleu_scorer.result_string())
+
+
+if __name__ == "__main__":
+    main()

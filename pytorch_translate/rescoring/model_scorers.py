@@ -25,8 +25,7 @@ class SimpleModelScorer(object):
         self.model = rescoring_model[0]
         self.model.eval()
 
-        if not self.args.cpu:
-            utils.maybe_cuda(self.model)
+        utils.maybe_cuda(self.model)
 
     def convert_hypos_to_tgt_tokens(self, hypos):
         """
@@ -93,7 +92,6 @@ class SimpleModelScorer(object):
         """
         eos = self.task.target_dictionary.eos()
         pad = self.task.target_dictionary.pad()
-        unk = self.task.target_dictionary.unk()
 
         if (tgt_tokens == eos).sum() != 2 * tgt_tokens.size()[0]:
             raise ValueError("Each target should have 2 eos tokens")
@@ -104,9 +102,6 @@ class SimpleModelScorer(object):
         ), "Rescoring doesn't work with vocab reduction"
 
         logprobs = model.get_normalized_probs(decoder_out, log_probs=True)
-        logprobs += args.word_reward
-        logprobs[:, :, eos] -= args.word_reward
-        logprobs[:, :, unk] += args.unk_reward
         logprobs[:, :, pad] = 0
         return logprobs
 
