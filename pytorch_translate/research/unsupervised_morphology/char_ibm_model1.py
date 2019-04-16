@@ -46,3 +46,31 @@ class CharIBMModel1(ibm_model1.IBMModel1):
             denom = len(self.translation_prob[src_subword])
             for dst_subword in self.translation_prob[src_subword].keys():
                 self.translation_prob[src_subword][dst_subword] = 1.0 / denom
+
+    def em_step(self, src_path: str, dst_path: str) -> None:
+        """
+            The main difference between this method and the parent method is that
+            here we deal with subwords instead of words.
+            Note: In the subword model, we do not use the null_str because
+            eow_symbol can somehow represent a null_str.
+        """
+        translation_expectations = defaultdict()
+
+        with open(src_path) as src_file, open(dst_path) as dst_file:
+            for src_line, dst_line in zip(src_file, dst_file):
+                src_subword_counts = self.get_subword_counts_for_line(src_line)
+                src_subwords = []
+                for src_subword in src_subword_counts.keys():
+                    src_subwords.extend([src_subword] * src_subword_counts[src_subword])
+
+                dst_subword_counts = self.get_subword_counts_for_line(dst_line)
+                dst_subwords = []
+                for dst_subword in dst_subword_counts.keys():
+                    dst_subwords.extend([dst_subword] * dst_subword_counts[dst_subword])
+
+                self.e_step(
+                    src_words=src_subwords,
+                    dst_words=dst_subwords,
+                    translation_expectations=translation_expectations,
+                )
+        self.m_step(translation_expectations)

@@ -43,7 +43,7 @@ class IBMModel1(object):
             print("Iteration of IBM model(1):", str(iter + 1))
             self.em_step(src_path=src_path, dst_path=dst_path)
 
-    def em_step(self, src_path: str, dst_path: str):
+    def em_step(self, src_path: str, dst_path: str) -> None:
         translation_expectations = defaultdict()
 
         with open(src_path) as src_file, open(dst_path) as dst_file:
@@ -53,7 +53,9 @@ class IBMModel1(object):
                 self.e_step(src_words, dst_words, translation_expectations)
         self.m_step(translation_expectations)
 
-    def e_step(self, src_words: List, dst_words: List, translation_expectations: Dict):
+    def e_step(
+        self, src_words: List, dst_words: List, translation_expectations: Dict
+    ) -> None:
         """
         Args:
             translation_expectations: holder of expectations until now. This method
@@ -79,7 +81,7 @@ class IBMModel1(object):
                 delta = nominator[src_word][dst_word] / denom[src_word]
                 translation_expectations[src_word][dst_word] += delta
 
-    def m_step(self, translation_expectations):
+    def m_step(self, translation_expectations) -> None:
         for src_word in translation_expectations.keys():
             denom = sum(translation_expectations[src_word].values())
             for dst_word in translation_expectations[src_word].keys():
