@@ -7,11 +7,12 @@ from pytorch_translate.rescoring.model_scorers import (
     LMScorer,
     R2LModelScorer,
     ReverseModelScorer,
+    SimpleModelScorer,
 )
 
 
 class FeatureList(Enum):
-    ORIGINAL_MODEL_SCORE = 0
+    L2R_MODEL_SCORE = 0
     R2L_MODEL_SCORE = 1
     REVERSE_MODEL_SCORE = 2
     LM_SCORE = 3
@@ -20,35 +21,38 @@ class FeatureList(Enum):
 class Rescorer:
     """Reranks n-best hypotheses based on extra models and parameters"""
 
-    def __init__(self, args, original_task):
+    def __init__(self, args):
         self.args = args
-        self.original_task = original_task
 
         assert (
             self.args.word_reward == 0.0 and self.args.length_penalty != 0.0
-        ), "For rescoring, original model should be scored with length penalty"
+        ), "For rescoring, L2R model should be scored with length penalty"
+
+        assert (
+            args.l2r_model_path is not None
+        ), "Rescoring needs --l2r-model-path which generated given hypotheses"
+        self.l2r_model_scorer = SimpleModelScorer(args, args.l2r_model_path)
+        self.forward_task = self.l2r_model_scorer.task
 
         if args.enable_r2l_rescoring:
             assert (
                 args.r2l_model_path
             ), "Provide --r2l-model-path with --enable_r2l_scoring"
-            self.r2l_model_scorer = R2LModelScorer(
-                args, args.r2l_model_path, self.original_task
-            )
+            self.r2l_model_scorer = R2LModelScorer(args, args.r2l_model_path)
 
         if args.enable_reverse_rescoring:
             assert (
                 args.reverse_model_path
             ), "Provide --reverse-model-path with --enable-reverse-scoring"
             self.reverse_model_scorer = ReverseModelScorer(
-                args, args.reverse_model_path, self.original_task
+                args, args.reverse_model_path, self.forward_task
             )
 
         if args.enable_lm_rescoring:
             assert (
                 args.lm_model_path
             ), "Provide --lm-model-path with --enable-lm-scoring"
-            self.lm_scorer = LMScorer(args, args.lm_model_path, self.original_task)
+            self.lm_scorer = LMScorer(args, args.lm_model_path, self.forward_task)
 
     def combine_weighted_scores(self, scores, src_tokens, hypos):
         """combine scores from different models"""
@@ -58,10 +62,10 @@ class Rescorer:
         )
 
         scores[
-            :, FeatureList.ORIGINAL_MODEL_SCORE.value
+            :, FeatureList.L2R_MODEL_SCORE.value
         ] *= (
-            self.args.original_model_weight
-        )  # Original model score should be length normalized already
+            self.args.l2r_model_weight
+        )  # L2R model score should be length normalized already
         scores[:, FeatureList.R2L_MODEL_SCORE.value] *= (
             self.args.r2l_model_weight / tgt_len
         )
@@ -75,7 +79,7 @@ class Rescorer:
         """run models and compute scores based on p(y), p(x|y) etc."""
         scores = torch.zeros((len(hypos), len(FeatureList)), dtype=torch.float)
 
-        self.compute_original_model_scores(src_tokens, hypos, scores)
+        self.compute_l2r_model_scores(src_tokens, hypos, scores)
         self.compute_r2l_model_scores(src_tokens, hypos, scores)
         self.compute_reverse_model_scores(src_tokens, hypos, scores)
         self.compute_lm_scores(src_tokens, hypos, scores)
@@ -83,9 +87,9 @@ class Rescorer:
         max_score_index = self.combine_weighted_scores(scores, src_tokens, hypos)
         return hypos[max_score_index]["tokens"].int().cpu()
 
-    def compute_original_model_scores(self, src_tokens, hypos, scores):
+    def compute_l2r_model_scores(self, src_tokens, hypos, scores):
         for i, hypo in enumerate(hypos):
-            scores[i, FeatureList.ORIGINAL_MODEL_SCORE.value] = hypo["score"]
+            scores[i, FeatureList.L2R_MODEL_SCORE.value] = hypo["score"]
 
     def compute_r2l_model_scores(self, src_tokens, hypos, scores):
         if not self.args.enable_r2l_rescoring:
