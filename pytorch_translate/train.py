@@ -42,7 +42,6 @@ from pytorch_translate import (
     options as pytorch_translate_options,
     preprocess,
 )
-from pytorch_translate.data import data as pytorch_translate_data
 from pytorch_translate.dual_learning import dual_learning_criterion  # noqa
 from pytorch_translate.dual_learning import dual_learning_task  # noqa
 from pytorch_translate.research.knowledge_distillation import (  # noqa
