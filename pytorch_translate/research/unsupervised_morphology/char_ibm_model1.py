@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from collections import Counter
+from collections import Counter, defaultdict
 from typing import Dict
 
 from pytorch_translate.research.unsupervised_morphology import ibm_model1
@@ -20,3 +20,27 @@ class CharIBMModel1(ibm_model1.IBMModel1):
                 subword = "".join(chars[i:j])
                 subwords[subword] += 1
         return subwords
+
+    def get_subword_counts_for_line(self, line: str) -> Dict[str, int]:
+        return sum(
+            [self.get_possible_subwords(word) for word in line.strip().split()],
+            Counter(),
+        )
+
+    def initialize_translation_probs(self, src_path: str, dst_path: str):
+        """
+        Direction of translation is conditioned on the source text: t(dst|src).
+        """
+        with open(src_path) as src_file, open(dst_path) as dst_file:
+            for src_line, dst_line in zip(src_file, dst_file):
+                src_subwords = self.get_subword_counts_for_line(src_line).keys()
+                dst_subwords = self.get_subword_counts_for_line(dst_line).keys()
+
+                for src_subword in src_subwords:
+                    for dst_subword in dst_subwords:
+                        self.translation_prob[src_subword][dst_subword] = 1.0
+
+        for src_subword in self.translation_prob.keys():
+            denom = len(self.translation_prob[src_subword])
+            for dst_subword in self.translation_prob[src_subword].keys():
+                self.translation_prob[src_subword][dst_subword] = 1.0 / denom

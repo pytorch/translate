@@ -10,7 +10,7 @@ class IBMModel1(object):
         translation_prob is the translation probability in the IBM model 1.
         the full pseudo-code is available at https://fburl.com/yvp31kuw
         """
-        self.translation_prob = defaultdict()
+        self.translation_prob = defaultdict(lambda: defaultdict(float))
         self.null_str = "<null>"
 
     def initialize_translation_probs(self, src_path: str, dst_path: str):
