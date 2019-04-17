@@ -27,7 +27,7 @@ class TestIBMModel1(unittest.TestCase):
 
         tmp_dir, f1, f2 = morph_utils.get_two_tmp_files()
         ibm_model.initialize_translation_probs(f1, f2)
-        translation_counts = defaultdict()
+        translation_counts = defaultdict(lambda: defaultdict(float))
 
         ibm_model.e_step(
             ["123", "124", "234", "345", ibm_model.null_str],
