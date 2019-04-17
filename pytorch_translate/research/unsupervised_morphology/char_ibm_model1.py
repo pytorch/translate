@@ -1,9 +1,43 @@
 #!/usr/bin/env python3
 
 from collections import Counter, defaultdict
+from optparse import OptionParser
 from typing import Dict
 
 from pytorch_translate.research.unsupervised_morphology import ibm_model1
+
+
+def get_arg_parser():
+    parser = OptionParser()
+    parser.add_option(
+        "--src-file",
+        dest="src_file",
+        help="Source file in training data.",
+        metavar="FILE",
+        default=None,
+    )
+    parser.add_option(
+        "--dst-file",
+        dest="dst_file",
+        help="Target file in training data.",
+        metavar="FILE",
+        default=None,
+    )
+    parser.add_option(
+        "--iters",
+        type="int",
+        dest="ibm_iters",
+        help="Number of epochs for training the ibm model.",
+        default=3,
+    )
+    parser.add_option(
+        "--num-cpus",
+        type="int",
+        dest="num_cpus",
+        help="Number of cpus for multi-processing.",
+        default=3,
+    )
+    return parser
 
 
 class CharIBMModel1(ibm_model1.IBMModel1):
@@ -31,46 +65,67 @@ class CharIBMModel1(ibm_model1.IBMModel1):
         """
         Direction of translation is conditioned on the source text: t(dst|src).
         """
+        self.training_data = []
         with open(src_path) as src_file, open(dst_path) as dst_file:
             for src_line, dst_line in zip(src_file, dst_file):
-                src_subwords = self.get_subword_counts_for_line(src_line).keys()
-                dst_subwords = self.get_subword_counts_for_line(dst_line).keys()
+                src_subwords_counts = self.get_subword_counts_for_line(src_line)
+                dst_subwords_counts = self.get_subword_counts_for_line(dst_line)
 
-                for src_subword in src_subwords:
-                    for dst_subword in dst_subwords:
+                for src_subword in src_subwords_counts.keys():
+                    if src_subword not in self.translation_prob:
+                        self.translation_prob[src_subword] = defaultdict(float)
+                    for dst_subword in dst_subwords_counts.keys():
                         self.translation_prob[src_subword][dst_subword] = 1.0
+                self.training_data.append((src_subwords_counts, dst_subwords_counts))
 
         for src_subword in self.translation_prob.keys():
             denom = len(self.translation_prob[src_subword])
             for dst_subword in self.translation_prob[src_subword].keys():
                 self.translation_prob[src_subword][dst_subword] = 1.0 / denom
 
-    def em_step(self, src_path: str, dst_path: str) -> None:
+    def e_step(
+        self,
+        src_words: Dict[str, int],
+        dst_words: Dict[str, int],
+        translation_expectations: Dict,
+    ) -> None:
         """
-            The main difference between this method and the parent method is that
-            here we deal with subwords instead of words.
-            Note: In the subword model, we do not use the null_str because
-            eow_symbol can somehow represent a null_str.
+        Args:
+            translation_expectations: holder of expectations until now. This method
+                should update this
         """
-        translation_expectations = defaultdict(lambda: defaultdict(float))
+        denom = defaultdict(float)
+        translation_fractional_counts = defaultdict(lambda: defaultdict(float))
 
-        with open(src_path) as src_file, open(dst_path) as dst_file:
-            for src_line, dst_line in zip(src_file, dst_file):
-                src_subword_counts = self.get_subword_counts_for_line(src_line)
-                src_subwords = []
-                for src_subword in src_subword_counts.keys():
-                    # The E step in IBM model works with raw text not count. We
-                    # copy every subword to the number of times we see them.
-                    src_subwords.extend([src_subword] * src_subword_counts[src_subword])
-
-                dst_subword_counts = self.get_subword_counts_for_line(dst_line)
-                dst_subwords = []
-                for dst_subword in dst_subword_counts.keys():
-                    dst_subwords.extend([dst_subword] * dst_subword_counts[dst_subword])
-
-                self.e_step(
-                    src_words=src_subwords,
-                    dst_words=dst_subwords,
-                    translation_expectations=translation_expectations,
+        for src_word in src_words.keys():
+            src_word_count = src_words[src_word]
+            for dst_word in dst_words.keys():
+                dst_word_count = dst_words[dst_word]
+                num_combinations = src_word_count * dst_word_count
+                denom[src_word] += (
+                    num_combinations * self.translation_prob[src_word][dst_word]
                 )
-        self.m_step(translation_expectations)
+                translation_fractional_counts[src_word][dst_word] += (
+                    num_combinations * self.translation_prob[src_word][dst_word]
+                )
+
+        for src_word in translation_fractional_counts.keys():
+            if src_word not in translation_expectations:
+                translation_expectations[src_word] = defaultdict(float)
+            for dst_word in translation_fractional_counts[src_word].keys():
+                delta = (
+                    translation_fractional_counts[src_word][dst_word] / denom[src_word]
+                )
+                translation_expectations[src_word][dst_word] += delta
+
+
+if __name__ == "__main__":
+    arg_parser = get_arg_parser()
+    options, args = arg_parser.parse_args()
+    ibm_model = CharIBMModel1()
+    ibm_model.learn_ibm_parameters(
+        src_path=options.src_file,
+        dst_path=options.dst_file,
+        num_iters=options.ibm_iters,
+        num_cpus=options.num_cpus,
+    )
