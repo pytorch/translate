@@ -34,7 +34,7 @@ class TestCharIBMModel1(unittest.TestCase):
     def test_morph_init(self):
         ibm_model = CharIBMModel1()
 
-        tmp_dir, f1, f2 = morph_utils.get_two_tmp_files()
+        tmp_dir, f1, f2 = morph_utils.get_two_same_tmp_files()
         ibm_model.initialize_translation_probs(f1, f2)
         assert ibm_model.translation_prob["5"]["5" + ibm_model.eow_symbol] > 0
         assert len(ibm_model.translation_prob) == 80
