@@ -8,7 +8,8 @@ from multiprocessing import Pool
 from os import path
 from unittest.mock import Mock, patch
 
-from pytorch_translate.research.unsupervised_morphology import bpe
+from pytorch_translate.research.test import morphology_test_utils as morph_utils
+from pytorch_translate.research.unsupervised_morphology import bilingual_bpe, bpe
 
 
 txt_content = ["123 124 234 345", "112 122 123 345", "123456789", "123456 456789"]
@@ -175,4 +176,16 @@ class TestBPE(unittest.TestCase):
         model_output = open(output_file, "r", encoding="utf-8").read().strip()
         assert expected_output == model_output
 
+        shutil.rmtree(tmp_dir)
+
+    def test_bilingual_bpe_init(self):
+        """
+            This looks more like an integration test because each subpeace is tested
+            in different places.
+        """
+        bpe_model = bilingual_bpe.BilingualBPE()
+        tmp_dir, f1, f2 = morph_utils.get_two_different_tmp_files()
+        bpe_model._init_params(
+            src_txt_path=f1, dst_txt_path=f2, num_ibm_iters=3, num_cpus=3
+        )
         shutil.rmtree(tmp_dir)
