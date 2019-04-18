@@ -225,3 +225,35 @@ class TestBPE(unittest.TestCase):
         assert len(bpe_model.src_bpe.vocab) == 12
         assert len(bpe_model.dst_bpe.vocab) == 11
         shutil.rmtree(tmp_dir)
+
+    def test_prune_translation_candidates(self):
+        bpe_model = bilingual_bpe.BilingualBPE()
+        tmp_dir, f1, f2 = morph_utils.get_two_different_tmp_files()
+        bpe_model._init_params(
+            src_txt_path=f1, dst_txt_path=f2, num_ibm_iters=3, num_cpus=3
+        )
+        topk = 3
+        bpe_model._prune_translation_candidates(topk=topk, for_src=True)
+        bpe_model._prune_translation_candidates(topk=topk, for_src=False)
+
+        for key in bpe_model.src_pruned_translation.keys():
+            assert len(bpe_model.src_pruned_translation[key]) == topk
+            assert round(sum(bpe_model.src_pruned_translation[key].values()), 1) == 1.0
+            if key == bpe_model.src_bpe.eow_symbol:
+                assert key in bpe_model.src_pruned_translation[key]
+                for other_key in bpe_model.src_pruned_translation[key].keys():
+                    assert (
+                        bpe_model.src_pruned_translation[key][key]
+                        >= bpe_model.src_pruned_translation[key][other_key]
+                    )
+        for key in bpe_model.dst_pruned_translation.keys():
+            assert len(bpe_model.dst_pruned_translation[key]) == topk
+            assert round(sum(bpe_model.dst_pruned_translation[key].values()), 1) == 1.0
+            if key == bpe_model.dst_bpe.eow_symbol:
+                assert key in bpe_model.dst_pruned_translation[key]
+                for other_key in bpe_model.dst_pruned_translation[key].keys():
+                    assert (
+                        bpe_model.dst_pruned_translation[key][key]
+                        >= bpe_model.dst_pruned_translation[key][other_key]
+                    )
+        shutil.rmtree(tmp_dir)

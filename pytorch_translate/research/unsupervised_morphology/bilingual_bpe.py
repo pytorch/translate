@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import datetime
 import math
 from collections import defaultdict
 from multiprocessing import Pool
@@ -85,7 +86,12 @@ class BilingualBPE(object):
         self.dst2src_ibm_model = CharIBMModel1()
 
     def _init_params(
-        self, src_txt_path: str, dst_txt_path: str, num_ibm_iters: int, num_cpus: int
+        self,
+        src_txt_path: str,
+        dst_txt_path: str,
+        num_ibm_iters: int,
+        num_cpus: int,
+        topk_translation_candidates: int = 5,
     ):
         """
         Args:
@@ -93,8 +99,12 @@ class BilingualBPE(object):
             dst_txt_path: Text path for target language in parallel data.
             num_ibm_iters: Number of training epochs for the IBM model.
             num_cpus: Number of CPUs for training the IBM model with multi-processing.
+            topk_translation_candidates: Used for getting top-k translaiton
+                candidates after every step in BPE merge.
         """
+        print(str(datetime.datetime.now()), "initializing the source vocab")
         self.src_bpe._init_vocab(txt_path=src_txt_path)
+        print(str(datetime.datetime.now()), "initializing the target vocab")
         self.dst_bpe._init_vocab(txt_path=dst_txt_path)
         self.src2dst_ibm_model.learn_ibm_parameters(
             src_path=src_txt_path,
@@ -108,6 +118,38 @@ class BilingualBPE(object):
             num_iters=num_ibm_iters,
             num_cpus=num_cpus,
         )
+        self._prune_translation_candidates(
+            topk=topk_translation_candidates, for_src=True
+        )
+        self._prune_translation_candidates(
+            topk=topk_translation_candidates, for_src=False
+        )
+
+    def _prune_translation_candidates(self, for_src: bool, topk: int = 5):
+        """
+        Searching over all possible translation candidates is very time-consuming.
+        Instead we keep a small number of top items for each candidate.
+        We also normalize their value to form a probability distribution.
+        """
+        if for_src:
+            self.src_pruned_translation = defaultdict()
+        else:
+            self.dst_pruned_translation = defaultdict()
+
+        to_prune = (
+            self.src_pruned_translation if for_src else self.dst_pruned_translation
+        )
+        t_dict = (
+            self.src2dst_ibm_model.translation_prob
+            if for_src
+            else self.dst2src_ibm_model.translation_prob
+        )
+        vocab = self.dst_bpe.vocab if for_src else self.src_bpe.vocab
+        for key in t_dict.keys():
+            pruned_vocab = {k: v for (k, v) in t_dict[key].items() if k in vocab}
+            top_k_pairs = sorted(pruned_vocab.items(), key=lambda x: -x[1])[:topk]
+            denom = sum(v for (_, v) in top_k_pairs)
+            to_prune[key] = defaultdict(float, {k: v / denom for (k, v) in top_k_pairs})
 
     def _best_candidate_substep(
         self, start_end_indices: Tuple[int, int], for_src: bool
@@ -120,7 +162,9 @@ class BilingualBPE(object):
         """
         bpe_model = self.src_bpe if for_src else self.dst_bpe
         other_side_bpe_model = self.dst_bpe if for_src else self.src_bpe
-        ibm_model = self.src2dst_ibm_model if for_src else self.dst2src_ibm_model
+        translation_probs = (
+            self.dst_pruned_translation if for_src else self.src_pruned_translation
+        )
 
         start_index, end_index = start_end_indices[0], start_end_indices[1]
         assert start_index <= end_index
@@ -133,17 +177,16 @@ class BilingualBPE(object):
                 bpe_token = "".join([symbols[i], symbols[i + 1]])
                 prob = 0
 
-                prob += freq
-
                 candidates[bpe_key] += freq
 
         for bpe_key in candidates.keys():
             bpe_prob = 0
             # p(bpe_type=c) = \sum_{t \in other_side} p(c|t) p(t)
-            for other_side_bpe_type in other_side_bpe_model.vocab.keys():
+            for other_side_bpe_type in translation_probs.keys():
                 translation_prob = (
-                    ibm_model.translation_prob[bpe_token][other_side_bpe_type]
-                    if bpe_token in ibm_model.translation_prob
+                    translation_probs[bpe_token][other_side_bpe_type]
+                    if bpe_token in translation_probs
+                    and other_side_bpe_type in other_side_bpe_model.vocab
                     else 1e-10
                 )
                 bpe_prob += (
@@ -192,13 +235,21 @@ class BilingualBPE(object):
         dst_vocab_size: int,
         num_ibm_iters: int,
         num_cpus: int,
+        topk_translation_candidates: int = 5,
     ):
+        """
+        Args:
+            topk_translation_candidates: The number of top candidates to keep in
+                subword IBM model translation candidates.
+        """
         self._init_params(
             src_txt_path=src_txt_path,
             dst_txt_path=dst_txt_path,
             num_ibm_iters=num_ibm_iters,
             num_cpus=num_cpus,
+            topk_translation_candidates=topk_translation_candidates,
         )
+
         src_vocab_finished = len(self.src_bpe.vocab) >= src_vocab_size
         dst_vocab_finished = len(self.dst_bpe.vocab) >= dst_vocab_size
 
@@ -216,6 +267,11 @@ class BilingualBPE(object):
                             candidate=src_merge_candidate, num_cpus=num_cpus, pool=pool
                         )
                         src_vocab_finished = len(self.src_bpe.vocab) >= src_vocab_size
+                        # Prune the dictionary for the target side with respect
+                        # to the updated entries in the source side.
+                        self._prune_translation_candidates(
+                            topk=topk_translation_candidates, for_src=False
+                        )
 
                 if not dst_vocab_finished:
                     dst_merge_candidate = self.get_best_candidate(
@@ -228,16 +284,22 @@ class BilingualBPE(object):
                             candidate=dst_merge_candidate, num_cpus=num_cpus, pool=pool
                         )
                         dst_vocab_finished = len(self.dst_bpe.vocab) >= dst_vocab_size
+                        # Prune the dictionary for the source side with respect to the
+                        # updated entries in the target side.
+                        self._prune_translation_candidates(
+                            topk=topk_translation_candidates, for_src=True
+                        )
 
-                step += 1
-                if step % 100 == 0:
-                    print(
-                        "BPE merging step",
-                        step,
-                        "current vocabulary size",
-                        len(self.src_bpe.vocab),
-                        len(self.dst_bpe.vocab),
-                    )
+            step += 1
+            if step % 1 == 0:
+                print(
+                    str(datetime.datetime.now()),
+                    "BPE merging step",
+                    step,
+                    "current vocabulary size",
+                    len(self.src_bpe.vocab),
+                    len(self.dst_bpe.vocab),
+                )
 
 
 if __name__ == "__main__":
