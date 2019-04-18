@@ -1,11 +1,74 @@
 #!/usr/bin/env python3
 
 import os
+import tempfile
 import unittest
 
-from pytorch_translate import dictionary
+from fairseq.data import LanguagePairDataset
+from fairseq.data.multi_corpus_sampled_dataset import MultiCorpusSampledDataset
+from pytorch_translate import dictionary, preprocess
 from pytorch_translate.data import data
+from pytorch_translate.tasks import pytorch_translate_task as tasks
 from pytorch_translate.test import utils as test_utils
+
+
+class TestLoadData(unittest.TestCase):
+    def test_load_data_single_path(self):
+        test_args = test_utils.ModelParamsDict()
+        test_args.source_lang = "en"
+        test_args.target_lang = "fr"
+        test_args.log_verbose = False
+        src_dict, tgt_dict = test_utils.create_vocab_dictionaries()
+        src_text_file, tgt_text_file = test_utils.create_test_text_files()
+        src_bin_path = preprocess.binarize_text_file(
+            text_file=src_text_file,
+            dictionary=src_dict,
+            output_path=tempfile.NamedTemporaryFile().name,
+            append_eos=True,
+            reverse_order=False,
+        )
+        tgt_bin_path = preprocess.binarize_text_file(
+            text_file=tgt_text_file,
+            dictionary=tgt_dict,
+            output_path=tempfile.NamedTemporaryFile().name,
+            append_eos=True,
+            reverse_order=False,
+        )
+        task = tasks.PytorchTranslateTask(test_args, src_dict, tgt_dict)
+        split = "0"
+        task.load_dataset(split, src_bin_path, tgt_bin_path)
+        self.assertEqual(len(task.datasets[split]), 4)
+        self.assertIsInstance(task.datasets[split], LanguagePairDataset)
+
+    def test_load_data_multi_path(self):
+        test_args = test_utils.ModelParamsDict()
+        test_args.source_lang = "en"
+        test_args.target_lang = "fr"
+        test_args.log_verbose = False
+        src_dict, tgt_dict = test_utils.create_vocab_dictionaries()
+        num_paths = 4
+        src_bin_path, tgt_bin_path = {}, {}
+        for i in range(num_paths):
+            src_text_file, tgt_text_file = test_utils.create_test_text_files()
+            src_bin_path[i] = preprocess.binarize_text_file(
+                text_file=src_text_file,
+                dictionary=src_dict,
+                output_path=tempfile.NamedTemporaryFile().name,
+                append_eos=True,
+                reverse_order=False,
+            )
+            tgt_bin_path[i] = preprocess.binarize_text_file(
+                text_file=tgt_text_file,
+                dictionary=tgt_dict,
+                output_path=tempfile.NamedTemporaryFile().name,
+                append_eos=True,
+                reverse_order=False,
+            )
+        task = tasks.PytorchTranslateTask(test_args, src_dict, tgt_dict)
+        split = "1"
+        task.load_dataset(split, src_bin_path, tgt_bin_path)
+        self.assertEqual(len(task.datasets[split]), 16)
+        self.assertIsInstance(task.datasets[split], MultiCorpusSampledDataset)
 
 
 class TestInMemoryNumpyDataset(unittest.TestCase):

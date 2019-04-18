@@ -2,9 +2,12 @@
 
 import os
 from collections import OrderedDict
-from typing import List, Optional
+from typing import Dict, List, Optional, Union
 
+import numpy as np
 from fairseq import data, options
+from fairseq.data import LanguagePairDataset
+from fairseq.data.multi_corpus_sampled_dataset import MultiCorpusSampledDataset
 from fairseq.tasks import FairseqTask, register_task
 from pytorch_translate import dictionary as pytorch_translate_dictionary
 from pytorch_translate.data import (
@@ -103,7 +106,9 @@ class PytorchTranslateTask(FairseqTask):
 
         return cls(args, source_dict, target_dict, char_source_dict)
 
-    def load_dataset(self, split, src_bin_path, tgt_bin_path, weights_file=None):
+    def _load_dataset_single_path(
+        self, split: str, src_bin_path: str, tgt_bin_path: str, weights_file=None
+    ):
         corpus = pytorch_translate_data.ParallelCorpusConfig(
             source=pytorch_translate_data.CorpusConfig(
                 dialect=self.args.source_lang, data_file=src_bin_path
@@ -143,15 +148,91 @@ class PytorchTranslateTask(FairseqTask):
             src_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
                 corpus.source.data_file
             )
-            self.datasets[split] = weighted_data.WeightedLanguagePairDataset(
+            self.datasets[split] = LanguagePairDataset(
                 src=src_dataset,
                 src_sizes=src_dataset.sizes,
                 src_dict=self.source_dictionary,
                 tgt=dst_dataset,
                 tgt_sizes=dst_dataset.sizes,
                 tgt_dict=self.target_dictionary,
-                weights=weights_dataset,
                 left_pad_source=False,
+            )
+
+    def _normalized_weighted_sampling(self, weights: Dict[str, float]):
+        factor = 1.0 / sum(weights.values())
+        normalized_weights = {k: v * factor for k, v in weights.items()}
+
+        def sample(candidate_list):
+            v = np.random.random()
+            agg = 0
+            for key in candidate_list:
+                agg += normalized_weights[key]
+                if agg > v:
+                    return key
+
+        return sample
+
+    def _load_dataset_multi_path(
+        self,
+        split: str,
+        src_multiple_bin_paths: Dict[str, str],
+        tgt_multiple_bin_paths: Dict[str, str],
+        dataset_upsampling: Optional[Dict[str, float]],
+    ):
+        corpora_map = pytorch_translate_data.ParallelCorporaMapConfig(
+            src_files=src_multiple_bin_paths, tgt_files=tgt_multiple_bin_paths
+        )
+        datasets = OrderedDict()
+        for key in corpora_map.src_files:
+            src, tgt = corpora_map.src_files[key], corpora_map.tgt_files[key]
+            src_dataset, tgt_dataset = (
+                pytorch_translate_data.InMemoryNumpyDataset.create_from_file(src),
+                pytorch_translate_data.InMemoryNumpyDataset.create_from_file(tgt),
+            )
+            datasets[key] = LanguagePairDataset(
+                src=src_dataset,
+                src_sizes=src_dataset.sizes,
+                src_dict=self.source_dictionary,
+                tgt=tgt_dataset,
+                tgt_sizes=tgt_dataset.sizes,
+                tgt_dict=self.target_dictionary,
+                left_pad_source=False,
+            )
+        dataset_weights = {
+            key: 1.0 / len(src_multiple_bin_paths)
+            for key in src_multiple_bin_paths.keys()
+        }
+
+        if dataset_upsampling is not None:
+            for k, v in dataset_upsampling.items():
+                dataset_weights[k] *= v
+
+        self.datasets[split] = MultiCorpusSampledDataset(
+            datasets=datasets,
+            default_key=list(dataset_weights.keys())[0],
+            sampling_func=self._normalized_weighted_sampling(dataset_weights),
+        )
+
+    def load_dataset(
+        self,
+        split: str,
+        src_bin_path: Union[str, Dict[str, str]],
+        tgt_bin_path: Union[str, Dict[str, str]],
+        weights_file=None,
+        dataset_upsampling: Optional[Dict[str, float]] = None,
+    ):
+        if type(src_bin_path) is str:
+            assert type(tgt_bin_path) is str
+            self._load_dataset_single_path(
+                split, src_bin_path, tgt_bin_path, weights_file
+            )
+        else:
+            assert type(tgt_bin_path) is not str
+            assert set(src_bin_path.keys()) == set(tgt_bin_path.keys())
+            if dataset_upsampling is not None:
+                assert set(dataset_upsampling.keys()) == set(src_bin_path.keys())
+            self._load_dataset_multi_path(
+                split, src_bin_path, tgt_bin_path, dataset_upsampling
             )
 
         if self.args.log_verbose:
@@ -192,12 +273,12 @@ class PytorchTranslateTask(FairseqTask):
                 append_eos=append_eos,
             )
             self.datasets[split] = char_data.LanguagePairSourceCharDataset(
-                src_dataset,
-                src_dataset.sizes,
-                self.source_dictionary,
-                dst_dataset,
-                dst_dataset.sizes,
-                self.target_dictionary,
+                src=src_dataset,
+                src_sizes=src_dataset.sizes,
+                src_dict=self.source_dictionary,
+                tgt=dst_dataset,
+                tgt_sizes=dst_dataset.sizes,
+                tgt_dict=self.target_dictionary,
             )
         else:
             src_dataset = data.IndexedRawTextDataset(
@@ -207,12 +288,12 @@ class PytorchTranslateTask(FairseqTask):
                 reverse_order=reverse_source,
             )
             self.datasets[split] = data.LanguagePairDataset(
-                src_dataset,
-                src_dataset.sizes,
-                self.source_dictionary,
-                dst_dataset,
-                dst_dataset.sizes,
-                self.target_dictionary,
+                src=src_dataset,
+                src_sizes=src_dataset.sizes,
+                src_dict=self.source_dictionary,
+                tgt=dst_dataset,
+                tgt_sizes=dst_dataset.sizes,
+                tgt_dict=self.target_dictionary,
                 left_pad_source=False,
             )
 
@@ -232,7 +313,7 @@ class PytorchTranslateTask(FairseqTask):
             append_eos=append_eos,
             reverse_order=reverse_source,
         )
-        dst_dataset = data.IndexedRawTextDataset(
+        tgt_dataset = data.IndexedRawTextDataset(
             path=target_text_file,
             dictionary=self.target_dictionary,
             # We always append EOS to the target sentence since we still want
@@ -247,12 +328,12 @@ class PytorchTranslateTask(FairseqTask):
             reverse_order=False,
         )
         self.datasets[split] = multisource_data.MultisourceLanguagePairDataset(
-            src_dataset,
-            src_dataset.sizes,
-            self.source_dictionary,
-            dst_dataset,
-            dst_dataset.sizes,
-            self.target_dictionary,
+            src=src_dataset,
+            src_sizes=src_dataset.sizes,
+            src_dict=self.source_dictionary,
+            tgt=tgt_dataset,
+            tgt_sizes=tgt_dataset.sizes,
+            tgt_dict=self.target_dictionary,
         )
 
     @property
@@ -354,7 +435,7 @@ class PytorchTranslateMultilingualTask(PytorchTranslateTask):
             reverse_order=reverse_source,
             prepend_language_id=False,
         )
-        dst_dataset = pytorch_translate_data.IndexedRawTextDatasetWithLangId(
+        tgt_dataset = pytorch_translate_data.IndexedRawTextDatasetWithLangId(
             path=target_text_file,
             dictionary=self.target_dictionary,
             lang_id=target_lang_id,
@@ -363,12 +444,12 @@ class PytorchTranslateMultilingualTask(PytorchTranslateTask):
             prepend_language_id=True,
         )
         self.datasets[split] = data.LanguagePairDataset(
-            src_dataset,
-            src_dataset.sizes,
-            self.source_dictionary,
-            dst_dataset,
-            dst_dataset.sizes,
-            self.target_dictionary,
+            src=src_dataset,
+            src_sizes=src_dataset.sizes,
+            src_dict=self.source_dictionary,
+            tgt=tgt_dataset,
+            tgt_sizes=tgt_dataset.sizes,
+            tgt_dict=self.target_dictionary,
         )
         print(f"| {split} {len(self.datasets[split])} examples")
 
