@@ -184,3 +184,34 @@ class TestBPE(unittest.TestCase):
             src_txt_path=f1, dst_txt_path=f2, num_ibm_iters=3, num_cpus=3
         )
         shutil.rmtree(tmp_dir)
+
+    def test_prune_translation_candidates(self):
+        bpe_model = bilingual_bpe.BilingualBPE()
+        tmp_dir, f1, f2 = morph_utils.get_two_different_tmp_files()
+        topk = 3
+        bpe_model._init_params(
+            src_txt_path=f1,
+            dst_txt_path=f2,
+            num_ibm_iters=3,
+            num_cpus=3,
+            top_k_translations=topk,
+        )
+
+        for key in bpe_model.dst2src_ibm_model.translation_prob.keys():
+            assert len(bpe_model.dst2src_ibm_model.translation_prob[key]) <= topk
+            assert (
+                round(
+                    sum(bpe_model.dst2src_ibm_model.translation_prob[key].values()), 1
+                )
+                == 1.0
+            )
+        shutil.rmtree(tmp_dir)
+
+    def test_calc_word_probs(self):
+        with patch("builtins.open") as mock_open:
+            mock_open.return_value.__enter__ = mock_open
+            mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
+            v = bilingual_bpe.BilingualBPE.calc_word_probs(txt_path="no_exist_file.txt")
+            assert len(v) == 9
+            assert v["123"] == 2 / 11
+            assert v["123456789"] == 1 / 11
