@@ -4,6 +4,7 @@ import shutil
 import tempfile
 import unittest
 from collections import defaultdict
+from multiprocessing import Pool
 from os import path
 
 from pytorch_translate.research.test import morphology_test_utils as morph_utils
@@ -43,7 +44,8 @@ class TestIBMModel1(unittest.TestCase):
         tmp_dir, f1, f2 = morph_utils.get_two_tmp_files()
         ibm_model.initialize_translation_probs(f1, f2)
 
-        ibm_model.em_step(f1, f2)
+        pool = Pool(3)
+        ibm_model.em_step(src_path=f1, dst_path=f2, num_cpus=3, pool=pool)
 
         assert ibm_model.translation_prob["456789"]["345"] == 0
         assert ibm_model.translation_prob["456789"]["456789"] == 0.5
@@ -58,7 +60,9 @@ class TestIBMModel1(unittest.TestCase):
         ibm_model = IBMModel1()
 
         tmp_dir, f1, f2 = morph_utils.get_two_tmp_files()
-        ibm_model.learn_ibm_parameters(src_path=f1, dst_path=f2, num_iters=3)
+        ibm_model.learn_ibm_parameters(
+            src_path=f1, dst_path=f2, num_iters=3, num_cpus=3
+        )
 
         assert ibm_model.translation_prob["456789"]["345"] == 0
         assert ibm_model.translation_prob["456789"]["456789"] == 0.5
