@@ -2,7 +2,7 @@
 
 import datetime
 import math
-from collections import defaultdict
+from collections import Counter, defaultdict
 from multiprocessing import Pool
 from typing import Dict, List, Tuple
 
@@ -17,6 +17,13 @@ class IBMModel1(object):
         self.null_str = "<null>"
         self.training_data = []
 
+    @staticmethod
+    def get_word_counts_for_line(self, line: str) -> Dict[str, int]:
+        return sum(
+            [self.get_possible_subwords(word) for word in line.strip().split()],
+            Counter(),
+        )
+
     def initialize_translation_probs(self, src_path: str, dst_path: str):
         """
         Direction of translation is conditioned on the source text: t(dst|src).
@@ -24,8 +31,8 @@ class IBMModel1(object):
         self.training_data = []
         with open(src_path) as src_file, open(dst_path) as dst_file:
             for src_line, dst_line in zip(src_file, dst_file):
-                src_words = set(src_line.strip().split() + [self.null_str])
-                dst_words = set(dst_line.strip().split())
+                src_words = Counter(src_line.strip().split() + [self.null_str])
+                dst_words = Counter(dst_line.strip().split())
                 for src_word in src_words:
                     if src_word not in self.translation_prob:
                         self.translation_prob[src_word] = defaultdict(float)
@@ -100,22 +107,25 @@ class IBMModel1(object):
         return translation_expectations
 
     def e_step(
-        self, src_words: List, dst_words: List, translation_expectations: Dict
+        self,
+        src_words: Dict[str, int],
+        dst_words: Dict[str, int],
+        translation_expectations: Dict,
     ) -> None:
         """
         Args:
             translation_expectations: holder of expectations until now. This method
                 should update this
+            src_words and dst_words are Counter objects.
         """
         denom = defaultdict(float)
         translation_fractional_counts = defaultdict(lambda: defaultdict(float))
-
         for src_word in src_words:
             for dst_word in dst_words:
-                denom[src_word] += self.translation_prob[src_word][dst_word]
-                translation_fractional_counts[src_word][
-                    dst_word
-                ] += self.translation_prob[src_word][dst_word]
+                s_count, d_count = src_words[src_word], dst_words[dst_word]
+                prob = self.translation_prob[src_word][dst_word] * s_count * d_count
+                denom[src_word] += prob
+                translation_fractional_counts[src_word][dst_word] += prob
 
         for src_word in translation_fractional_counts.keys():
             if src_word not in translation_expectations:
