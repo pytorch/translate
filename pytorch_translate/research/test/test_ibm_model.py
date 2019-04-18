@@ -15,7 +15,7 @@ class TestIBMModel1(unittest.TestCase):
     def test_morph_init(self):
         ibm_model = IBMModel1()
 
-        tmp_dir, f1, f2 = morph_utils.get_two_tmp_files()
+        tmp_dir, f1, f2 = morph_utils.get_two_same_tmp_files()
         ibm_model.initialize_translation_probs(f1, f2)
         assert len(ibm_model.translation_prob) == 10
         assert len(ibm_model.translation_prob[ibm_model.null_str]) == 9
@@ -26,7 +26,7 @@ class TestIBMModel1(unittest.TestCase):
     def test_e_step(self):
         ibm_model = IBMModel1()
 
-        tmp_dir, f1, f2 = morph_utils.get_two_tmp_files()
+        tmp_dir, f1, f2 = morph_utils.get_two_same_tmp_files()
         ibm_model.initialize_translation_probs(f1, f2)
         translation_counts = defaultdict(lambda: defaultdict(float))
 
@@ -41,7 +41,7 @@ class TestIBMModel1(unittest.TestCase):
     def test_em_step(self):
         ibm_model = IBMModel1()
 
-        tmp_dir, f1, f2 = morph_utils.get_two_tmp_files()
+        tmp_dir, f1, f2 = morph_utils.get_two_same_tmp_files()
         ibm_model.initialize_translation_probs(f1, f2)
 
         pool = Pool(3)
@@ -59,7 +59,7 @@ class TestIBMModel1(unittest.TestCase):
     def test_ibm_train(self):
         ibm_model = IBMModel1()
 
-        tmp_dir, f1, f2 = morph_utils.get_two_tmp_files()
+        tmp_dir, f1, f2 = morph_utils.get_two_same_tmp_files()
         ibm_model.learn_ibm_parameters(
             src_path=f1, dst_path=f2, num_iters=3, num_cpus=3
         )

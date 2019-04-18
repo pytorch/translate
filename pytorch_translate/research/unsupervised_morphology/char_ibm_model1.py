@@ -84,6 +84,38 @@ class CharIBMModel1(ibm_model1.IBMModel1):
                 self.translation_prob[src_subword][dst_subword] = 1.0 / denom
 
 
+class Char2WordIBMModel1(CharIBMModel1):
+    """
+    This is similar to the subword-based IBM model but with the exception that
+    the target side is still word-based.
+    """
+
+    def __init__(self, max_subword_len: int = 8):
+        super().__init__(max_subword_len=max_subword_len)
+
+    def initialize_translation_probs(self, src_path: str, dst_path: str):
+        """
+        Direction of translation is conditioned on the source text: t(dst|src).
+        """
+        self.training_data = []
+        with open(src_path) as src_file, open(dst_path) as dst_file:
+            for src_line, dst_line in zip(src_file, dst_file):
+                src_words_counts = Counter(src_line.strip().split())
+                dst_sub_words = self.get_subword_counts_for_line(dst_line)
+
+                for src_word in src_words_counts.keys():
+                    if src_word not in self.translation_prob:
+                        self.translation_prob[src_word] = defaultdict(float)
+                    for dst_sub_word in dst_sub_words.keys():
+                        self.translation_prob[src_word][dst_sub_word] = 1.0
+                self.training_data.append((src_words_counts, dst_sub_words))
+
+        for src_word in self.translation_prob.keys():
+            denom = len(self.translation_prob[src_word])
+            for dst_subword in self.translation_prob[src_word].keys():
+                self.translation_prob[src_word][dst_subword] = 1.0 / denom
+
+
 if __name__ == "__main__":
     arg_parser = get_arg_parser()
     options, args = arg_parser.parse_args()
