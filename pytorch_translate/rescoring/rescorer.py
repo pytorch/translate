@@ -6,12 +6,14 @@ from enum import Enum
 
 import torch
 from fairseq import bleu
+from pytorch_translate import hybrid_transformer_rnn  # noqa
 from pytorch_translate.rescoring.model_scorers import (
     LMScorer,
     R2LModelScorer,
     ReverseModelScorer,
     SimpleModelScorer,
 )
+from pytorch_translate.tasks import pytorch_translate_task  # noqa
 from tqdm import tqdm
 
 
