@@ -215,3 +215,19 @@ class TestBPE(unittest.TestCase):
             assert len(v) == 9
             assert v["123"] == 2 / 11
             assert v["123456789"] == 1 / 11
+
+    def test_best_candidate_bilingual(self):
+        bpe_model = bilingual_bpe.BilingualBPE()
+        tmp_dir, f1, f2 = morph_utils.get_two_different_tmp_files()
+        num_cpus = 3
+        pool = Pool(num_cpus)
+        bpe_model._init_params(
+            src_txt_path=f1, dst_txt_path=f2, num_ibm_iters=3, num_cpus=num_cpus
+        )
+
+        b1 = bpe_model.src_bpe.get_best_candidate(num_cpus=num_cpus, pool=pool)
+        c1 = bpe_model.get_best_candidate(num_cpus=num_cpus, pool=pool)
+        # For the best step, it is the same as monolingual.
+        assert b1 == c1
+
+        shutil.rmtree(tmp_dir)
