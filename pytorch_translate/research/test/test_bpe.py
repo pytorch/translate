@@ -4,6 +4,7 @@ import shutil
 import tempfile
 import unittest
 from collections import Counter
+from multiprocessing import Pool
 from os import path
 from unittest.mock import Mock, patch
 
@@ -41,8 +42,12 @@ class TestBPE(unittest.TestCase):
             mock_open.return_value.__enter__ = mock_open
             mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
             bpe_model._init_vocab(txt_path="no_exist_file.txt")
-
-            assert bpe_model.get_best_candidate(num_cpus=3) == ("1", "2")
+            num_cpus = 3
+            pool = Pool(processes=num_cpus)
+            assert bpe_model.get_best_candidate(num_cpus=num_cpus, pool=pool) == (
+                "1",
+                "2",
+            )
 
     def test_bpe_merge(self):
         bpe_model = bpe.BPE()
@@ -51,29 +56,31 @@ class TestBPE(unittest.TestCase):
             mock_open.return_value.__enter__ = mock_open
             mock_open.return_value.__iter__ = Mock(return_value=iter(txt_content))
             bpe_model._init_vocab(txt_path="no_exist_file.txt")
+            num_cpus = 3
+            pool = Pool(processes=num_cpus)
 
             # Trying merging a candidate that does not exist.
             vocab_size = bpe_model.merge_candidate_into_vocab(
-                candidate=("3", "1"), num_cpus=3
+                candidate=("3", "1"), num_cpus=num_cpus, pool=pool
             )
             assert vocab_size == 10
 
             # Trying merging a candidate that does exists.
             vocab_size = bpe_model.merge_candidate_into_vocab(
-                candidate=("2", "3"), num_cpus=3
+                candidate=("2", "3"), num_cpus=num_cpus, pool=pool
             )
             assert vocab_size == 11
 
             # Trying merging a candidate that does exists. Entry "3" should remove
             # from vocab.
             vocab_size = bpe_model.merge_candidate_into_vocab(
-                candidate=("3", "4"), num_cpus=3
+                candidate=("3", "4"), num_cpus=num_cpus, pool=pool
             )
             assert vocab_size == 11
 
             # Trying merging a candidate that does not exist.
             vocab_size = bpe_model.merge_candidate_into_vocab(
-                candidate=("3", bpe_model.eow_symbol), num_cpus=3
+                candidate=("3", bpe_model.eow_symbol), num_cpus=num_cpus, pool=pool
             )
             assert vocab_size == 11
 
