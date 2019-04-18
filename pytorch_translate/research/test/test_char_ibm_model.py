@@ -2,6 +2,7 @@
 
 import shutil
 import unittest
+from multiprocessing import Pool
 
 from pytorch_translate.research.test import morphology_test_utils as morph_utils
 from pytorch_translate.research.unsupervised_morphology.char_ibm_model1 import (
@@ -37,15 +38,17 @@ class TestCharIBMModel1(unittest.TestCase):
         ibm_model.initialize_translation_probs(f1, f2)
         assert ibm_model.translation_prob["5"]["5" + ibm_model.eow_symbol] > 0
         assert len(ibm_model.translation_prob) == 80
+        assert len(ibm_model.training_data) == 4
         shutil.rmtree(tmp_dir)
 
     def test_em_step(self):
         ibm_model = CharIBMModel1()
 
         tmp_dir, f1, f2 = morph_utils.get_two_tmp_files()
-        ibm_model.initialize_translation_probs(f1, f2)
+        ibm_model.initialize_translation_probs(src_path=f1, dst_path=f2)
 
-        ibm_model.em_step(f1, f2)
+        pool = Pool(3)
+        ibm_model.em_step(src_path=f1, dst_path=f2, num_cpus=3, pool=pool)
 
         assert len(ibm_model.translation_prob) == 80
         assert (
