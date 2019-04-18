@@ -210,3 +210,18 @@ class TestBPE(unittest.TestCase):
         assert b2 == c2
 
         shutil.rmtree(tmp_dir)
+
+    def test_build_bilingual_vocab(self):
+        bpe_model = bilingual_bpe.BilingualBPE()
+        tmp_dir, f1, f2 = morph_utils.get_two_different_tmp_files()
+        bpe_model.build_vocab(
+            src_txt_path=f1,
+            dst_txt_path=f2,
+            src_vocab_size=12,
+            dst_vocab_size=11,
+            num_ibm_iters=3,
+            num_cpus=3,
+        )
+        assert len(bpe_model.src_bpe.vocab) == 12
+        assert len(bpe_model.dst_bpe.vocab) == 11
+        shutil.rmtree(tmp_dir)
