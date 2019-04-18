@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from itertools import chain
 from multiprocessing import Pool
 from optparse import OptionParser
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 def get_arg_parser():
@@ -85,7 +85,9 @@ class BPE(object):
         for bpe_type in self.vocab.keys():
             self.vocab[bpe_type] /= bpe_type_count
 
-    def _best_candidate_substep(self, start_end_indices: Tuple[int, int]):
+    def _best_candidate_substep(
+        self, start_end_indices: Tuple[int, int]
+    ) -> Dict[Tuple[str, str], int]:
         """
         Args:
             first and end index for part of self.current_train_data to search for.
@@ -100,7 +102,9 @@ class BPE(object):
                 candidates[(symbols[i], symbols[i + 1])] += freq
         return candidates
 
-    def get_best_candidate(self, num_cpus: int, pool: Pool):
+    def get_best_candidate(
+        self, num_cpus: int, pool: Pool
+    ) -> Optional[Tuple[str, str]]:
         """
         Calculates frequencies for new candidiates from the current vocabulary,
         and returns the candidate with the most frequency.
