@@ -3,7 +3,7 @@
 import shutil
 import tempfile
 import unittest
-from collections import defaultdict
+from collections import Counter, defaultdict
 from multiprocessing import Pool
 from os import path
 
@@ -31,8 +31,8 @@ class TestIBMModel1(unittest.TestCase):
         translation_counts = defaultdict(lambda: defaultdict(float))
 
         ibm_model.e_step(
-            ["123", "124", "234", "345", ibm_model.null_str],
-            ["123", "124", "234", "345"],
+            Counter(["123", "124", "234", "345", ibm_model.null_str]),
+            Counter(["123", "124", "234", "345"]),
             translation_counts,
         )
         assert translation_counts["123"]["345"] == 1.0 / 4
