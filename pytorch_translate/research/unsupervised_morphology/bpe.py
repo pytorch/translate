@@ -185,6 +185,9 @@ class BPE(object):
             vocab_size: The maximum number of vocabulary items we need to have.
         """
         self._init_vocab(txt_path=txt_path)
+        return self._build_vocab_loop(vocab_size=vocab_size, num_cpus=num_cpus)
+
+    def _build_vocab_loop(self, vocab_size: int, num_cpus: int) -> int:
         step = 0
         with Pool(processes=num_cpus) as pool:
             while True:
@@ -209,7 +212,9 @@ class BPE(object):
                         "current vocabulary size",
                         cur_v_size,
                     )
+        return self.finalize_vocab()
 
+    def finalize_vocab(self) -> int:
         # Now we get rid of the current vocab that is based on the corpus (not
         # memory-efficient). We now only keep the final bpe tokens.
         self.vocab: Dict[str, int] = Counter()
