@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import datetime
 import math
 import re
 from collections import Counter
@@ -91,23 +92,22 @@ class BPE(object):
                 candidates[(symbols[i], symbols[i + 1])] += freq
         return candidates
 
-    def get_best_candidate(self, num_cpus: int):
+    def get_best_candidate(self, num_cpus: int, pool: Pool):
         """
         Calculates frequencies for new candidiates from the current vocabulary,
         and returns the candidate with the most frequency.
         """
-        with Pool(processes=num_cpus) as pool:
-            data_chunk_size = max(1, math.ceil(len(self.current_train_data) / num_cpus))
-            indices = [
-                (
-                    i * data_chunk_size,
-                    min(data_chunk_size * (i + 1), len(self.current_train_data)),
-                )
-                for i in range(num_cpus)
-            ]
-            results = pool.map(self._best_candidate_substep, indices)
-            candidates = sum(results, Counter())
-            return max(candidates, key=candidates.get) if len(candidates) > 0 else None
+        data_chunk_size = max(1, math.ceil(len(self.current_train_data) / num_cpus))
+        indices = [
+            (
+                i * data_chunk_size,
+                min(data_chunk_size * (i + 1), len(self.current_train_data)),
+            )
+            for i in range(num_cpus)
+        ]
+        results = pool.map(self._best_candidate_substep, indices)
+        candidates = sum(results, Counter())
+        return max(candidates, key=candidates.get) if len(candidates) > 0 else None
 
     @staticmethod
     def get_merge_pattern(candidate_str):
@@ -141,34 +141,33 @@ class BPE(object):
         return (new_data, new_bpe_entries)
 
     def merge_candidate_into_vocab(
-        self, candidate: Tuple[str, str], num_cpus: int
+        self, candidate: Tuple[str, str], num_cpus: int, pool: Pool
     ) -> int:
         """
         Returns the vocabulary size (number of BPE types).
         Args:
             candidate: a pair of strings to be merged in all entries.
         """
-        with Pool(processes=num_cpus) as pool:
-            data_chunk_size = max(1, math.ceil(len(self.current_train_data) / num_cpus))
-            candidate_str_list = [
+        data_chunk_size = max(1, math.ceil(len(self.current_train_data) / num_cpus))
+        candidate_str_list = [
+            (
+                (candidate[0], candidate[1]),
                 (
-                    (candidate[0], candidate[1]),
-                    (
-                        i * data_chunk_size,
-                        min(data_chunk_size * (i + 1), len(self.current_train_data)),
-                    ),
-                )
-                for i in range(num_cpus)
-            ]
+                    i * data_chunk_size,
+                    min(data_chunk_size * (i + 1), len(self.current_train_data)),
+                ),
+            )
+            for i in range(num_cpus)
+        ]
 
-            results = pool.starmap(self.merge_substep, candidate_str_list)
+        results = pool.starmap(self.merge_substep, candidate_str_list)
 
-            # Each first element in results is a List[Tuple[str, int]]. By using
-            # the * operation with chain we concatenate the lists in order to
-            # reconstruct the training data.
-            self.current_train_data = list(chain(*[result[0] for result in results]))
-            bpe_types_union = set.union(*[result[1] for result in results])
-            return len(bpe_types_union)
+        # Each first element in results is a List[Tuple[str, int]]. By using
+        # the * operation with chain we concatenate the lists in order to
+        # reconstruct the training data.
+        self.current_train_data = list(chain(*[result[0] for result in results]))
+        bpe_types_union = set.union(*[result[1] for result in results])
+        return len(bpe_types_union)
 
     def build_vocab(self, txt_path: str, vocab_size: int, num_cpus: int) -> int:
         """
@@ -180,20 +179,29 @@ class BPE(object):
         """
         self._init_vocab(txt_path=txt_path)
         step = 0
-        while True:
-            merge_candidate = self.get_best_candidate(num_cpus=num_cpus)
-            if merge_candidate is not None:
-                cur_v_size = self.merge_candidate_into_vocab(
-                    candidate=merge_candidate, num_cpus=num_cpus
-                )
-                if cur_v_size >= vocab_size:
+        with Pool(processes=num_cpus) as pool:
+            while True:
+                merge_candidate = self.get_best_candidate(num_cpus=num_cpus, pool=pool)
+                if merge_candidate is not None:
+                    cur_v_size = self.merge_candidate_into_vocab(
+                        candidate=merge_candidate, num_cpus=num_cpus, pool=pool
+                    )
+                    if cur_v_size >= vocab_size:
+                        break
+                else:
+                    # No more merges possible
                     break
-            else:
-                # No more merges possible
-                break
-            step += 1
-            if step % 100 == 0:
-                print("BPE merging step", step, "current vocabulary size", cur_v_size)
+                step += 1
+                if step % 50 == 0:
+                    print(
+                        str(datetime.datetime.now()),
+                        "BPE merging step",
+                        step,
+                        "data size",
+                        len(self.current_train_data),
+                        "current vocabulary size",
+                        cur_v_size,
+                    )
 
         # Now we get rid of the current vocab that is based on the corpus (not
         # memory-efficient). We now only keep the final bpe tokens.
