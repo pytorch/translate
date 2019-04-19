@@ -6,6 +6,7 @@ from multiprocessing import Pool
 
 from pytorch_translate.research.test import morphology_test_utils as morph_utils
 from pytorch_translate.research.unsupervised_morphology.char_ibm_model1 import (
+    Char2WordIBMModel1,
     CharIBMModel1,
 )
 
@@ -32,11 +33,21 @@ class TestCharIBMModel1(unittest.TestCase):
         assert "12345" not in substrs
 
     def test_morph_init(self):
-        ibm_model = CharIBMModel1()
+        tmp_dir, f1, f2 = morph_utils.get_two_different_tmp_files()
 
-        tmp_dir, f1, f2 = morph_utils.get_two_tmp_files()
+        ibm_model = CharIBMModel1()
         ibm_model.initialize_translation_probs(f1, f2)
-        assert ibm_model.translation_prob["5"]["5" + ibm_model.eow_symbol] > 0
+        assert ibm_model.translation_prob["5"]["d" + ibm_model.eow_symbol] > 0
         assert len(ibm_model.translation_prob) == 80
         assert len(ibm_model.training_data) == 4
+
+        ibm_model = Char2WordIBMModel1(max_subword_len=4)
+        ibm_model.initialize_translation_probs(f1, f2)
+        assert "abcdefghi" not in ibm_model.translation_prob["123456789"]
+        assert "cdef" in ibm_model.translation_prob["123456789"]
+        assert "cde" in ibm_model.translation_prob["123456789"]
+        assert len(ibm_model.translation_prob["123456789"]) == 34
+        assert len(ibm_model.translation_prob) == 9
+        assert len(ibm_model.training_data) == 4
+
         shutil.rmtree(tmp_dir)
