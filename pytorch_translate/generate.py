@@ -218,11 +218,21 @@ def _generate_score(models, args, task, dataset):
                     trans_info.sample_id
                 ] = trans_info.best_hypo_tokens
             if args.translation_info_export_path is not None:
+                # Strip expensive data from hypotheses before saving
+                hypos = [
+                    {k: v for k, v in hypo.items() if k in ["tokens", "score"]}
+                    for hypo in trans_info.hypos
+                ]
+                # Make sure everything is on cpu before exporting
+                hypos = [
+                    {"score": hypo["score"], "tokens": hypo["tokens"].cpu()}
+                    for hypo in hypos
+                ]
                 translation_info_list.append(
                     {
-                        "src_tokens": trans_info.src_tokens,
+                        "src_tokens": trans_info.src_tokens.cpu(),
                         "target_tokens": trans_info.target_tokens,
-                        "hypos": trans_info.hypos,
+                        "hypos": hypos,
                     }
                 )
             translation_samples.append(
@@ -418,12 +428,6 @@ def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
         if not collect_oracle_hypos:
             best_hypo_tokens = top_hypo_tokens
 
-        # Strip expensive data from hypotheses before yielding
-        hypos_stripped = [
-            {k: v for k, v in hypo.items() if k in ["tokens", "score"]}
-            for hypo in hypos
-        ]
-
         yield TranslationInfo(
             sample_id=sample_id,
             src_tokens=src_tokens,
@@ -434,7 +438,7 @@ def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
             hypo_str=hypo_str,
             hypo_score=hypo_score,
             best_hypo_tokens=best_hypo_tokens,
-            hypos=hypos_stripped,
+            hypos=hypos,
         )
 
 
