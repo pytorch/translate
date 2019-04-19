@@ -2,7 +2,7 @@
 
 import os
 import tempfile
-from typing import NamedTuple, Optional
+from typing import Dict, NamedTuple, Optional
 
 import numpy as np
 import torch
@@ -35,6 +35,11 @@ class ParallelCorpusConfig(NamedTuple):
     source: CorpusConfig
     target: CorpusConfig
     weights_file: Optional[str]
+
+
+class ParallelCorporaMapConfig(NamedTuple):
+    src_files: Dict[str, str]
+    tgt_files: Dict[str, str]
 
 
 class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
