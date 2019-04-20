@@ -186,13 +186,18 @@ def main():
 
     translation_info_list = pickle.load(open(args.translation_info_export_path, "rb"))
     for trans_info in tqdm(translation_info_list):
+        trans_info["hypos"] = [
+            {"score": hypo["score"], "tokens": hypo["tokens"].cuda()}
+            for hypo in trans_info["hypos"]
+        ]
+
         base_bleu_scorer.add(
             trans_info["target_tokens"].int().cpu(),
             trans_info["hypos"][0]["tokens"].int().cpu(),
         )
 
         rescoring_top_tokens = rescorer.score(
-            trans_info["src_tokens"], trans_info["hypos"]
+            trans_info["src_tokens"].cuda(), trans_info["hypos"]
         )
         rescoring_bleu_scorer.add(
             trans_info["target_tokens"].int().cpu(), rescoring_top_tokens.int().cpu()
