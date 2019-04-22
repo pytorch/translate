@@ -25,9 +25,8 @@ class TestBPE(unittest.TestCase):
             bpe_model._init_vocab(txt_path="no_exist_file.txt")
 
             vocab_items = Counter()
-            for vocab_entry, freq in bpe_model.current_train_data:
-                items = vocab_entry.split()
-                for item in items:
+            for (vocab_entry, freq) in bpe_model.current_train_data:
+                for item in vocab_entry:
                     vocab_items[item] += freq
 
             assert vocab_items[bpe_model.eow_symbol] == 11
@@ -84,20 +83,6 @@ class TestBPE(unittest.TestCase):
                 candidate=("3", bpe_model.eow_symbol), num_cpus=num_cpus, pool=pool
             )
             assert vocab_size == 11
-
-    def test_merge_pattern(self):
-        pattern1 = bpe.BPE.get_merge_pattern("c c")
-        assert pattern1.sub("cc", "x|x?^d@@ c c ^d") == "x|x?^d@@ cc ^d"
-
-        pattern2 = bpe.BPE.get_merge_pattern("^d@ @c")
-        assert (
-            pattern2.sub("^d@@c", "^d@ @cx|x? ^d@ @c c ^d") == "^d@ @cx|x? ^d@@c c ^d"
-        )
-
-        pattern3 = bpe.BPE.get_merge_pattern("x| x")
-        assert (
-            pattern3.sub("x|x", "^d@ @c x| x ?^d@ @c c ^d") == "^d@ @c x|x ?^d@ @c c ^d"
-        )
 
     def test_build_vocab(self):
         bpe_model = bpe.BPE()
