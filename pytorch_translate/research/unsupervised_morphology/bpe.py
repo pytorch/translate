@@ -3,11 +3,11 @@
 import datetime
 import math
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from itertools import chain
 from multiprocessing import Pool
 from optparse import OptionParser
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 
 def get_arg_parser():
@@ -77,7 +77,9 @@ class BPE(object):
         for segmentation, freq in data_freq.items():
             self.current_train_data.append((segmentation, freq))
 
-    def _best_candidate_substep(self, start_end_indices: Tuple[int, int]):
+    def _best_candidate_substep(
+        self, start_end_indices: Tuple[int, int]
+    ) -> Dict[str, float]:
         """
         Args:
             first and end index for part of self.current_train_data to search for.
@@ -85,14 +87,16 @@ class BPE(object):
         start_index, end_index = start_end_indices[0], start_end_indices[1]
         assert start_index <= end_index
 
-        candidates = Counter()
+        candidates = defaultdict(float)
         for (seg, freq) in self.current_train_data[start_index:end_index]:
             symbols = seg.split()
             for i in range(len(symbols) - 1):
                 candidates[(symbols[i], symbols[i + 1])] += freq
         return candidates
 
-    def get_best_candidate(self, num_cpus: int, pool: Pool):
+    def get_best_candidate(
+        self, num_cpus: int, pool: Pool
+    ) -> Optional[Tuple[str, str]]:
         """
         Calculates frequencies for new candidiates from the current vocabulary,
         and returns the candidate with the most frequency.
@@ -106,7 +110,10 @@ class BPE(object):
             for i in range(num_cpus)
         ]
         results = pool.map(self._best_candidate_substep, indices)
-        candidates = sum(results, Counter())
+        candidates = defaultdict(float)
+        for result in results:
+            for (k, v) in result.items():
+                candidates[k] += v
         return max(candidates, key=candidates.get) if len(candidates) > 0 else None
 
     @staticmethod
