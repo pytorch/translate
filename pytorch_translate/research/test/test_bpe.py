@@ -122,7 +122,7 @@ class TestBPE(unittest.TestCase):
                 txt_path="no_exist_file.txt", vocab_size=12, num_cpus=3
             )
             # asserting that the size is as expected.
-            assert vocab_size == 12
+            assert vocab_size == len(bpe_model.vocab) == 12
             assert bpe_model.max_bpe_len == len(bpe_model.eow_symbol)
 
     def test_segment_word(self):
@@ -212,4 +212,13 @@ class TestBPE(unittest.TestCase):
         # For the best step, it is the same as monolingual.
         assert b1 == c1
 
+        shutil.rmtree(tmp_dir)
+
+    def test_build_bilingual_vocab(self):
+        bpe_model = bilingual_bpe.BilingualBPE()
+        tmp_dir, f1, f2 = morph_utils.get_two_different_tmp_files()
+        vocab_size = bpe_model.build_vocab(
+            src_txt_path=f1, dst_txt_path=f2, vocab_size=12, num_ibm_iters=3, num_cpus=3
+        )
+        assert vocab_size == len(bpe_model.vocab) == 12
         shutil.rmtree(tmp_dir)
