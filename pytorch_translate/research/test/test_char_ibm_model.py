@@ -51,21 +51,3 @@ class TestCharIBMModel1(unittest.TestCase):
         assert len(ibm_model.training_data) == 4
 
         shutil.rmtree(tmp_dir)
-
-    def test_em_step(self):
-        ibm_model = CharIBMModel1()
-
-        tmp_dir, f1, f2 = morph_utils.get_two_tmp_files()
-        ibm_model.initialize_translation_probs(src_path=f1, dst_path=f2)
-
-        pool = Pool(3)
-        ibm_model.em_step(src_path=f1, dst_path=f2, num_cpus=3, pool=pool)
-
-        assert len(ibm_model.translation_prob) == 80
-        assert (
-            ibm_model.translation_prob[ibm_model.eow_symbol][ibm_model.eow_symbol]
-            > ibm_model.translation_prob[ibm_model.eow_symbol]["345"]
-        )
-        assert ibm_model.translation_prob["5"]["5" + ibm_model.eow_symbol] > 0
-
-        shutil.rmtree(tmp_dir)
