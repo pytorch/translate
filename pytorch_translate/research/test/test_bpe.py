@@ -159,8 +159,8 @@ class TestBPE(unittest.TestCase):
         bpe_model._init_params(
             src_txt_path=f1, dst_txt_path=f2, num_ibm_iters=3, num_cpus=3
         )
-        assert len(bpe_model.bpe_probs_from_alignment) == 80
-        assert bpe_model.eow_symbol in bpe_model.bpe_probs_from_alignment
+        assert len(bpe_model.bpe_probs_from_alignment) == 70
+        assert bpe_model.eow_symbol not in bpe_model.bpe_probs_from_alignment
 
         shutil.rmtree(tmp_dir)
 

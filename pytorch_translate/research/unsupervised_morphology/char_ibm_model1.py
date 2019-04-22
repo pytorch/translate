@@ -47,10 +47,13 @@ class CharIBMModel1(ibm_model1.IBMModel1):
         self.max_subword_len = max_subword_len
 
     def get_possible_subwords(self, word: str) -> Dict[str, int]:
+        """
+        Note that it only extracts subwords of more than one character (>=2).
+        """
         subwords = []
         chars = list(word) + [self.eow_symbol]
         for i in range(len(chars)):
-            for j in range(i + 1, min(i + 1 + self.max_subword_len, len(chars) + 1)):
+            for j in range(i + 2, min(i + 1 + self.max_subword_len, len(chars) + 1)):
                 subword = "".join(chars[i:j])
                 subwords.append(subword)
         return Counter(subwords)
