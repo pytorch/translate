@@ -230,7 +230,8 @@ class PytorchTranslateTask(FairseqTask):
             assert type(tgt_bin_path) is not str
             assert set(src_bin_path.keys()) == set(tgt_bin_path.keys())
             if dataset_upsampling is not None:
-                assert set(dataset_upsampling.keys()) == set(src_bin_path.keys())
+                for key in dataset_upsampling.keys():
+                    assert key in src_bin_path.keys()
             self._load_dataset_multi_path(
                 split, src_bin_path, tgt_bin_path, dataset_upsampling
             )
