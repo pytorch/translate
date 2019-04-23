@@ -142,10 +142,12 @@ class BilingualBPE(BPE):
         assert start_index <= end_index
 
         candidates = defaultdict(float)
-        for (seg, freq) in self.current_train_data[start_index:end_index]:
-            symbols = seg.split()
-            for i in range(len(symbols) - 1):
-                bpe_key = (symbols[i], symbols[i + 1])
+        for i in range(start_index, end_index):
+            if i >= len(self.current_train_data):
+                break
+            (seg, freq) = self.current_train_data[i]
+            for i in range(len(seg) - 1):
+                bpe_key = (seg[i], seg[i + 1])
                 bpe_token = "".join(bpe_key)
 
                 # Note that this line is the only difference between this class
