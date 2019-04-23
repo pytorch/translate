@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import datetime
+import logging
 import math
 import re
 from collections import Counter, defaultdict
@@ -8,6 +8,10 @@ from itertools import chain
 from multiprocessing import Pool
 from optparse import OptionParser
 from typing import Dict, List, Optional, Set, Tuple
+
+
+logging.basicConfig(format="%(asctime)s %(message)s")
+logger = logging.getLogger(__name__)
 
 
 def get_arg_parser():
@@ -185,6 +189,9 @@ class BPE(object):
             vocab_size: The maximum number of vocabulary items we need to have.
         """
         self._init_vocab(txt_path=txt_path)
+        return self._build_vocab_loop(vocab_size=vocab_size, num_cpus=num_cpus)
+
+    def _build_vocab_loop(self, vocab_size: int, num_cpus: int) -> int:
         step = 0
         with Pool(processes=num_cpus) as pool:
             while True:
@@ -200,16 +207,13 @@ class BPE(object):
                     break
                 step += 1
                 if step % 50 == 0:
-                    print(
-                        str(datetime.datetime.now()),
-                        "BPE merging step",
-                        step,
-                        "data size",
-                        len(self.current_train_data),
-                        "current vocabulary size",
-                        cur_v_size,
+                    logger.warning(
+                        f"""BPE merge step: {step}, data size:
+                        {len(self.current_train_data)}, vocab size, {cur_v_size}"""
                     )
+        return self.finalize_vocab()
 
+    def finalize_vocab(self) -> int:
         # Now we get rid of the current vocab that is based on the corpus (not
         # memory-efficient). We now only keep the final bpe tokens.
         self.vocab: Dict[str, int] = Counter()
@@ -219,7 +223,7 @@ class BPE(object):
                 self.vocab[bpe_token] += freq
                 self.max_bpe_len = max(self.max_bpe_len, len(bpe_token))
 
-        print("BPE vocab built with size", len(self.vocab))
+        logger.warning(f"BPE vocab built with size {len(self.vocab)}")
         return len(self.vocab)
 
     def segment_word(self, word: str) -> List[str]:
