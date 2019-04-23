@@ -2,9 +2,7 @@
 
 import logging
 import math
-import re
 from collections import Counter, defaultdict
-from itertools import chain
 from multiprocessing import Pool
 from optparse import OptionParser
 from typing import Dict, List, Optional, Set, Tuple
@@ -77,9 +75,9 @@ class BPE(object):
                     # that is a clear indicator of a suffix.
                     data_freq[" ".join(list(word) + [self.eow_symbol])] += 1
 
-        self.current_train_data: List[Tuple[str, int]] = []
-        for segmentation, freq in data_freq.items():
-            self.current_train_data.append((segmentation, freq))
+        self.current_train_data: List[Tuple[str, int]] = [None] * len(data_freq)
+        for i, (segmentation, freq) in enumerate(data_freq.items()):
+            self.current_train_data[i] = (segmentation.split(" "), freq)
 
     def _best_candidate_substep(
         self, start_end_indices: Tuple[int, int]
@@ -92,10 +90,12 @@ class BPE(object):
         assert start_index <= end_index
 
         candidates = defaultdict(float)
-        for (seg, freq) in self.current_train_data[start_index:end_index]:
-            symbols = seg.split()
-            for i in range(len(symbols) - 1):
-                candidates[(symbols[i], symbols[i + 1])] += freq
+        for i in range(start_index, end_index):
+            if i >= len(self.current_train_data):
+                break
+            (seg, freq) = self.current_train_data[i]
+            for i in range(len(seg) - 1):
+                candidates[(seg[i], seg[i + 1])] += freq
         return candidates
 
     def get_best_candidate(
@@ -120,35 +120,39 @@ class BPE(object):
                 candidates[k] += v
         return max(candidates, key=candidates.get) if len(candidates) > 0 else None
 
-    @staticmethod
-    def get_merge_pattern(candidate_str):
-        return re.compile(r"(?<!\S)" + re.escape(candidate_str) + r"(?!\S)")
-
     def merge_substep(
         self, merge_candidate: Tuple[str, str], start_end_index: Tuple[int, int]
     ) -> Tuple[List[Tuple[str, int]], Set]:
         """
         Returns Bpe types in the current substep.
         """
-        candidate_str = " ".join(merge_candidate)
         candidate_replacement = "".join(merge_candidate)
-        pattern = BPE.get_merge_pattern(candidate_str)
         offset, stop_index = start_end_index
         assert offset < stop_index
 
         new_bpe_entries = set()
-        new_data: List[Tuple[str, int]] = [None] * (stop_index - offset)
+        new_data: Dict[int, List[Tuple[str, int]]] = {}
         for i in range(offset, stop_index):
+            if i >= len(self.current_train_data):
+                break
             vocab_entry, freq = self.current_train_data[i]
-            new_entry = vocab_entry
-            if candidate_str in vocab_entry:
-                # Regex is usually slow. We just apply it on words that have the
-                # potential of replacement.
-                new_entry = pattern.sub(candidate_replacement, vocab_entry)
+            new_entry, current_index = [], 0
+            while current_index < len(vocab_entry):
+                if (
+                    current_index < len(vocab_entry) - 1
+                    and (vocab_entry[current_index], vocab_entry[current_index + 1])
+                    == merge_candidate
+                ):
+                    new_entry.append(candidate_replacement)
+                    new_bpe_entries.add(candidate_replacement)
+                    current_index += 2
+                else:
+                    new_entry.append(vocab_entry[current_index])
+                    new_bpe_entries.add(vocab_entry[current_index])
+                    current_index += 1
 
-            new_data[i - offset] = (new_entry, freq)
-            for entry in new_entry.split():
-                new_bpe_entries.add(entry)
+            new_data[i] = (new_entry, freq)
+
         return (new_data, new_bpe_entries)
 
     def merge_candidate_into_vocab(
@@ -173,10 +177,9 @@ class BPE(object):
 
         results = pool.starmap(self.merge_substep, candidate_str_list)
 
-        # Each first element in results is a List[Tuple[str, int]]. By using
-        # the * operation with chain we concatenate the lists in order to
-        # reconstruct the training data.
-        self.current_train_data = list(chain(*[result[0] for result in results]))
+        for result in results:
+            for k, v in result[0].items():
+                self.current_train_data[k] = v
         bpe_types_union = set.union(*[result[1] for result in results])
         return len(bpe_types_union)
 
@@ -219,7 +222,7 @@ class BPE(object):
         self.vocab: Dict[str, int] = Counter()
         self.max_bpe_len = 1
         for (vocab_entry, freq) in self.current_train_data:
-            for bpe_token in vocab_entry.split():
+            for bpe_token in vocab_entry:
                 self.vocab[bpe_token] += freq
                 self.max_bpe_len = max(self.max_bpe_len, len(bpe_token))
 
