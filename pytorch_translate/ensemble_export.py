@@ -1177,13 +1177,17 @@ class BeamSearch(torch.jit.ScriptModule):
         )
 
     def save_to_pytorch(self, output_path):
-        self.apply(
-            lambda s: s._get_method("_pack")() if s._has_method("_pack") else None
-        )
+        def pack(s):
+            if hasattr(s, "_pack"):
+                s._pack()
+
+        def unpack(s):
+            if hasattr(s, "_unpack"):
+                s._unpack()
+
+        self.apply(pack)
         torch.jit.save(self, output_path)
-        self.apply(
-            lambda s: s._get_method("_unpack")() if s._has_method("_unpack") else None
-        )
+        self.apply(unpack)
 
 
 class KnownOutputDecoderStepEnsemble(nn.Module):
