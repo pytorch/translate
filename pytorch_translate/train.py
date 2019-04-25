@@ -50,6 +50,7 @@ from pytorch_translate.research.knowledge_distillation import (  # noqa
     hybrid_dual_decoder_kd_model,
     knowledge_distillation_loss,
 )
+from pytorch_translate.research.rescore import cloze_transformer_model  # noqa
 from pytorch_translate.word_prediction import word_prediction_criterion  # noqa
 from pytorch_translate.word_prediction import word_prediction_model  # noqa
 
