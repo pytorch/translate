@@ -339,9 +339,6 @@ def setup_training_state(args, trainer, task, epoch_itr):
 
     # Reset the start time for the current training run.
     extra_state["start_time"] = time.time()
-    # Removes all uses of the deprecated ManagedCheckpoints
-    if "last_checkpoints" in extra_state:
-        del extra_state["last_checkpoints"]
 
     # Skips printing all training progress to prevent log spam.
     training_progress = extra_state["training_progress"]
