@@ -43,7 +43,7 @@ def get_arg_parser():
 class CharIBMModel1(ibm_model1.IBMModel1):
     def __init__(self, max_subword_len: int = 8):
         super().__init__()
-        self.eow_symbol = "_EOW"  # End of word symbol.
+        self.eow_symbol = "_EW"  # End of word symbol.
         self.max_subword_len = max_subword_len
 
     def get_possible_subwords(self, word: str) -> Dict[str, int]:

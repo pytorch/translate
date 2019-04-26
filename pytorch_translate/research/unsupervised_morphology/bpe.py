@@ -52,7 +52,7 @@ class BPE(object):
 
     def __init__(self):
         self.vocab: Dict[str, int] = Counter()
-        self.eow_symbol = "_EOW"  # End of word symbol.
+        self.eow_symbol = "_EW"  # End of word symbol.
 
         # This data structure holds current segmentation of training data. This
         # is useful for faster parallel computation during training.
