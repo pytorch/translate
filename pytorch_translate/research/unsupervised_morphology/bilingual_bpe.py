@@ -3,7 +3,7 @@
 import logging
 from collections import defaultdict
 from optparse import OptionParser
-from typing import Dict, Tuple
+from typing import Dict, List, Set, Tuple
 
 from pytorch_translate.research.unsupervised_morphology.bpe import BPE
 from pytorch_translate.research.unsupervised_morphology.char_ibm_model1 import (
@@ -11,7 +11,7 @@ from pytorch_translate.research.unsupervised_morphology.char_ibm_model1 import (
 )
 
 
-logging.basicConfig(format="%(asctime)s %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -81,8 +81,7 @@ class BilingualBPE(BPE):
             num_ibm_iters: Number of training epochs for the IBM model.
             num_cpus: Number of CPUs for training the IBM model with multi-processing.
         """
-        logger.warning("Initializing vocabulary.")
-        self._init_vocab(txt_path=src_txt_path)
+        logger.info("Initializing vocabulary.")
 
         # Note the reverse side of the model. Target is word based, that is why
         # we give it a reverse order.
@@ -92,10 +91,12 @@ class BilingualBPE(BPE):
             num_iters=num_ibm_iters,
             num_cpus=num_cpus,
         )
-        logger.warning("calculating alignment-based BPE type probs.")
+        logger.info("calculating alignment-based BPE type probs.")
         self.bpe_probs_from_alignment = self._calc_bpe_prob_from_alignment(
             dst_txt_path=dst_txt_path
         )
+
+        self._init_vocab(txt_path=src_txt_path)
 
     def _calc_word_probs(self, txt_path: str) -> Dict[str, float]:
         """
@@ -127,33 +128,75 @@ class BilingualBPE(BPE):
                 bpe_alignment_prob[src_subword] += (
                     alignment_probs[src_subword] * target_word_prob
                 )
+        for src_subword in bpe_alignment_prob.keys():
+            bpe_alignment_prob[src_subword] = max(
+                bpe_alignment_prob[src_subword], 1e-30
+            )
         return bpe_alignment_prob
 
-    def _best_candidate_substep(
-        self, start_end_indices: Tuple[int, int]
-    ) -> Dict[Tuple[str, str], float]:
-        """
-        Args:
-            start_end_indices: first and end index for part of
-                self.current_train_data to search for.
-        """
+    def _init_candidate_frequencies(self) -> None:
+        self.merge_candidate_indices: Dict[Tuple[str, str], Set[int]] = defaultdict(set)
+        self.merge_candidate_freq: Dict[Tuple(str, str), float] = defaultdict(float)
 
-        start_index, end_index = start_end_indices[0], start_end_indices[1]
-        assert start_index <= end_index
-
-        candidates = defaultdict(float)
-        for i in range(start_index, end_index):
-            if i >= len(self.current_train_data):
-                break
-            (seg, freq) = self.current_train_data[i]
+        for word_index, (seg, freq) in enumerate(self.current_train_data):
+            (seg, freq) = self.current_train_data[word_index]
             for i in range(len(seg) - 1):
                 bpe_key = (seg[i], seg[i + 1])
                 bpe_token = "".join(bpe_key)
+                self.merge_candidate_freq[bpe_key] += self.bpe_alignment_prob(
+                    bpe_token, freq
+                )
+                self.merge_candidate_indices[bpe_key].add(word_index)
+                self.vocab[seg[i]] += freq
+            self.vocab[seg[-1]] += freq
 
-                # Note that this line is the only difference between this class
-                # and its parent BPE.
-                candidates[bpe_key] += freq * self.bpe_probs_from_alignment[bpe_token]
-        return candidates
+    def bpe_alignment_prob(self, bpe_token: str, freq: int):
+        if bpe_token in self.bpe_probs_from_alignment:
+            return self.bpe_probs_from_alignment[bpe_token]
+        else:
+            # In cases where the alignment model did not cover long character
+            # sequences in training data.
+            return freq * 1e-30
+
+    def update_candidate_frequencies(
+        self, data_index: int, old_tokens: List[str], new_tokens: List[str]
+    ) -> int:
+        """
+        After each merge operation, we have to update the frequencies of the BPE
+        candiates, including the ones that are deprecated (old_tokens), and the
+        new ones (new_tokens) with respect to a training word (in data_index).
+        """
+        freq = self.current_train_data[data_index][1]
+        for i in range(len(new_tokens) - 1):
+            self.vocab[new_tokens[i]] += freq
+            bpe_candidate = (new_tokens[i], new_tokens[i + 1])
+            bpe_token = "".join(bpe_candidate)
+            self.merge_candidate_freq[bpe_candidate] += self.bpe_alignment_prob(
+                bpe_token, freq
+            )
+            self.merge_candidate_indices[bpe_candidate].add(data_index)
+
+        self.vocab[new_tokens[-1]] += freq
+
+        for i in range(len(old_tokens) - 1):
+            self.vocab[old_tokens[i]] -= freq
+            if self.vocab[old_tokens[i]] == 0:
+                del self.vocab[old_tokens[i]]
+
+            bpe_candidate = (old_tokens[i], old_tokens[i + 1])
+            bpe_token = "".join(bpe_candidate)
+
+            pfreq = self.bpe_alignment_prob(bpe_token, freq)
+
+            if pfreq > 0:  # just in case there is an underflow in value.
+                self.merge_candidate_freq[bpe_candidate] -= pfreq
+                if self.merge_candidate_freq[bpe_candidate] == 0:
+                    del self.merge_candidate_freq[bpe_candidate]
+                    del self.merge_candidate_indices[bpe_candidate]
+
+        self.vocab[old_tokens[-1]] -= freq
+        if self.vocab[old_tokens[-1]] == 0:
+            del self.vocab[old_tokens[-1]]
 
     def build_vocab(
         self,
@@ -173,7 +216,7 @@ class BilingualBPE(BPE):
             num_ibm_iters=num_ibm_iters,
             num_cpus=num_cpus,
         )
-        return self._build_vocab_loop(vocab_size=vocab_size, num_cpus=num_cpus)
+        return self._build_vocab_loop(vocab_size=vocab_size)
 
 
 if __name__ == "__main__":
