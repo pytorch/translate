@@ -424,6 +424,7 @@ def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
                     hypo["score"] / len(hypo_tokens) if len(hypo_tokens) > 0 else 0.0
                 )
                 top_hypo_tokens = hypo_tokens
+                top_hypo_str = hypo_str
 
         if not collect_oracle_hypos:
             best_hypo_tokens = top_hypo_tokens
@@ -435,7 +436,7 @@ def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
             hypo_tokens=top_hypo_tokens,
             src_str=src_str,
             target_str=target_str,
-            hypo_str=hypo_str,
+            hypo_str=top_hypo_str,
             hypo_score=hypo_score,
             best_hypo_tokens=best_hypo_tokens,
             hypos=hypos,
