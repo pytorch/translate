@@ -510,3 +510,115 @@ class TestONNX(unittest.TestCase):
             "max_translation_candidates_per_word": 1,
         }
         self._test_batched_beam_decoder_step(test_args)
+
+    def _test_beam_component_equivalence(self, test_args):
+        beam_size = 5
+        samples, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
+
+        num_models = 3
+        model_list = []
+        for _ in range(num_models):
+            model_list.append(task.build_model(test_args))
+
+        # to initialize BeamSearch object
+        sample = next(samples)
+        # [seq len, batch size=1]
+        src_tokens = sample["net_input"]["src_tokens"][0:1].t()
+        # [seq len]
+        src_lengths = sample["net_input"]["src_lengths"][0:1].long()
+
+        beam_size = 5
+        full_beam_search = BeamSearch(
+            model_list, tgt_dict, src_tokens, src_lengths, beam_size=beam_size
+        )
+
+        encoder_ensemble = EncoderEnsemble(model_list)
+
+        # to initialize decoder_step_ensemble
+        with torch.no_grad():
+            pytorch_encoder_outputs = encoder_ensemble(src_tokens, src_lengths)
+
+        decoder_step_ensemble = DecoderBatchedStepEnsemble(
+            model_list, tgt_dict, beam_size=beam_size
+        )
+
+        prev_token = torch.LongTensor([tgt_dict.eos()])
+        prev_scores = torch.FloatTensor([0.0])
+        attn_weights = torch.zeros(src_tokens.shape[0])
+        prev_hypos_indices = torch.zeros(beam_size, dtype=torch.int64)
+        num_steps = torch.LongTensor([2])
+
+        with torch.no_grad():
+            (
+                bs_out_tokens,
+                bs_out_scores,
+                bs_out_weights,
+                bs_out_prev_indices,
+            ) = full_beam_search(
+                src_tokens,
+                src_lengths,
+                prev_token,
+                prev_scores,
+                attn_weights,
+                prev_hypos_indices,
+                num_steps,
+            )
+
+        comp_out_tokens = (
+            np.ones([num_steps + 1, beam_size], dtype="int64") * tgt_dict.eos()
+        )
+        comp_out_scores = np.zeros([num_steps + 1, beam_size])
+        comp_out_weights = np.zeros([num_steps + 1, beam_size, src_lengths.numpy()[0]])
+        comp_out_prev_indices = np.zeros([num_steps + 1, beam_size], dtype="int64")
+
+        # single EOS in flat array
+        input_tokens = torch.LongTensor(np.array([tgt_dict.eos()]))
+        prev_scores = torch.FloatTensor(np.array([0.0]))
+        timestep = torch.LongTensor(np.array([0]))
+
+        with torch.no_grad():
+            pytorch_first_step_outputs = decoder_step_ensemble(
+                input_tokens, prev_scores, timestep, *pytorch_encoder_outputs
+            )
+
+        comp_out_tokens[1, :] = pytorch_first_step_outputs[0]
+        comp_out_scores[1, :] = pytorch_first_step_outputs[1]
+        comp_out_prev_indices[1, :] = pytorch_first_step_outputs[2]
+        comp_out_weights[1, :, :] = pytorch_first_step_outputs[3]
+
+        next_input_tokens = pytorch_first_step_outputs[0]
+        next_prev_scores = pytorch_first_step_outputs[1]
+        timestep += 1
+
+        # Tile states after first timestep
+        next_states = list(pytorch_first_step_outputs[4:])
+        for i in range(len(model_list)):
+            next_states[i] = next_states[i].repeat(1, beam_size, 1)
+
+        with torch.no_grad():
+            pytorch_next_step_outputs = decoder_step_ensemble(
+                next_input_tokens, next_prev_scores, timestep, *next_states
+            )
+
+        comp_out_tokens[2, :] = pytorch_next_step_outputs[0]
+        comp_out_scores[2, :] = pytorch_next_step_outputs[1]
+        comp_out_prev_indices[2, :] = pytorch_next_step_outputs[2]
+        comp_out_weights[2, :, :] = pytorch_next_step_outputs[3]
+
+        np.testing.assert_array_equal(comp_out_tokens, bs_out_tokens.numpy())
+        np.testing.assert_allclose(
+            comp_out_scores, bs_out_scores.numpy(), rtol=1e-4, atol=1e-6
+        )
+        np.testing.assert_array_equal(
+            comp_out_prev_indices, bs_out_prev_indices.numpy()
+        )
+        np.testing.assert_allclose(
+            comp_out_weights, bs_out_weights.numpy(), rtol=1e-4, atol=1e-6
+        )
+
+    def test_beam_component_equivalence_default(self):
+        test_args = test_utils.ModelParamsDict(
+            encoder_bidirectional=True, sequence_lstm=True
+        )
+        self._test_beam_component_equivalence(test_args)
