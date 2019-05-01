@@ -41,7 +41,7 @@ def get_arg_parser():
 
 
 class CharIBMModel1(ibm_model1.IBMModel1):
-    def __init__(self, max_subword_len: int = 8):
+    def __init__(self, max_subword_len: int = 20):
         super().__init__()
         self.eow_symbol = "_EW"  # End of word symbol.
         self.max_subword_len = max_subword_len
@@ -90,7 +90,7 @@ class Word2CharIBMModel1(CharIBMModel1):
     the source side is still word-based.
     """
 
-    def __init__(self, max_subword_len: int = 8):
+    def __init__(self, max_subword_len: int = 20):
         super().__init__(max_subword_len=max_subword_len)
 
     def initialize_translation_probs(self, src_path: str, dst_path: str):

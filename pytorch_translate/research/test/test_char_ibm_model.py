@@ -38,7 +38,7 @@ class TestCharIBMModel1(unittest.TestCase):
         ibm_model = CharIBMModel1()
         ibm_model.initialize_translation_probs(f1, f2)
         assert ibm_model.translation_prob["5"]["d" + ibm_model.eow_symbol] > 0
-        assert len(ibm_model.translation_prob) == 80
+        assert len(ibm_model.translation_prob) == 83
         assert len(ibm_model.training_data) == 4
 
         ibm_model = Word2CharIBMModel1(max_subword_len=4)
