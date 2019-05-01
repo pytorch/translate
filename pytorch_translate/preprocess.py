@@ -5,7 +5,7 @@ import os
 import tempfile
 from typing import List, Optional
 
-from pytorch_translate import constants, options as pytorch_translate_options
+from pytorch_translate import constants, options as pytorch_translate_options, utils
 from pytorch_translate.data import char_data, data as pytorch_translate_data
 from pytorch_translate.dictionary import Dictionary
 
@@ -183,12 +183,21 @@ def binarize_text_file_multilingual(
 
 
 def preprocess_corpora(args):
-    args.train_source_binary_path = maybe_generate_temp_file_path(
-        args.train_source_binary_path
-    )
-    args.train_target_binary_path = maybe_generate_temp_file_path(
-        args.train_target_binary_path
-    )
+    if (
+        args.train_source_binary_path is not None
+        and args.train_target_binary_path is not None
+    ):
+        if isinstance(
+            utils.maybe_parse_collection_argument(args.train_source_binary_path), str
+        ) and isinstance(
+            utils.maybe_parse_collection_argument(args.train_target_binary_path), str
+        ):
+            args.train_source_binary_path = maybe_generate_temp_file_path(
+                args.train_source_binary_path
+            )
+            args.train_target_binary_path = maybe_generate_temp_file_path(
+                args.train_target_binary_path
+            )
     args.eval_source_binary_path = maybe_generate_temp_file_path(
         args.eval_source_binary_path
     )

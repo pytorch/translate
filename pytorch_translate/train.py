@@ -41,6 +41,7 @@ from pytorch_translate import (
     multi_model,
     options as pytorch_translate_options,
     preprocess,
+    utils as pytorch_translate_utils,
 )
 from pytorch_translate.dual_learning import dual_learning_criterion  # noqa
 from pytorch_translate.dual_learning import dual_learning_task  # noqa
@@ -273,11 +274,36 @@ def setup_training_model(args):
             is_train=True,
         )
     else:
+        # Support both single and multi path loading for now
+        dataset_upsampling = getattr(args, "dataset_upsampling", None)
+        dataset_relative_ratio = getattr(args, "dataset_relative_ratio", None)
+        if dataset_upsampling is not None or dataset_relative_ratio is not None:
+
+            source_lang = getattr(args, "source_lang", None)
+            target_lang = getattr(args, "target_lang", None)
+            if dataset_upsampling is not None:
+                dataset_upsampling = pytorch_translate_utils.maybe_parse_collection_argument(
+                    dataset_upsampling
+                )[
+                    source_lang + "-" + target_lang
+                ]
+            if dataset_relative_ratio is not None:
+                dataset_relative_ratio = pytorch_translate_utils.maybe_parse_collection_argument(
+                    dataset_relative_ratio
+                )[
+                    source_lang + "-" + target_lang
+                ]
         task.load_dataset(
             split=args.train_subset,
-            src_bin_path=args.train_source_binary_path,
-            tgt_bin_path=args.train_target_binary_path,
+            src_bin_path=pytorch_translate_utils.maybe_parse_collection_argument(
+                args.train_source_binary_path
+            ),
+            tgt_bin_path=pytorch_translate_utils.maybe_parse_collection_argument(
+                args.train_target_binary_path
+            ),
             weights_file=getattr(args, "train_weights_path", None),
+            dataset_upsampling=dataset_upsampling,
+            dataset_relative_ratio=dataset_relative_ratio,
         )
     if args.task == "dual_learning_task":
         task.load_dataset(split=args.valid_subset, seed=args.seed)

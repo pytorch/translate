@@ -2,7 +2,7 @@
 
 import os
 from collections import OrderedDict
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from fairseq import data, options
@@ -177,7 +177,8 @@ class PytorchTranslateTask(FairseqTask):
         split: str,
         src_multiple_bin_paths: Dict[str, str],
         tgt_multiple_bin_paths: Dict[str, str],
-        dataset_upsampling: Optional[Dict[str, float]],
+        dataset_upsampling: Optional[Dict[str, float]] = None,
+        dataset_relative_ratio: Optional[Tuple[str, float]] = None,
     ):
         corpora_map = pytorch_translate_data.ParallelCorporaMapConfig(
             src_files=src_multiple_bin_paths, tgt_files=tgt_multiple_bin_paths
@@ -198,15 +199,22 @@ class PytorchTranslateTask(FairseqTask):
                 tgt_dict=self.target_dictionary,
                 left_pad_source=False,
             )
+        total_line_count = sum(len(datasets[key]) for key in datasets)
+        if dataset_relative_ratio is not None:
+            ds, ratio = dataset_relative_ratio
+            line_count = len(datasets[ds])
+            # By definition ratio = u * line_count / sum(#lines of other datasets)
+            u = (total_line_count - line_count) / line_count * ratio
+            dataset_upsampling = {key: u}
+
         dataset_weights = {
-            key: 1.0 / len(src_multiple_bin_paths)
+            key: 1.0 * len(datasets[key]) / total_line_count
             for key in src_multiple_bin_paths.keys()
         }
-
         if dataset_upsampling is not None:
             for k, v in dataset_upsampling.items():
                 dataset_weights[k] *= v
-
+        print(f"|dataset_weights:{dataset_weights}")
         self.datasets[split] = MultiCorpusSampledDataset(
             datasets=datasets,
             default_key=list(dataset_weights.keys())[0],
@@ -220,7 +228,10 @@ class PytorchTranslateTask(FairseqTask):
         tgt_bin_path: Union[str, Dict[str, str]],
         weights_file=None,
         dataset_upsampling: Optional[Dict[str, float]] = None,
+        dataset_relative_ratio: Optional[Tuple[str, float]] = None,
     ):
+        # At most one of dataset_upsampling / dataset_relative_ratio could be
+        # specified.
         if type(src_bin_path) is str:
             assert type(tgt_bin_path) is str
             self._load_dataset_single_path(
@@ -229,12 +240,30 @@ class PytorchTranslateTask(FairseqTask):
         else:
             assert type(tgt_bin_path) is not str
             assert set(src_bin_path.keys()) == set(tgt_bin_path.keys())
-            if dataset_upsampling is not None:
+            if dataset_relative_ratio is not None:
+                assert dataset_upsampling is None, "dataset_upsampling and "
+                "dataset_relative_ratio couldn't be specified together."
+                self._load_dataset_multi_path(
+                    split=split,
+                    src_multiple_bin_paths=src_bin_path,
+                    tgt_multiple_bin_paths=tgt_bin_path,
+                    dataset_relative_ratio=dataset_relative_ratio,
+                )
+            elif dataset_upsampling is not None:
                 for key in dataset_upsampling.keys():
                     assert key in src_bin_path.keys()
-            self._load_dataset_multi_path(
-                split, src_bin_path, tgt_bin_path, dataset_upsampling
-            )
+                self._load_dataset_multi_path(
+                    split=split,
+                    src_multiple_bin_paths=src_bin_path,
+                    tgt_multiple_bin_paths=tgt_bin_path,
+                    dataset_upsampling=dataset_upsampling,
+                )
+            else:
+                self._load_dataset_multi_path(
+                    split=split,
+                    src_multiple_bin_paths=src_bin_path,
+                    tgt_multiple_bin_paths=tgt_bin_path,
+                )
 
         if self.args.log_verbose:
             print("Finished loading dataset", flush=True)

@@ -654,8 +654,10 @@ def generate(args):
 
     lang_pair = None
     if isinstance(task, PytorchTranslateSemiSupervised):
-        lang_pair = "src-tgt"
-
+        if args.source_lang and args.target_lang:
+            lang_pair = args.source_lang + "-" + args.target_lang
+        else:
+            lang_pair = "src-tgt"
     scorer, num_sentences, gen_timer, _ = generate_score(
         args=args,
         task=task,

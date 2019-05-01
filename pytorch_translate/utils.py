@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
 import argparse
+import ast
 import os
 import signal
 import threading
 import time
-from typing import List, Optional
+from typing import Dict, List, Optional, Union
 
 import torch
 from fairseq import distributed_utils, tasks, utils
@@ -297,3 +298,11 @@ def get_source_tokens_tensor(src_tokens):
         return src_tokens[0]
     else:
         return src_tokens
+
+
+def maybe_parse_collection_argument(path: str) -> Union[str, Dict]:
+    try:
+        path_dict = ast.literal_eval(path)
+    except Exception:
+        return path
+    return path_dict
