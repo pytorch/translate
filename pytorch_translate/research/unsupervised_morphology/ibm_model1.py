@@ -7,7 +7,7 @@ from multiprocessing import Pool
 from typing import Dict, List, Tuple
 
 
-logging.basicConfig(format="%(asctime)s %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -57,11 +57,11 @@ class IBMModel1(object):
         Args:
             num_iters: Number of EM iterations.
         """
-        logger.warning("Initializing model parameters")
+        logger.info("Initializing model parameters")
         self.initialize_translation_probs(src_path=src_path, dst_path=dst_path)
         with Pool(processes=num_cpus) as pool:
             for iter in range(num_iters):
-                logger.warning(f"Iteration of IBM model: {str(iter+1)}")
+                logger.info(f"Iteration of IBM model: {str(iter+1)}")
                 self.em_step(
                     src_path=src_path, dst_path=dst_path, num_cpus=num_cpus, pool=pool
                 )
