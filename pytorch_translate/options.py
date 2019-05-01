@@ -266,6 +266,24 @@ def add_preprocessing_args(parser):
         "dataset_upsampling / dataset_relative_ratio could be specified.",
     )
     group.add_argument(
+        "--word-dropout-prob-map",
+        default=None,
+        help="Use NoisingDataset, and this argument specifies "
+        "the probability a token is dropped randomly",
+    )
+    group.add_argument(
+        "--word-blank-prob-map",
+        default=None,
+        help="Use NoisingDataset, and this argument specifies "
+        "the probability a token is replaced by unk",
+    )
+    group.add_argument(
+        "--max-word-shuffle-distance-map",
+        default=None,
+        help="Use NoisingDataset, and this argument specifies "
+        "the maximum distance a word could move during the shuffle",
+    )
+    group.add_argument(
         "--train-weights-path",
         default="",
         metavar="FILE",

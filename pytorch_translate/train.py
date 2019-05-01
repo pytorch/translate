@@ -26,6 +26,7 @@ from fairseq import (
     tasks,
     utils,
 )
+from fairseq.data.noising import UnsupervisedMTNoising
 from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
 from pytorch_translate import char_source_hybrid  # noqa
@@ -277,22 +278,49 @@ def setup_training_model(args):
         # Support both single and multi path loading for now
         dataset_upsampling = getattr(args, "dataset_upsampling", None)
         dataset_relative_ratio = getattr(args, "dataset_relative_ratio", None)
-        if dataset_upsampling is not None or dataset_relative_ratio is not None:
+        source_lang = getattr(args, "source_lang", "src")
+        target_lang = getattr(args, "target_lang", "tgt")
+        direction = source_lang + "-" + target_lang
 
-            source_lang = getattr(args, "source_lang", None)
-            target_lang = getattr(args, "target_lang", None)
-            if dataset_upsampling is not None:
-                dataset_upsampling = pytorch_translate_utils.maybe_parse_collection_argument(
-                    dataset_upsampling
-                )[
-                    source_lang + "-" + target_lang
-                ]
-            if dataset_relative_ratio is not None:
-                dataset_relative_ratio = pytorch_translate_utils.maybe_parse_collection_argument(
-                    dataset_relative_ratio
-                )[
-                    source_lang + "-" + target_lang
-                ]
+        if dataset_upsampling:
+            dataset_upsampling = pytorch_translate_utils.maybe_parse_collection_argument(
+                dataset_upsampling
+            )[
+                direction
+            ]
+        if dataset_relative_ratio:
+            dataset_relative_ratio = pytorch_translate_utils.maybe_parse_collection_argument(
+                dataset_relative_ratio
+            )[
+                direction
+            ]
+
+        noiser = {}
+        noise_options = [
+            "word_dropout_prob",
+            "max_word_shuffle_distance",
+            "word_blanking_prob",
+        ]
+        for option in noise_options:
+            option_map = getattr(args, option + "_map", None)
+            if option_map:
+                option_map = pytorch_translate_utils.maybe_parse_collection_argument(
+                    option_map
+                )[direction]
+                for key in option_map:
+                    if key not in noiser:
+                        noiser[key] = {
+                            noise_option: None for noise_option in noise_options
+                        }
+                    noiser[key][option] = option_map[key]
+
+        for key in noiser:
+            noiser[key] = UnsupervisedMTNoising(
+                dictionary=task.src_dict,
+                max_word_shuffle_distance=noiser[key]["max_word_shuffle_distance"] or 0,
+                word_dropout_prob=noiser[key]["word_dropout_prob"] or 0,
+                word_blanking_prob=noiser[key]["word_blanking_prob"] or 0,
+            )
         task.load_dataset(
             split=args.train_subset,
             src_bin_path=pytorch_translate_utils.maybe_parse_collection_argument(
@@ -304,7 +332,10 @@ def setup_training_model(args):
             weights_file=getattr(args, "train_weights_path", None),
             dataset_upsampling=dataset_upsampling,
             dataset_relative_ratio=dataset_relative_ratio,
+            seed=args.seed,
+            noiser=noiser,
         )
+
     if args.task == "dual_learning_task":
         task.load_dataset(split=args.valid_subset, seed=args.seed)
     else:
