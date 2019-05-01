@@ -50,27 +50,6 @@ class Rescorer:
         if args.lm_model_path:
             self.lm_scorer = LMScorer(args, args.lm_model_path, self.forward_task)
 
-    def combine_weighted_scores(self, scores, src_tokens, hypos):
-        """combine scores from different models"""
-        src_len = torch.tensor(len(src_tokens), dtype=torch.float)
-        tgt_len = torch.tensor(
-            [len(hypo["tokens"]) for hypo in hypos], dtype=torch.float
-        )
-
-        scores[
-            :, FeatureList.L2R_MODEL_SCORE.value
-        ] *= (
-            self.args.l2r_model_weight
-        )  # L2R model score should be length normalized already
-        scores[:, FeatureList.R2L_MODEL_SCORE.value] *= (
-            self.args.r2l_model_weight / tgt_len
-        )
-        scores[:, FeatureList.REVERSE_MODEL_SCORE.value] *= (
-            self.args.reverse_model_weight / src_len
-        )
-        scores[:, FeatureList.LM_SCORE.value] *= self.args.lm_model_weight / src_len
-        return scores.sum(dim=1).max(0)[1]
-
     def score(self, src_tokens, hypos):
         """run models and compute scores based on p(y), p(x|y) etc."""
         scores = torch.zeros((len(hypos), len(FeatureList)), dtype=torch.float)
@@ -80,12 +59,11 @@ class Rescorer:
         self.compute_reverse_model_scores(src_tokens, hypos, scores)
         self.compute_lm_scores(src_tokens, hypos, scores)
 
-        max_score_index = self.combine_weighted_scores(scores, src_tokens, hypos)
-        return hypos[max_score_index]["tokens"].int().cpu()
+        return scores
 
     def compute_l2r_model_scores(self, src_tokens, hypos, scores):
-        for i, hypo in enumerate(hypos):
-            scores[i, FeatureList.L2R_MODEL_SCORE.value] = hypo["score"]
+        l2r_scores = self.l2r_model_scorer.score(src_tokens, hypos)
+        scores[:, FeatureList.L2R_MODEL_SCORE.value] = l2r_scores[:]
 
     def compute_r2l_model_scores(self, src_tokens, hypos, scores):
         if not self.r2l_model_scorer:
@@ -169,7 +147,61 @@ def get_arg_parser():
         type=float,
         help=("Provide a weight for the lm rescoring model"),
     )
+    parser.add_argument(
+        "--length-penalty",
+        default=1.0,
+        type=float,
+        help=("Provide a weight for length penalty used in rescoring"),
+    )
     return parser
+
+
+def combine_weighted_scores(scores, weights, src_len, tgt_len, lenpen):
+    """ Combines scores from different models and returns
+
+    Args:
+        scores: scores for each feature and hypo [num_of_hypos, num_of_features]
+        weights: weights for each feature [num_of_features]
+        src_len: number of source sentence tokens
+        tgt_len: list of target sentence tokens lengths [num_of_hypos]
+        lenpen: float representing length penalty
+
+    Returns:
+        weighted_scores: one unified score for each hypothesis [num_of_hypos]
+    """
+    weighted_scores = scores.clone()
+    weighted_scores[:, FeatureList.L2R_MODEL_SCORE.value] /= tgt_len ** lenpen
+    weighted_scores[:, FeatureList.R2L_MODEL_SCORE.value] /= tgt_len ** lenpen
+    weighted_scores[:, FeatureList.REVERSE_MODEL_SCORE.value] /= src_len ** lenpen
+    weighted_scores[:, FeatureList.LM_SCORE.value] /= tgt_len ** lenpen
+
+    weighted_scores *= torch.tensor(weights)
+    # convert [num_of_hypos, num_of_features] to [num_of_hypos] and return
+    return weighted_scores.sum(dim=1)
+
+
+def find_top_tokens(args, trans_info, rescorer):
+    """ Rescore translations and combine weights to find top hypo tokens
+    """
+    src_tokens = trans_info["src_tokens"].cuda()
+    hypos = trans_info["hypos"]
+
+    scores = rescorer.score(src_tokens, hypos)
+
+    # Prepare all the weights and call combine weighted scores
+    weights = [
+        args.l2r_model_weight,
+        args.r2l_model_weight,
+        args.reverse_model_weight,
+        args.lm_model_weight,
+    ]
+    src_len = len(src_tokens)
+    tgt_len = torch.tensor([len(hypo["tokens"]) for hypo in hypos], dtype=torch.float)
+    combined_scores = combine_weighted_scores(
+        scores, weights, src_len, tgt_len, args.length_penalty
+    )
+    top_index = combined_scores.max(0)[1]
+    return hypos[top_index]["tokens"]
 
 
 def main():
@@ -196,11 +228,10 @@ def main():
             trans_info["hypos"][0]["tokens"].int().cpu(),
         )
 
-        rescoring_top_tokens = rescorer.score(
-            trans_info["src_tokens"].cuda(), trans_info["hypos"]
-        )
+        top_tokens = find_top_tokens(args, trans_info, rescorer)
+
         rescoring_bleu_scorer.add(
-            trans_info["target_tokens"].int().cpu(), rescoring_top_tokens.int().cpu()
+            trans_info["target_tokens"].int().cpu(), top_tokens.int().cpu()
         )
 
     print("| Base ", base_bleu_scorer.result_string())
