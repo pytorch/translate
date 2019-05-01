@@ -706,6 +706,12 @@ def expand_generation_args(group, train=False):
         default=0.0,
         help=("The diversity rate of sibling_rank for generating diverse beams"),
     )
+    group.add_argument(
+        "--hypotheses-export-path",
+        default=None,
+        type=str,
+        help=("Optional path to save all generated hypotheses to external file"),
+    )
 
     # These arguments are only used during training
     if train:
