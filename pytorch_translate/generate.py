@@ -155,6 +155,7 @@ def _generate_score(models, args, task, dataset):
     # and zero probs scores
     translated_sentences = [""] * len(dataset)
     translated_scores = [0.0] * len(dataset)
+    hypos_list = []
 
     collect_output_hypos = getattr(args, "output_hypos_binary_path", False)
     if collect_output_hypos:
@@ -211,8 +212,9 @@ def _generate_score(models, args, task, dataset):
             if oracle_scorer is not None:
                 oracle_scorer.add(trans_info.target_tokens, trans_info.best_hypo_tokens)
 
-            translated_sentences[trans_info.sample_id] = trans_info.hypo_str
-            translated_scores[trans_info.sample_id] = trans_info.hypo_score
+            if getattr(args, "translation_output_file", False):
+                translated_sentences[trans_info.sample_id] = trans_info.hypo_str
+                hypos_list.append(trans_info.hypos)
             if collect_output_hypos:
                 output_hypos_token_arrays[
                     trans_info.sample_id
@@ -259,12 +261,21 @@ def _generate_score(models, args, task, dataset):
         pickle.dump(translation_info_list, f)
         f.close()
 
-    # If applicable, save the translations to the output file
+    # If applicable, save the translations and hypos to the output file
     # For eg. external evaluation
     if getattr(args, "translation_output_file", False):
         with open(args.translation_output_file, "w") as out_file:
             for hypo_str in translated_sentences:
                 print(hypo_str, file=out_file)
+        with open(args.translation_output_file + ".hypos", "w") as out_file:
+            for hypos in hypos_list:
+                for hypo in hypos:
+                    print(
+                        task.tgt_dict.string(
+                            hypo["tokens"], bpe_symbol=args.remove_bpe
+                        ),
+                        file=out_file,
+                    )
 
     if getattr(args, "translation_probs_file", False):
         with open(args.translation_probs_file, "w") as out_file:
