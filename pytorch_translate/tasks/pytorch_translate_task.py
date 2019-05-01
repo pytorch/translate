@@ -6,8 +6,9 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from fairseq import data, options
-from fairseq.data import LanguagePairDataset
+from fairseq.data import LanguagePairDataset, NoisingDataset
 from fairseq.data.multi_corpus_sampled_dataset import MultiCorpusSampledDataset
+from fairseq.data.noising import UnsupervisedMTNoising
 from fairseq.tasks import FairseqTask, register_task
 from pytorch_translate import dictionary as pytorch_translate_dictionary
 from pytorch_translate.data import (
@@ -179,6 +180,8 @@ class PytorchTranslateTask(FairseqTask):
         tgt_multiple_bin_paths: Dict[str, str],
         dataset_upsampling: Optional[Dict[str, float]] = None,
         dataset_relative_ratio: Optional[Tuple[str, float]] = None,
+        seed: Optional[int] = None,
+        noiser: Optional[Dict[str, UnsupervisedMTNoising]] = None,
     ):
         corpora_map = pytorch_translate_data.ParallelCorporaMapConfig(
             src_files=src_multiple_bin_paths, tgt_files=tgt_multiple_bin_paths
@@ -190,9 +193,17 @@ class PytorchTranslateTask(FairseqTask):
                 pytorch_translate_data.InMemoryNumpyDataset.create_from_file(src),
                 pytorch_translate_data.InMemoryNumpyDataset.create_from_file(tgt),
             )
+            src_sizes = src_dataset.sizes
+            if noiser is not None and key in noiser:
+                src_dataset = NoisingDataset(
+                    src_dataset=src_dataset,
+                    src_dict=self.source_dictionary,
+                    seed=seed,
+                    noiser=noiser[key],
+                )
             datasets[key] = LanguagePairDataset(
                 src=src_dataset,
-                src_sizes=src_dataset.sizes,
+                src_sizes=src_sizes,
                 src_dict=self.source_dictionary,
                 tgt=tgt_dataset,
                 tgt_sizes=tgt_dataset.sizes,
@@ -229,13 +240,18 @@ class PytorchTranslateTask(FairseqTask):
         weights_file=None,
         dataset_upsampling: Optional[Dict[str, float]] = None,
         dataset_relative_ratio: Optional[Tuple[str, float]] = None,
+        seed: Optional[int] = None,
+        noiser: Optional[Dict[str, UnsupervisedMTNoising]] = None,
     ):
         # At most one of dataset_upsampling / dataset_relative_ratio could be
         # specified.
         if type(src_bin_path) is str:
             assert type(tgt_bin_path) is str
             self._load_dataset_single_path(
-                split, src_bin_path, tgt_bin_path, weights_file
+                split=split,
+                src_bin_path=src_bin_path,
+                tgt_bin_path=tgt_bin_path,
+                weights_file=weights_file,
             )
         else:
             assert type(tgt_bin_path) is not str
@@ -243,11 +259,14 @@ class PytorchTranslateTask(FairseqTask):
             if dataset_relative_ratio is not None:
                 assert dataset_upsampling is None, "dataset_upsampling and "
                 "dataset_relative_ratio couldn't be specified together."
+                assert dataset_relative_ratio[0] in src_bin_path.keys()
                 self._load_dataset_multi_path(
                     split=split,
                     src_multiple_bin_paths=src_bin_path,
                     tgt_multiple_bin_paths=tgt_bin_path,
                     dataset_relative_ratio=dataset_relative_ratio,
+                    seed=seed,
+                    noiser=noiser,
                 )
             elif dataset_upsampling is not None:
                 for key in dataset_upsampling.keys():
@@ -257,12 +276,16 @@ class PytorchTranslateTask(FairseqTask):
                     src_multiple_bin_paths=src_bin_path,
                     tgt_multiple_bin_paths=tgt_bin_path,
                     dataset_upsampling=dataset_upsampling,
+                    seed=seed,
+                    noiser=noiser,
                 )
             else:
                 self._load_dataset_multi_path(
                     split=split,
                     src_multiple_bin_paths=src_bin_path,
                     tgt_multiple_bin_paths=tgt_bin_path,
+                    seed=seed,
+                    noiser=noiser,
                 )
 
         if self.args.log_verbose:
