@@ -131,7 +131,14 @@ def load_models_from_checkpoints(
             model = model.get_student_model()
 
         if isinstance(model, semi_supervised.SemiSupervisedModel):
-            models.append(model.models["src-tgt"])
+            if (
+                model_args.source_lang is not None
+                and model_args.target_lang is not None
+            ):
+                direction = model_args.source_lang + "-" + model_args.target_lang
+            else:
+                direction = "src-tgt"
+            models.append(model.models[direction])
         else:
             models.append(model)
 
