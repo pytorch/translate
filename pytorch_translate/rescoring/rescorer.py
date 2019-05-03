@@ -13,6 +13,7 @@ from pytorch_translate.rescoring.model_scorers import (
     ReverseModelScorer,
     SimpleModelScorer,
 )
+from pytorch_translate.research.rescore import cloze_transformer_model  # noqa
 from pytorch_translate.tasks import pytorch_translate_task  # noqa
 from tqdm import tqdm
 
@@ -22,6 +23,7 @@ class FeatureList(Enum):
     R2L_MODEL_SCORE = 1
     REVERSE_MODEL_SCORE = 2
     LM_SCORE = 3
+    CLOZE_SCORE = 4
 
 
 class Rescorer:
@@ -50,6 +52,35 @@ class Rescorer:
         if args.lm_model_path:
             self.lm_scorer = LMScorer(args, args.lm_model_path, self.forward_task)
 
+        self.cloze_transformer_scorer = None
+        if args.cloze_transformer_path:
+            self.cloze_transformer_scorer = SimpleModelScorer(
+                args, args.cloze_transformer_path
+            )
+
+    def combine_weighted_scores(self, scores, src_tokens, hypos):
+        """combine scores from different models"""
+        src_len = torch.tensor(len(src_tokens), dtype=torch.float)
+        tgt_len = torch.tensor(
+            [len(hypo["tokens"]) for hypo in hypos], dtype=torch.float
+        )
+        scores[
+            :, FeatureList.L2R_MODEL_SCORE.value
+        ] *= (
+            self.args.l2r_model_weight
+        )  # L2R model score should be length normalized already
+        scores[:, FeatureList.R2L_MODEL_SCORE.value] *= (
+            self.args.r2l_model_weight / tgt_len
+        )
+        scores[:, FeatureList.REVERSE_MODEL_SCORE.value] *= (
+            self.args.reverse_model_weight / src_len
+        )
+        scores[:, FeatureList.LM_SCORE.value] *= self.args.lm_model_weight / src_len
+        scores[:, FeatureList.CLOZE_SCORE.value] *= (
+            self.args.cloze_transformer_weight / tgt_len
+        )
+        return scores.sum(dim=1).max(0)[1]
+
     def score(self, src_tokens, hypos):
         """run models and compute scores based on p(y), p(x|y) etc."""
         scores = torch.zeros((len(hypos), len(FeatureList)), dtype=torch.float)
@@ -58,6 +89,7 @@ class Rescorer:
         self.compute_r2l_model_scores(src_tokens, hypos, scores)
         self.compute_reverse_model_scores(src_tokens, hypos, scores)
         self.compute_lm_scores(src_tokens, hypos, scores)
+        self.compute_cloze_transformer_scores(src_tokens, hypos, scores)
 
         return scores
 
@@ -87,6 +119,13 @@ class Rescorer:
 
         lm_scores = self.lm_scorer.score(src_tokens, hypos)
         scores[:, FeatureList.LM_SCORE.value] = lm_scores[:]
+
+    def compute_cloze_transformer_scores(self, src_tokens, hypos, scores):
+        if not self.cloze_transformer_scorer:
+            return
+
+        cloze_scores = self.cloze_transformer_scorer.score(src_tokens, hypos)
+        scores[:, FeatureList.CLOZE_SCORE.value] = cloze_scores[:]
 
 
 def get_arg_parser():
@@ -152,6 +191,18 @@ def get_arg_parser():
         default=1.0,
         type=float,
         help=("Provide a weight for length penalty used in rescoring"),
+    )
+    parser.add_argument(
+        "--cloze-transformer-path",
+        default=None,
+        type=str,
+        help=("Provide a path for the cloze transformer rescoring model"),
+    )
+    parser.add_argument(
+        "--cloze-transformer-weight",
+        default=1.0,
+        type=float,
+        help=("Provide a weight for the cloze transformer model"),
     )
     return parser
 
