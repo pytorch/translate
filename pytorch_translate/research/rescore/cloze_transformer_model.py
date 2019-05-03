@@ -109,6 +109,7 @@ class ClozeTransformerDecoder(TransformerDecoder):
            [[0, -inf, 0]
             [0,  0, -inf]
             [0,  0,   0]]
+        The attention map is not ture diagonal since we predict y_{t+1} at time-step t
         """
         dim = tensor.size(0)
         if (

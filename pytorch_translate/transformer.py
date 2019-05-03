@@ -258,12 +258,10 @@ class TransformerModel(FairseqModel):
 class TransformerEncoder(FairseqEncoder):
     """Transformer encoder."""
 
-    def __init__(
-        self, args, dictionary, embed_tokens, proj_to_decoder=True
-    ):
+    def __init__(self, args, dictionary, embed_tokens, proj_to_decoder=True):
         super().__init__(dictionary)
         self.transformer_embedding = TransformerEmbedding(
-            args=args, embed_tokens=embed_tokens,
+            args=args, embed_tokens=embed_tokens
         )
 
         self.transformer_encoder_given_embeddings = TransformerEncoderGivenEmbeddings(
@@ -354,10 +352,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         self.embed_tokens = embed_tokens
         self.embed_scale = math.sqrt(embed_dim)
         self.embed_positions = fairseq_transformer.PositionalEmbedding(
-            1024,
-            embed_dim,
-            padding_idx,
-            learned=args.decoder_learned_pos,
+            1024, embed_dim, padding_idx, learned=args.decoder_learned_pos
         )
 
         self.layers = nn.ModuleList([])
