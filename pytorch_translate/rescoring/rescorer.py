@@ -245,6 +245,7 @@ def find_top_tokens(args, trans_info, rescorer):
         args.r2l_model_weight,
         args.reverse_model_weight,
         args.lm_model_weight,
+        args.cloze_transformer_weight,
     ]
     src_len = len(src_tokens)
     tgt_len = torch.tensor([len(hypo["tokens"]) for hypo in hypos], dtype=torch.float)

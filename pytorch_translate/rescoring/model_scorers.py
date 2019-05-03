@@ -211,8 +211,7 @@ class ReverseModelScorer(SimpleModelScorer):
                 (
                     torch.tensor([eos]).type_as(src_tokens_mapped),
                     reversed(src_tokens_mapped)
-                    if self.task.args.reverse_source
-                    != self.forward_task.args.reverse_source
+                    if self.forward_task.args.reverse_source
                     else src_tokens_mapped,
                 ),
                 dim=0,
@@ -235,9 +234,11 @@ class ReverseModelScorer(SimpleModelScorer):
             tgt_tokens_mapped = self.task.src_dict.encode_line(
                 tgt_string, add_if_not_exist=False
             )
-            if not self.args.append_eos_to_source:
-                tgt_tokens_mapped = tgt_tokens_mapped[:-1]
-            src_tokens[i, : len(tgt_tokens_mapped)] = tgt_tokens_mapped
+            src_tokens[i, : len(tgt_tokens_mapped)] = (
+                reversed(tgt_tokens_mapped)
+                if self.task.args.reverse_source
+                else tgt_tokens_mapped
+            )
 
         src_length = src_tokens.shape[1]
         encoder_inputs = (src_tokens, [src_length])
