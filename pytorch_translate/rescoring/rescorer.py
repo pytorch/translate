@@ -58,29 +58,6 @@ class Rescorer:
                 args, args.cloze_transformer_path
             )
 
-    def combine_weighted_scores(self, scores, src_tokens, hypos):
-        """combine scores from different models"""
-        src_len = torch.tensor(len(src_tokens), dtype=torch.float)
-        tgt_len = torch.tensor(
-            [len(hypo["tokens"]) for hypo in hypos], dtype=torch.float
-        )
-        scores[
-            :, FeatureList.L2R_MODEL_SCORE.value
-        ] *= (
-            self.args.l2r_model_weight
-        )  # L2R model score should be length normalized already
-        scores[:, FeatureList.R2L_MODEL_SCORE.value] *= (
-            self.args.r2l_model_weight / tgt_len
-        )
-        scores[:, FeatureList.REVERSE_MODEL_SCORE.value] *= (
-            self.args.reverse_model_weight / src_len
-        )
-        scores[:, FeatureList.LM_SCORE.value] *= self.args.lm_model_weight / src_len
-        scores[:, FeatureList.CLOZE_SCORE.value] *= (
-            self.args.cloze_transformer_weight / tgt_len
-        )
-        return scores.sum(dim=1).max(0)[1]
-
     def score(self, src_tokens, hypos):
         """run models and compute scores based on p(y), p(x|y) etc."""
         scores = torch.zeros((len(hypos), len(FeatureList)), dtype=torch.float)
