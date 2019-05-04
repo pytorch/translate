@@ -30,7 +30,7 @@ class SequenceGenerator(object):
         diversity_sibling_gamma=0.0,
         sampling=False,
         sampling_topk=-1,
-        sampling_temperature=1,
+        temperature=1,
     ):
         """Generates translations of a given source sentence.
         Args:
@@ -59,9 +59,9 @@ class SequenceGenerator(object):
                 (default: False)
             sampling_topk (int, optional): only sample among the top-k choices
                 at each step (default: -1)
-            sampling_temperature (float, optional): temperature for sampling,
-                where values >1.0 produces more uniform sampling and values
-                <1.0 produces sharper sampling (default: 1.0)
+            temperature (float, optional): temperature, where values
+                >1.0 produce more uniform samples and values <1.0 produce
+                sharper samples (default: 1.0)
         """
         self.models = models
         self.pad = tgt_dict.pad()
@@ -81,6 +81,7 @@ class SequenceGenerator(object):
         self.lexicon_reward = lexicon_reward
         self.lexicon_indices = tgt_dict.lexicon_indices_list()
         self.retain_dropout = retain_dropout
+        self.temperature = temperature
         self.word_reward = word_reward
         if model_weights is not None:
             assert len(models) == len(model_weights)
@@ -89,8 +90,9 @@ class SequenceGenerator(object):
             self.model_weights = [1.0 / len(models)] * len(models)
         self.use_char_source = use_char_source
         assert sampling_topk < 0 or sampling, "--sampling-topk requires --sampling"
+        assert temperature > 0, "--temperature must be greater than 0"
         if sampling:
-            self.search = search.Sampling(tgt_dict, sampling_topk, sampling_temperature)
+            self.search = search.Sampling(tgt_dict, sampling_topk)
         elif diverse_beam_groups > 0:
             self.search = search.DiverseBeamSearch(
                 tgt_dict, diverse_beam_groups, diverse_beam_strength
@@ -676,6 +678,8 @@ class SequenceGenerator(object):
                     model.decoder(tokens, encoder_out, incremental_states[model])
                 )
                 decoder_out[0] = decoder_out[0][:, -1, :]
+                if self.temperature != 1.0:
+                    decoder_out[0].div_(self.temperature)
                 attn = decoder_out[1]
                 if len(decoder_out) == 3:
                     possible_translation_tokens = decoder_out[2]

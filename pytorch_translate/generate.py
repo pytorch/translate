@@ -124,7 +124,7 @@ def build_sequence_generator(args, task, models):
         diversity_sibling_gamma=args.diversity_sibling_gamma,
         sampling=args.sampling,
         sampling_topk=args.sampling_topk,
-        sampling_temperature=args.sampling_temperature,
+        temperature=args.temperature,
     )
     if use_cuda:
         translator.cuda()
