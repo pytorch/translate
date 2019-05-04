@@ -427,17 +427,8 @@ def setup_training_state(args, trainer, task, epoch_itr):
 def build_trainer(args, task, model, criterion, trainer_class):
     """ Build trainer with provided trainer_class, and set up training state.
     """
-    # Make a dummy batch to (i) warm the caching allocator and (ii) as a
-    # placeholder DistributedDataParallel when there's an uneven number of
-    # batches per worker.
-    max_positions = utils.resolve_max_positions(
-        task.max_positions(), model.max_positions()
-    )
-    dummy_batch = task.dataset("train").get_dummy_batch(args.max_tokens, max_positions)
-    oom_batch = task.dataset("train").get_dummy_batch(1, max_positions)
-
     # Build trainer
-    trainer = trainer_class(args, task, model, criterion, dummy_batch, oom_batch)
+    trainer = trainer_class(args, task, model, criterion)
 
     print(
         f"| training on {args.distributed_world_size} total GPUs "
@@ -451,7 +442,9 @@ def build_trainer(args, task, model, criterion, trainer_class):
         dataset=task.dataset(args.train_subset),
         max_tokens=args.max_tokens,
         max_sentences=args.max_sentences,
-        max_positions=max_positions,
+        max_positions=utils.resolve_max_positions(
+            task.max_positions(), model.max_positions()
+        ),
         ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
         required_batch_size_multiple=8,
         seed=args.seed,

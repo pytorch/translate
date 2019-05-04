@@ -327,7 +327,3 @@ class LanguagePairSourceCharDataset(data.LanguagePairDataset):
             "target": target,
             "weights": weights,
         }
-
-    def get_dummy_batch(self, num_tokens, max_positions, **kwargs):
-        """Return a dummy batch."""
-        return self[0]

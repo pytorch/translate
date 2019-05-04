@@ -179,32 +179,3 @@ class TeacherDataset(data.language_pair_dataset.LanguagePairDataset):
         batched_samples["top_k_scores"] = memoized_probs
         batched_samples["top_k_indices"] = memoized_prob_idx
         return batched_samples
-
-    def get_dummy_batch(self, num_tokens, max_positions, src_len=128, tgt_len=128):
-        """Return a dummy batch with a given number of tokens."""
-        src_len, tgt_len = utils.resolve_max_positions(
-            (src_len, tgt_len),
-            max_positions,
-            (self.max_source_positions, self.max_target_positions),
-        )
-        bsz = max(num_tokens // max(src_len, tgt_len), 1)
-        dummy_dataset = [
-            {
-                "id": i,
-                "source": self.src_dict.dummy_sentence(src_len),
-                "target": self.tgt_dict.dummy_sentence(tgt_len)
-                if self.tgt_dict is not None
-                else None,
-            }
-            for i in range(bsz)
-        ]
-        batched_samples = data.language_pair_dataset.collate(
-            dummy_dataset,
-            pad_idx=self.src_dict.pad(),
-            eos_idx=self.src_dict.eos(),
-            left_pad_source=self.left_pad_source,
-            left_pad_target=self.left_pad_target,
-            input_feeding=self.input_feeding,
-        )
-
-        return batched_samples
