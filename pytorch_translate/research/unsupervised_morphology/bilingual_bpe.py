@@ -110,10 +110,12 @@ class BilingualBPE(BPE):
         """
         target_word_probs = self._calc_word_probs(txt_path=dst_txt_path)
         bpe_alignment_prob = defaultdict(float)
-        for dst_word in self.dst2src_ibm_model.translation_prob.keys():
+        for dst_word_id in list(self.dst2src_ibm_model.translation_prob.keys()):
+            dst_word = self.dst2src_ibm_model.int2str(dst_word_id)
             target_word_prob = target_word_probs[dst_word]
-            alignment_probs = self.dst2src_ibm_model.translation_prob[dst_word]
-            for src_subword in self.dst2src_ibm_model.translation_prob[dst_word]:
+            alignment_probs = self.dst2src_ibm_model.translation_prob[dst_word_id]
+            for src_subword_id in list(alignment_probs.keys()):
+                src_subword = self.dst2src_ibm_model.int2str(src_subword_id)
                 bpe_alignment_prob[src_subword] += (
                     alignment_probs[src_subword] * target_word_prob
                 )
