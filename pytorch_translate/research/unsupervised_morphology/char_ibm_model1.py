@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 
+import logging
 from collections import Counter, defaultdict
+from itertools import chain
 from optparse import OptionParser
-from typing import Dict
+from typing import Dict, List
 
 from pytorch_translate.research.unsupervised_morphology import ibm_model1
+
+
+logging.basicConfig(format="%(asctime)s %(message)s")
+logger = logging.getLogger(__name__)
 
 
 def get_arg_parser():
@@ -41,24 +47,26 @@ def get_arg_parser():
 
 
 class CharIBMModel1(ibm_model1.IBMModel1):
-    def __init__(self, max_subword_len: int = 20):
+    def __init__(self, max_subword_len: int = 8):
         super().__init__()
         self.eow_symbol = "_EW"  # End of word symbol.
         self.max_subword_len = max_subword_len
+        self.subword_dict: Dict[str, List[str]] = {}
 
-    def get_possible_subwords(self, word: str) -> Dict[str, int]:
+    def get_possible_subwords(self, word: str) -> List[str]:
+        if word in self.subword_dict:
+            return self.subword_dict[word]
         subwords = []
         chars = list(word) + [self.eow_symbol]
         for i in range(len(chars)):
             for j in range(i + 1, min(i + 1 + self.max_subword_len, len(chars) + 1)):
                 subword = "".join(chars[i:j])
                 subwords.append(subword)
-        return Counter(subwords)
+        return subwords
 
     def get_subword_counts_for_line(self, line: str) -> Dict[str, int]:
-        return sum(
-            [self.get_possible_subwords(word) for word in line.strip().split()],
-            Counter(),
+        return Counter(
+            chain(*[self.get_possible_subwords(word) for word in line.strip().split()])
         )
 
     def initialize_translation_probs(self, src_path: str, dst_path: str):
@@ -77,6 +85,8 @@ class CharIBMModel1(ibm_model1.IBMModel1):
                     for dst_subword in dst_subwords_counts:
                         self.translation_prob[src_subword][dst_subword] = 1.0
                 self.training_data.append((src_subwords_counts, dst_subwords_counts))
+                if len(self.training_data) % 100000 == 0:
+                    logger.info(f"Read sentence# {len(self.training_data)}")
 
         for src_subword in self.translation_prob.keys():
             denom = len(self.translation_prob[src_subword])
@@ -90,7 +100,7 @@ class Word2CharIBMModel1(CharIBMModel1):
     the source side is still word-based.
     """
 
-    def __init__(self, max_subword_len: int = 20):
+    def __init__(self, max_subword_len: int = 8):
         super().__init__(max_subword_len=max_subword_len)
 
     def initialize_translation_probs(self, src_path: str, dst_path: str):
@@ -109,6 +119,8 @@ class Word2CharIBMModel1(CharIBMModel1):
                     for dst_sub_word in dst_sub_words.keys():
                         self.translation_prob[src_word][dst_sub_word] = 1.0
                 self.training_data.append((src_words_counts, dst_sub_words))
+                if len(self.training_data) % 100000 == 0:
+                    logger.info(f"Read sentence# {len(self.training_data)}")
 
         for src_word in self.translation_prob.keys():
             denom = len(self.translation_prob[src_word])
@@ -124,5 +136,4 @@ if __name__ == "__main__":
         src_path=options.src_file,
         dst_path=options.dst_file,
         num_iters=options.ibm_iters,
-        num_cpus=options.num_cpus,
     )

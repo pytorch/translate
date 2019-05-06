@@ -156,10 +156,8 @@ class TestBPE(unittest.TestCase):
         """
         bpe_model = bilingual_bpe.BilingualBPE()
         tmp_dir, f1, f2 = morph_utils.get_two_different_tmp_files()
-        bpe_model._init_params(
-            src_txt_path=f1, dst_txt_path=f2, num_ibm_iters=3, num_cpus=3
-        )
-        assert len(bpe_model.bpe_probs_from_alignment) == 83
+        bpe_model._init_params(src_txt_path=f1, dst_txt_path=f2, num_ibm_iters=3)
+        assert len(bpe_model.bpe_probs_from_alignment) == 80
         assert bpe_model.eow_symbol in bpe_model.bpe_probs_from_alignment
 
         shutil.rmtree(tmp_dir)
@@ -177,9 +175,7 @@ class TestBPE(unittest.TestCase):
     def test_best_candidate_bilingual(self):
         bpe_model = bilingual_bpe.BilingualBPE()
         tmp_dir, f1, f2 = morph_utils.get_two_different_tmp_files()
-        bpe_model._init_params(
-            src_txt_path=f1, dst_txt_path=f2, num_ibm_iters=3, num_cpus=3
-        )
+        bpe_model._init_params(src_txt_path=f1, dst_txt_path=f2, num_ibm_iters=3)
 
         b1 = bpe_model.get_best_candidate()
         c1 = bpe_model.get_best_candidate()
@@ -192,7 +188,7 @@ class TestBPE(unittest.TestCase):
         bpe_model = bilingual_bpe.BilingualBPE()
         tmp_dir, f1, f2 = morph_utils.get_two_different_tmp_files()
         vocab_size = bpe_model.build_vocab(
-            src_txt_path=f1, dst_txt_path=f2, vocab_size=12, num_ibm_iters=3, num_cpus=3
+            src_txt_path=f1, dst_txt_path=f2, vocab_size=12, num_ibm_iters=3
         )
         assert vocab_size == len(bpe_model.vocab) == 12
         shutil.rmtree(tmp_dir)
