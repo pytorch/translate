@@ -116,6 +116,12 @@ def get_arg_parser():
         help=("Optional path to save translation info output in pickled format"),
     )
     parser.add_argument(
+        "--scores-info-export-path",
+        default=None,
+        type=str,
+        help=("Optional path to save score output in pickled format"),
+    )
+    parser.add_argument(
         "--l2r-model-path",
         default=None,
         type=str,
@@ -230,7 +236,15 @@ def find_top_tokens(args, trans_info, rescorer):
         scores, weights, src_len, tgt_len, args.length_penalty
     )
     top_index = combined_scores.max(0)[1]
-    return hypos[top_index]["tokens"]
+
+    scores_to_export = {
+        "hypos": [hypo['tokens'].cpu().tolist() for hypo in hypos],
+        "target_tokens": trans_info['target_tokens'].cpu().numpy(),
+        "scores": scores.cpu().numpy(),
+        "src_len": src_len.cpu().numpy(),
+        "tgt_len": tgt_len.cpu().numpy(),
+    }
+    return hypos[top_index]["tokens"], scores_to_export
 
 
 def main():
@@ -246,6 +260,7 @@ def main():
     rescoring_bleu_scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
 
     translation_info_list = pickle.load(open(args.translation_info_export_path, "rb"))
+    scores_to_export_list = []
     for trans_info in tqdm(translation_info_list):
         trans_info["hypos"] = [
             {"score": hypo["score"], "tokens": hypo["tokens"].cuda()}
@@ -257,7 +272,9 @@ def main():
             trans_info["hypos"][0]["tokens"].int().cpu(),
         )
 
-        top_tokens = find_top_tokens(args, trans_info, rescorer)
+        top_tokens, scores_to_export = find_top_tokens(args, trans_info, rescorer)
+        if args.scores_info_export_path is not None:
+            scores_to_export_list.append(scores_to_export)
 
         rescoring_bleu_scorer.add(
             trans_info["target_tokens"].int().cpu(), top_tokens.int().cpu()
@@ -265,6 +282,11 @@ def main():
 
     print("| Base ", base_bleu_scorer.result_string())
     print("| Rescoring ", rescoring_bleu_scorer.result_string())
+
+    if args.scores_info_export_path is not None:
+        f = open(args.scores_info_export_path, "wb")
+        pickle.dump(scores_to_export_list, f)
+        f.close()
 
 
 if __name__ == "__main__":
