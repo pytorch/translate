@@ -3,7 +3,6 @@
 import logging
 import math
 from collections import Counter, defaultdict
-from multiprocessing import Pool
 from typing import Dict, List, Tuple
 
 
@@ -43,15 +42,15 @@ class IBMModel1(object):
                     for dst_word in dst_words:
                         self.translation_prob[src_word][dst_word] = 1.0
                 self.training_data.append((src_words, dst_words))
+                if len(self.training_data) % 100000 == 0:
+                    logger.info(f"Read sentence# {len(self.training_data)}")
 
         for src_word in self.translation_prob.keys():
             denom = len(self.translation_prob[src_word])
             for dst_word in self.translation_prob[src_word].keys():
                 self.translation_prob[src_word][dst_word] = 1.0 / denom
 
-    def learn_ibm_parameters(
-        self, src_path: str, dst_path: str, num_iters: int, num_cpus: int
-    ):
+    def learn_ibm_parameters(self, src_path: str, dst_path: str, num_iters: int):
         """
         Runs the EM algorithm for IBM model 1.
         Args:
@@ -59,54 +58,22 @@ class IBMModel1(object):
         """
         logger.info("Initializing model parameters")
         self.initialize_translation_probs(src_path=src_path, dst_path=dst_path)
-        with Pool(processes=num_cpus) as pool:
-            for iter in range(num_iters):
-                logger.info(f"Iteration of IBM model: {str(iter+1)}")
-                self.em_step(
-                    src_path=src_path, dst_path=dst_path, num_cpus=num_cpus, pool=pool
-                )
+        for iter in range(num_iters):
+            logger.info(f"Iteration of IBM model: {str(iter+1)}")
+            self.m_step(self.e_step())
 
-    def em_step(self, src_path: str, dst_path: str, num_cpus: int, pool: Pool) -> None:
-        """
-        Args:
-            num_cpus: Number of cpus used in multi-processing.
-            pool: Pool object for multi-proceesing.
-        """
-        translation_expectations = defaultdict()
-
-        data_chunk_size = max(1, math.ceil(len(self.training_data) / num_cpus))
-        indices = [
-            (
-                i * data_chunk_size,
-                min(data_chunk_size * (i + 1), len(self.training_data)),
-            )
-            for i in range(num_cpus)
-        ]
-        results = pool.map(self.e_sub_step, indices)
-        for result in results:
-            for src_word in result.keys():
-                if src_word not in translation_expectations:
-                    translation_expectations[src_word] = defaultdict(float)
-                for dst_word in result[src_word].keys():
-                    translation_expectations[src_word][dst_word] += result[src_word][
-                        dst_word
-                    ]
-
-        self.m_step(translation_expectations)
-
-    def e_sub_step(self, start_end_index: Tuple[int, int]) -> Dict[str, Dict]:
-        """
-            Running the E step as a substep on the training data based on the
-            start and end indices.
-        """
+    def e_step(self) -> Dict[str, Dict]:
+        logger.info("E step")
         translation_expectations: Dict[str, Dict] = defaultdict()
-        start_index, end_index = start_end_index
-        for i in range(start_index, end_index):
-            src_words, dst_words = self.training_data[i]
-            self.e_step(src_words, dst_words, translation_expectations)
+        for i, (src_words, dst_words) in enumerate(self.training_data):
+            self.expectation_for_one_sentence(
+                src_words, dst_words, translation_expectations
+            )
+            if (i + 1) % 1000 == 0:
+                logger.info(f"E step on sentence {str(i+1)}")
         return translation_expectations
 
-    def e_step(
+    def expectation_for_one_sentence(
         self,
         src_words: Dict[str, int],
         dst_words: Dict[str, int],
@@ -136,6 +103,7 @@ class IBMModel1(object):
                 translation_expectations[src_word][dst_word] += delta
 
     def m_step(self, translation_expectations) -> None:
+        logger.info("M step")
         for src_word in translation_expectations.keys():
             denom = sum(translation_expectations[src_word].values())
             for dst_word in translation_expectations[src_word].keys():

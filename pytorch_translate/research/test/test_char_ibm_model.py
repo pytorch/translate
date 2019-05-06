@@ -2,6 +2,7 @@
 
 import shutil
 import unittest
+from collections import Counter
 from multiprocessing import Pool
 
 from pytorch_translate.research.test import morphology_test_utils as morph_utils
@@ -16,11 +17,13 @@ class TestCharIBMModel1(unittest.TestCase):
         char_ibm_model = CharIBMModel1(max_subword_len=4)
 
         substrs = char_ibm_model.get_possible_subwords("123412345")
-        assert len(substrs) == 24
-        assert substrs[char_ibm_model.eow_symbol] == 1
-        assert substrs["5" + char_ibm_model.eow_symbol] == 1
-        assert substrs["123"] == 2
-        assert "12345" not in substrs
+        assert len(substrs) == 34
+        substr_counter = Counter(substrs)
+        assert len(substr_counter) == 24
+        assert substr_counter[char_ibm_model.eow_symbol] == 1
+        assert substr_counter["5" + char_ibm_model.eow_symbol] == 1
+        assert substr_counter["123"] == 2
+        assert "12345" not in substr_counter
 
     def test_get_subwords_counts_for_line(self):
         char_ibm_model = CharIBMModel1(max_subword_len=4)
@@ -38,7 +41,7 @@ class TestCharIBMModel1(unittest.TestCase):
         ibm_model = CharIBMModel1()
         ibm_model.initialize_translation_probs(f1, f2)
         assert ibm_model.translation_prob["5"]["d" + ibm_model.eow_symbol] > 0
-        assert len(ibm_model.translation_prob) == 83
+        assert len(ibm_model.translation_prob) == 80
         assert len(ibm_model.training_data) == 4
 
         ibm_model = Word2CharIBMModel1(max_subword_len=4)
