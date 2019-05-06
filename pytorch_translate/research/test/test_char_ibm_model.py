@@ -47,7 +47,7 @@ class TestCharIBMModel1(unittest.TestCase):
         assert "cdef" in ibm_model.translation_prob["123456789"]
         assert "cde" in ibm_model.translation_prob["123456789"]
         assert len(ibm_model.translation_prob["123456789"]) == 34
-        assert len(ibm_model.translation_prob) == 9
+        assert len(ibm_model.translation_prob) == 10
         assert len(ibm_model.training_data) == 4
 
         shutil.rmtree(tmp_dir)
