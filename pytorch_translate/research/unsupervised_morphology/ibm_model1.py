@@ -114,8 +114,7 @@ class IBMModel1(object):
     ) -> None:
         """
         Args:
-            translation_expectations: holder of expectations until now. This method
-                should update this
+            translation_expectations: holder of expectations until now.
             src_words and dst_words are Counter objects.
         """
         denom = defaultdict(float)
@@ -124,7 +123,7 @@ class IBMModel1(object):
             for dst_word in dst_words:
                 s_count, d_count = src_words[src_word], dst_words[dst_word]
                 prob = self.translation_prob[src_word][dst_word] * s_count * d_count
-                denom[src_word] += prob
+                denom[dst_word] += prob
                 translation_fractional_counts[src_word][dst_word] += prob
 
         for src_word in translation_fractional_counts.keys():
@@ -132,7 +131,7 @@ class IBMModel1(object):
                 translation_expectations[src_word] = defaultdict(float)
             for dst_word in translation_fractional_counts[src_word].keys():
                 delta = (
-                    translation_fractional_counts[src_word][dst_word] / denom[src_word]
+                    translation_fractional_counts[src_word][dst_word] / denom[dst_word]
                 )
                 translation_expectations[src_word][dst_word] += delta
 

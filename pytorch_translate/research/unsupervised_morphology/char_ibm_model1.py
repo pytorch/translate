@@ -100,7 +100,7 @@ class Word2CharIBMModel1(CharIBMModel1):
         self.training_data = []
         with open(src_path) as src_file, open(dst_path) as dst_file:
             for src_line, dst_line in zip(src_file, dst_file):
-                src_words_counts = Counter(src_line.strip().split())
+                src_words_counts = Counter(src_line.strip().split() + [self.null_str])
                 dst_sub_words = self.get_subword_counts_for_line(dst_line)
 
                 for src_word in src_words_counts.keys():
@@ -119,7 +119,7 @@ class Word2CharIBMModel1(CharIBMModel1):
 if __name__ == "__main__":
     arg_parser = get_arg_parser()
     options, args = arg_parser.parse_args()
-    ibm_model = CharIBMModel1()
+    ibm_model = Word2CharIBMModel1()
     ibm_model.learn_ibm_parameters(
         src_path=options.src_file,
         dst_path=options.dst_file,
