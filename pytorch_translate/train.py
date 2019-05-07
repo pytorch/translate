@@ -276,64 +276,11 @@ def setup_training_model(args):
         )
     else:
         # Support both single and multi path loading for now
-        dataset_upsampling = getattr(args, "dataset_upsampling", None)
-        dataset_relative_ratio = getattr(args, "dataset_relative_ratio", None)
-        source_lang = getattr(args, "source_lang", "src")
-        target_lang = getattr(args, "target_lang", "tgt")
-        direction = source_lang + "-" + target_lang
-
-        if dataset_upsampling:
-            dataset_upsampling = pytorch_translate_utils.maybe_parse_collection_argument(
-                dataset_upsampling
-            )[
-                direction
-            ]
-        if dataset_relative_ratio:
-            dataset_relative_ratio = pytorch_translate_utils.maybe_parse_collection_argument(
-                dataset_relative_ratio
-            )[
-                direction
-            ]
-
-        noiser = {}
-        noise_options = [
-            "word_dropout_prob",
-            "max_word_shuffle_distance",
-            "word_blanking_prob",
-        ]
-        for option in noise_options:
-            option_map = getattr(args, option + "_map", None)
-            if option_map:
-                option_map = pytorch_translate_utils.maybe_parse_collection_argument(
-                    option_map
-                )[direction]
-                for key in option_map:
-                    if key not in noiser:
-                        noiser[key] = {
-                            noise_option: None for noise_option in noise_options
-                        }
-                    noiser[key][option] = option_map[key]
-
-        for key in noiser:
-            noiser[key] = UnsupervisedMTNoising(
-                dictionary=task.src_dict,
-                max_word_shuffle_distance=noiser[key]["max_word_shuffle_distance"] or 0,
-                word_dropout_prob=noiser[key]["word_dropout_prob"] or 0,
-                word_blanking_prob=noiser[key]["word_blanking_prob"] or 0,
-            )
         task.load_dataset(
             split=args.train_subset,
-            src_bin_path=pytorch_translate_utils.maybe_parse_collection_argument(
-                args.train_source_binary_path
-            ),
-            tgt_bin_path=pytorch_translate_utils.maybe_parse_collection_argument(
-                args.train_target_binary_path
-            ),
+            src_bin_path=args.train_source_binary_path,
+            tgt_bin_path=args.train_target_binary_path,
             weights_file=getattr(args, "train_weights_path", None),
-            dataset_upsampling=dataset_upsampling,
-            dataset_relative_ratio=dataset_relative_ratio,
-            seed=args.seed,
-            noiser=noiser,
         )
 
     if args.task == "dual_learning_task":

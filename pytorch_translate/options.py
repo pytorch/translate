@@ -245,45 +245,6 @@ def add_preprocessing_args(parser):
         help="Path for the binary file containing target training examples.",
     )
     group.add_argument(
-        "--dataset-upsampling",
-        default=None,
-        metavar="FILE",
-        help="Upsampling for certain datasets, with upsampling rate "
-        "represented in a dictionary (dataset, rate). sampling ratio = "
-        "upsampling rate * number of lines of the dataset / "
-        "(upsampling rate * number of lines of the dataset"
-        "+ number of total lines of other datsets). At most one of "
-        "dataset_upsampling / dataset_relative_ratio could be specified.",
-    )
-    group.add_argument(
-        "--dataset-relative-ratio",
-        default=None,
-        metavar="FILE",
-        help="Relative ratio(one-vs-rest) for certain dataset, "
-        "represented in (dataset, ratio) tuple. It would be the final sampling"
-        "ratio for certain dataset. For example when r = 0.5, half of training"
-        "corpus would come from this dataset. At most one of "
-        "dataset_upsampling / dataset_relative_ratio could be specified.",
-    )
-    group.add_argument(
-        "--word-dropout-prob-map",
-        default=None,
-        help="Use NoisingDataset, and this argument specifies "
-        "the probability a token is dropped randomly",
-    )
-    group.add_argument(
-        "--word-blank-prob-map",
-        default=None,
-        help="Use NoisingDataset, and this argument specifies "
-        "the probability a token is replaced by unk",
-    )
-    group.add_argument(
-        "--max-word-shuffle-distance-map",
-        default=None,
-        help="Use NoisingDataset, and this argument specifies "
-        "the maximum distance a word could move during the shuffle",
-    )
-    group.add_argument(
         "--train-weights-path",
         default="",
         metavar="FILE",
