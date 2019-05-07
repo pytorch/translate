@@ -137,6 +137,7 @@ class ModelParamsDict:
         self.enable_reverse_rescoring = False
         self.reverse_model_path = None
         self.reverse_model_weight = None
+        self.cloze_transformer_weight = None
         self.enable_lm_rescoring = False
         self.lm_model_path = None
         self.lm_model_weight = None

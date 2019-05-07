@@ -18,6 +18,7 @@ class TestRescorer(unittest.TestCase):
         test_args.l2r_model_weight = 1.0
         test_args.r2l_model_weight = 0.0
         test_args.reverse_model_weight = 0.0
+        test_args.cloze_transformer_weight = 0.0
         test_args.lm_model_weight = 1.01
         test_args.length_penalty = 1.0
 
@@ -29,7 +30,9 @@ class TestRescorer(unittest.TestCase):
             return_value=([model], test_args, task),
         ):
 
-            scores = torch.tensor([[80, 0, 0, 0], [0, 0, 0, 80]], dtype=torch.float)
+            scores = torch.tensor(
+                [[80, 0, 0, 0, 0], [0, 0, 0, 80, 0]], dtype=torch.float
+            )
             src_tokens = torch.tensor([1, 2, 3, 4, 5])
             hypos = [{"tokens": torch.tensor([1, 2])}, {"tokens": torch.tensor([1, 2])}]
 
@@ -42,6 +45,7 @@ class TestRescorer(unittest.TestCase):
                 test_args.r2l_model_weight,
                 test_args.reverse_model_weight,
                 test_args.lm_model_weight,
+                test_args.cloze_transformer_weight,
             ]
             combined_scores = combine_weighted_scores(
                 scores, weights, src_len, tgt_len, 1
