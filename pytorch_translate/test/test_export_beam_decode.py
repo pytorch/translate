@@ -42,8 +42,8 @@ class TestExportBeamDecode(unittest.TestCase):
 
         # 0 index row is ignored
         beam_search_token_output = beam_tokens.reshape(-1)[1:].tolist()
-        index_of_eos = beam_search_token_output.index(beam_decode.eos_token_id)
-        if index_of_eos != -1:
+        if beam_decode.eos_token_id in beam_search_token_output:
+            index_of_eos = beam_search_token_output.index(beam_decode.eos_token_id)
             beam_search_token_output = beam_search_token_output[: index_of_eos + 1]
 
         np.testing.assert_array_equal(top_hypothesis_tokens, beam_search_token_output)
