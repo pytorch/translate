@@ -77,12 +77,18 @@ class PytorchTranslateTask(FairseqTask):
         ), "Must set `--task pytorch_translate_multilingual` for multilingual training"
 
         # Load dictionaries
-        source_dict = pytorch_translate_dictionary.Dictionary.load(
-            args.source_vocab_file
-        )
-        target_dict = pytorch_translate_dictionary.Dictionary.load(
-            args.target_vocab_file
-        )
+        # This if statement is only used for backcompatibility. Henceforth we save
+        # vocabs in checkpoint extra_states.
+        if "extra_state" in kwargs and "src_dict" in kwargs["extra_state"]:
+            source_dict = kwargs["extra_state"]["src_dict"]
+            target_dict = kwargs["extra_state"]["tgt_dict"]
+        else:  # TODO(@rasooli) T44144867: remove this logic after a while.
+            source_dict = pytorch_translate_dictionary.Dictionary.load(
+                args.source_vocab_file
+            )
+            target_dict = pytorch_translate_dictionary.Dictionary.load(
+                args.target_vocab_file
+            )
 
         source_lang = args.source_lang or "src"
         target_lang = args.target_lang or "tgt"
@@ -97,9 +103,14 @@ class PytorchTranslateTask(FairseqTask):
             or getattr(args, "arch", "") == "char_source_hybrid"
         )
         if use_char_source:
-            char_source_dict = pytorch_translate_dictionary.Dictionary.load(
-                args.char_source_vocab_file
-            )
+            # This if statement is only used for backcompatibility. Henceforth we save
+            # vocabs in checkpoint extra_states.
+            if "extra_state" in kwargs and "char_source_dict" in kwargs["extra_state"]:
+                char_source_dict = kwargs["extra_state"]["char_source_dict"]
+            else:  # TODO(@rasooli) T44144867: remove this logic after a while.
+                char_source_dict = pytorch_translate_dictionary.Dictionary.load(
+                    args.char_source_vocab_file
+                )
             # this attribute is used for CharSourceModel construction
             args.char_source_dict_size = len(char_source_dict)
         else:
