@@ -9,7 +9,11 @@ from os import path
 from unittest.mock import Mock, patch
 
 from pytorch_translate.research.test import morphology_test_utils as morph_utils
-from pytorch_translate.research.unsupervised_morphology import bilingual_bpe, bpe
+from pytorch_translate.research.unsupervised_morphology import (
+    bilingual_bpe,
+    bpe,
+    char_ibm_model1,
+)
 
 
 txt_content = ["123 124 234 345", "112 122 123 345", "123456789", "123456 456789"]
@@ -156,7 +160,14 @@ class TestBPE(unittest.TestCase):
         """
         bpe_model = bilingual_bpe.BilingualBPE()
         tmp_dir, f1, f2 = morph_utils.get_two_different_tmp_files()
-        bpe_model._init_params(src_txt_path=f1, dst_txt_path=f2, num_ibm_iters=3)
+        dst2src_ibm_model = char_ibm_model1.Word2CharIBMModel1()
+        dst2src_ibm_model.learn_ibm_parameters(src_path=f2, dst_path=f1, num_iters=3)
+        ibm_path = path.join(tmp_dir, "ibm")
+        dst2src_ibm_model.save(file_path=ibm_path)
+
+        bpe_model._init_params(
+            ibm_model_path=ibm_path, src_txt_path=f1, dst_txt_path=f2
+        )
         assert len(bpe_model.bpe_probs_from_alignment) == 80
         assert bpe_model.eow_symbol in bpe_model.bpe_probs_from_alignment
 
@@ -175,7 +186,15 @@ class TestBPE(unittest.TestCase):
     def test_best_candidate_bilingual(self):
         bpe_model = bilingual_bpe.BilingualBPE()
         tmp_dir, f1, f2 = morph_utils.get_two_different_tmp_files()
-        bpe_model._init_params(src_txt_path=f1, dst_txt_path=f2, num_ibm_iters=3)
+
+        dst2src_ibm_model = char_ibm_model1.Word2CharIBMModel1()
+        dst2src_ibm_model.learn_ibm_parameters(src_path=f2, dst_path=f1, num_iters=3)
+        ibm_path = path.join(tmp_dir, "ibm")
+        dst2src_ibm_model.save(file_path=ibm_path)
+
+        bpe_model._init_params(
+            ibm_model_path=ibm_path, src_txt_path=f1, dst_txt_path=f2
+        )
 
         b1 = bpe_model.get_best_candidate()
         c1 = bpe_model.get_best_candidate()
@@ -187,8 +206,38 @@ class TestBPE(unittest.TestCase):
     def test_build_bilingual_vocab(self):
         bpe_model = bilingual_bpe.BilingualBPE()
         tmp_dir, f1, f2 = morph_utils.get_two_different_tmp_files()
+
+        dst2src_ibm_model = char_ibm_model1.Word2CharIBMModel1()
+        dst2src_ibm_model.learn_ibm_parameters(src_path=f2, dst_path=f1, num_iters=3)
+        ibm_path = path.join(tmp_dir, "ibm")
+        dst2src_ibm_model.save(file_path=ibm_path)
+
         vocab_size = bpe_model.build_vocab(
-            src_txt_path=f1, dst_txt_path=f2, vocab_size=12, num_ibm_iters=3
+            ibm_model_path=ibm_path, src_txt_path=f1, dst_txt_path=f2, vocab_size=12
         )
         assert vocab_size == len(bpe_model.vocab) == 12
+        shutil.rmtree(tmp_dir)
+
+    def test_save_load(self):
+        bpe_model = bilingual_bpe.BilingualBPE()
+        tmp_dir, f1, f2 = morph_utils.get_two_different_tmp_files()
+
+        dst2src_ibm_model = char_ibm_model1.Word2CharIBMModel1()
+        dst2src_ibm_model.learn_ibm_parameters(src_path=f2, dst_path=f1, num_iters=3)
+        ibm_path = path.join(tmp_dir, "ibm")
+        dst2src_ibm_model.save(file_path=ibm_path)
+
+        vocab_size = bpe_model.build_vocab(
+            ibm_model_path=ibm_path, src_txt_path=f1, dst_txt_path=f2, vocab_size=12
+        )
+        assert vocab_size == len(bpe_model.vocab) == 12
+
+        bpe_model.save(file_path=tmp_dir + "/vocab.txt")
+
+        loaded_model = bilingual_bpe.BilingualBPE()
+        loaded_model.load(file_path=tmp_dir + "/vocab.txt")
+
+        assert loaded_model.vocab == bpe_model.vocab
+        assert bpe_model.segment_word("1234") == loaded_model.segment_word("1234")
+
         shutil.rmtree(tmp_dir)

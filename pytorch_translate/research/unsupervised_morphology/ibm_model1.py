@@ -2,6 +2,7 @@
 
 import logging
 import math
+import pickle
 from collections import Counter, defaultdict
 from typing import Dict, List, Tuple
 
@@ -17,9 +18,7 @@ class IBMModel1(object):
         the full pseudo-code is available at https://fburl.com/yvp31kuw
         """
         # Integer is the unique integer key for a string from str2int dict.
-        self.translation_prob: Dict[int, Dict[int, float]] = defaultdict(
-            lambda: defaultdict(float)
-        )
+        self.translation_prob: Dict[int, Dict[int, float]] = defaultdict()
         self.null_str = "<null>"
 
         # Maps strings to unique integer values.
@@ -58,6 +57,8 @@ class IBMModel1(object):
                 src_words = self._src_words_counts_in_line(src_line)
                 dst_words = self._dst_words_counts_in_line(dst_line)
                 for src_word in src_words:
+                    if src_word not in self.translation_prob:
+                        self.translation_prob[src_word] = defaultdict(float)
                     for dst_word in dst_words:
                         self.translation_prob[src_word][dst_word] = 1.0
                 i += 1
@@ -134,3 +135,14 @@ class IBMModel1(object):
                 self.translation_prob[src_word][dst_word] = (
                     translation_expectations[src_word][dst_word] / denom
                 )
+
+    def save(self, file_path: str) -> None:
+        with open(file_path, "wb") as f:
+            pickle.dump((self.translation_prob, self._int2str, self._str2int), f)
+
+    def load(self, file_path: str) -> None:
+        with open(file_path, "rb") as f:
+            translation_prob, _int2str, _str2int = pickle.load(f)
+        self.translation_prob = translation_prob
+        self._int2str = _int2str
+        self._str2int = _str2int
