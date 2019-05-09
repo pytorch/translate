@@ -4,11 +4,12 @@ import os
 import tempfile
 import unittest
 
+import numpy as np
 from fairseq.data import LanguagePairDataset, NoisingDataset
 from fairseq.data.multi_corpus_sampled_dataset import MultiCorpusSampledDataset
 from fairseq.data.noising import UnsupervisedMTNoising
 from pytorch_translate import dictionary, preprocess
-from pytorch_translate.data import data
+from pytorch_translate.data import char_data, data
 from pytorch_translate.tasks import pytorch_translate_task as tasks
 from pytorch_translate.test import utils as test_utils
 
@@ -122,6 +123,13 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
             corpus_files=[self.src_txt, self.trg_txt],
             vocab_file=self.vocab_file_path,
             max_vocab_size=0,
+            padding_factor=1,  # don't add extra padding symbols
+        )
+        self.char_dict = dictionary.Dictionary.build_vocab_file(
+            corpus_files=[self.src_txt, self.trg_txt],
+            vocab_file=self.vocab_file_path,
+            max_vocab_size=0,
+            is_char_vocab=True,
             padding_factor=1,  # don't add extra padding symbols
         )
         # src_ref is reversed
@@ -271,3 +279,42 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
         self.assertEqual(pair_dataset.src_sizes.size, 2)
         self.assertEqual(len(pair_dataset.tgt), 2)
         self.assertEqual(pair_dataset.tgt_sizes.size, 2)
+
+    def test_subsample_dataset(self):
+        """
+        Test the InMemoryNumpyDataset.subsample() method, ensuring that the
+        examples produced by the dataset are correctly permuted according to
+        the indices argument.
+        """
+        trg_dataset = data.InMemoryNumpyDataset()
+
+        trg_dataset.parse(self.trg_txt, self.d, reverse_order=False, append_eos=True)
+
+        indices = np.random.permutation(len(trg_dataset))[:2]
+        token_samples = [trg_dataset[i] for i in indices]
+        trg_dataset.subsample(indices)
+        for i in range(2):
+            assert all(trg_dataset[i].numpy() == token_samples[i].numpy())
+
+    def test_subsample_char_dataset(self):
+        """
+        Test the InMemoryNumpyWordCharDataset.subsample() method, ensuring that
+        the examples produced by the dataset are correctly permuted according to
+        the indices argument.
+        """
+        src_dataset = char_data.InMemoryNumpyWordCharDataset()
+        src_dataset.parse(
+            self.src_txt, self.d, self.char_dict, reverse_order=True, append_eos=False
+        )
+
+        indices = np.random.permutation(len(src_dataset))[:2]
+        token_samples = [src_dataset.get_tokens(i) for i in indices]
+        char_samples = [src_dataset.get_chars_list(i) for i in indices]
+        src_dataset.subsample(indices)
+        for i in range(2):
+            assert all(src_dataset.get_tokens(i).numpy() == token_samples[i].numpy())
+            orig_chars_list = char_samples[i]
+            sampled_chars_list = src_dataset.get_chars_list(i)
+            assert len(sampled_chars_list) == len(orig_chars_list)
+            for sampled_chars, orig_chars in zip(sampled_chars_list, orig_chars_list):
+                assert all(sampled_chars.numpy() == orig_chars.numpy())
