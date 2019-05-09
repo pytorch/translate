@@ -16,34 +16,53 @@ class IBMModel1(object):
         translation_prob is the translation probability in the IBM model 1.
         the full pseudo-code is available at https://fburl.com/yvp31kuw
         """
-        self.translation_prob = defaultdict()
+        # Integer is the unique integer key for a string from str2int dict.
+        self.translation_prob: Dict[int, Dict[int, float]] = defaultdict(
+            lambda: defaultdict(float)
+        )
         self.null_str = "<null>"
-        self.training_data = []
+
+        # Maps strings to unique integer values.
+        self._str2int: Dict[str, int] = {self.null_str: 0}
+        self._int2str: List[str] = [self.null_str]  # Reverse of str2int
+
+    def str2int(self, substr: str) -> int:
+        if substr in self._str2int:
+            return self._str2int[substr]
+        else:
+            self._str2int[substr] = len(self._str2int)
+            self._int2str.append(substr)
+            return self._str2int[substr]
+
+    def int2str(self, idx: int) -> str:
+        assert idx < len(self._int2str)
+        return self._int2str[idx]
 
     @staticmethod
-    def get_word_counts_for_line(self, line: str) -> Dict[str, int]:
-        return sum(
-            [self.get_possible_subwords(word) for word in line.strip().split()],
-            Counter(),
-        )
+    def get_word_counts_for_line(self, line: str) -> Dict[int, int]:
+        return sum([self.str2int(word) for word in line.strip().split()], Counter())
+
+    def _src_words_counts_in_line(self, line: str) -> Dict[str, int]:
+        return Counter(self.str2int(w) for w in line.strip().split() + [self.null_str])
+
+    def _dst_words_counts_in_line(self, line: str) -> Dict[str, int]:
+        return Counter(self.str2int(w) for w in line.strip().split())
 
     def initialize_translation_probs(self, src_path: str, dst_path: str):
         """
         Direction of translation is conditioned on the source text: t(dst|src).
         """
-        self.training_data = []
+        i = 0
         with open(src_path) as src_file, open(dst_path) as dst_file:
             for src_line, dst_line in zip(src_file, dst_file):
-                src_words = Counter(src_line.strip().split() + [self.null_str])
-                dst_words = Counter(dst_line.strip().split())
+                src_words = self._src_words_counts_in_line(src_line)
+                dst_words = self._dst_words_counts_in_line(dst_line)
                 for src_word in src_words:
-                    if src_word not in self.translation_prob:
-                        self.translation_prob[src_word] = defaultdict(float)
                     for dst_word in dst_words:
                         self.translation_prob[src_word][dst_word] = 1.0
-                self.training_data.append((src_words, dst_words))
-                if len(self.training_data) % 100000 == 0:
-                    logger.info(f"Read sentence# {len(self.training_data)}")
+                i += 1
+                if i % 100000 == 0:
+                    logger.info(f"Read sentence {str(i)}")
 
         for src_word in self.translation_prob.keys():
             denom = len(self.translation_prob[src_word])
@@ -60,17 +79,22 @@ class IBMModel1(object):
         self.initialize_translation_probs(src_path=src_path, dst_path=dst_path)
         for iter in range(num_iters):
             logger.info(f"Iteration of IBM model: {str(iter+1)}")
-            self.m_step(self.e_step())
+            self.m_step(self.e_step(src_path=src_path, dst_path=dst_path))
 
-    def e_step(self) -> Dict[str, Dict]:
+    def e_step(self, src_path: str, dst_path: str) -> Dict[str, Dict]:
         logger.info("E step")
         translation_expectations: Dict[str, Dict] = defaultdict()
-        for i, (src_words, dst_words) in enumerate(self.training_data):
-            self.expectation_for_one_sentence(
-                src_words, dst_words, translation_expectations
-            )
-            if (i + 1) % 1000 == 0:
-                logger.info(f"E step on sentence {str(i+1)}")
+        i = 0
+        with open(src_path) as src_file, open(dst_path) as dst_file:
+            for src_line, dst_line in zip(src_file, dst_file):
+                src_words = self._src_words_counts_in_line(src_line)
+                dst_words = self._dst_words_counts_in_line(dst_line)
+                self.expectation_for_one_sentence(
+                    src_words, dst_words, translation_expectations
+                )
+                i += 1
+                if i % 1000 == 0:
+                    logger.info(f"E step on sentence {str(i)}")
         return translation_expectations
 
     def expectation_for_one_sentence(
