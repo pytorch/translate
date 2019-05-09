@@ -113,7 +113,14 @@ def load_diverse_ensemble_for_inference(
     # build ensemble
     ensemble = []
     if task is None:
-        task = tasks.setup_task(checkpoints_data[0]["args"])
+        if "extra_state" in checkpoints_data[0]:
+            task = tasks.setup_task(
+                checkpoints_data[0]["args"],
+                extra_state=checkpoints_data[0]["extra_state"],
+            )
+        else:
+            task = tasks.setup_task(checkpoints_data[0]["args"])
+
     for checkpoint_data in checkpoints_data:
         model = task.build_model(checkpoint_data["args"])
         model.load_state_dict(checkpoint_data["model"])
