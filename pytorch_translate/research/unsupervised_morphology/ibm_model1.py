@@ -114,9 +114,11 @@ class IBMModel1(object):
         for src_word in src_words:
             for dst_word in dst_words:
                 s_count, d_count = src_words[src_word], dst_words[dst_word]
-                prob = self.translation_prob[src_word][dst_word] * s_count * d_count
-                denom[dst_word] += prob
-                translation_fractional_counts[src_word][dst_word] += prob
+                prob = self.translation_prob[src_word][dst_word]
+                denom[dst_word] += prob * s_count
+                translation_fractional_counts[src_word][dst_word] += (
+                    prob * s_count * d_count
+                )
 
         for src_word in translation_fractional_counts.keys():
             if src_word not in translation_expectations:
