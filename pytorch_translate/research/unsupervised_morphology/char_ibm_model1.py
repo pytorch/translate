@@ -51,47 +51,30 @@ class CharIBMModel1(ibm_model1.IBMModel1):
         super().__init__()
         self.eow_symbol = "_EW"  # End of word symbol.
         self.max_subword_len = max_subword_len
-        self.subword_dict: Dict[str, List[str]] = {}
+        self.subword_dict: Dict[int, List[int]] = {}
 
     def get_possible_subwords(self, word: str) -> List[str]:
-        if word in self.subword_dict:
-            return self.subword_dict[word]
-        subwords = []
+        if word in self._str2int and self.str2int(word) in self.subword_dict:
+            return self.subword_dict[self.str2int(word)]
+        subwords: List[int] = []
         chars = list(word) + [self.eow_symbol]
         for i in range(len(chars)):
             for j in range(i + 1, min(i + 1 + self.max_subword_len, len(chars) + 1)):
                 subword = "".join(chars[i:j])
-                subwords.append(subword)
+                subwords.append(self.str2int(subword))
+        self.subword_dict[self.str2int(word)] = subwords
         return subwords
 
     def get_subword_counts_for_line(self, line: str) -> Dict[str, int]:
         return Counter(
-            chain(*[self.get_possible_subwords(word) for word in line.strip().split()])
+            chain(*[self.get_possible_subwords(w) for w in line.strip().split()])
         )
 
-    def initialize_translation_probs(self, src_path: str, dst_path: str):
-        """
-        Direction of translation is conditioned on the source text: t(dst|src).
-        """
-        self.training_data = []
-        with open(src_path) as src_file, open(dst_path) as dst_file:
-            for src_line, dst_line in zip(src_file, dst_file):
-                src_subwords_counts = self.get_subword_counts_for_line(src_line)
-                dst_subwords_counts = self.get_subword_counts_for_line(dst_line)
+    def _src_words_counts_in_line(self, line: str) -> Dict[str, int]:
+        return self.get_subword_counts_for_line(line)
 
-                for src_subword in src_subwords_counts:
-                    if src_subword not in self.translation_prob:
-                        self.translation_prob[src_subword] = defaultdict(float)
-                    for dst_subword in dst_subwords_counts:
-                        self.translation_prob[src_subword][dst_subword] = 1.0
-                self.training_data.append((src_subwords_counts, dst_subwords_counts))
-                if len(self.training_data) % 100000 == 0:
-                    logger.info(f"Read sentence# {len(self.training_data)}")
-
-        for src_subword in self.translation_prob.keys():
-            denom = len(self.translation_prob[src_subword])
-            for dst_subword in self.translation_prob[src_subword].keys():
-                self.translation_prob[src_subword][dst_subword] = 1.0 / denom
+    def _dst_words_counts_in_line(self, line: str) -> Dict[str, int]:
+        return self.get_subword_counts_for_line(line)
 
 
 class Word2CharIBMModel1(CharIBMModel1):
@@ -103,29 +86,8 @@ class Word2CharIBMModel1(CharIBMModel1):
     def __init__(self, max_subword_len: int = 8):
         super().__init__(max_subword_len=max_subword_len)
 
-    def initialize_translation_probs(self, src_path: str, dst_path: str):
-        """
-        Direction of translation is conditioned on the source text: t(dst|src).
-        """
-        self.training_data = []
-        with open(src_path) as src_file, open(dst_path) as dst_file:
-            for src_line, dst_line in zip(src_file, dst_file):
-                src_words_counts = Counter(src_line.strip().split() + [self.null_str])
-                dst_sub_words = self.get_subword_counts_for_line(dst_line)
-
-                for src_word in src_words_counts.keys():
-                    if src_word not in self.translation_prob:
-                        self.translation_prob[src_word] = defaultdict(float)
-                    for dst_sub_word in dst_sub_words.keys():
-                        self.translation_prob[src_word][dst_sub_word] = 1.0
-                self.training_data.append((src_words_counts, dst_sub_words))
-                if len(self.training_data) % 100000 == 0:
-                    logger.info(f"Read sentence# {len(self.training_data)}")
-
-        for src_word in self.translation_prob.keys():
-            denom = len(self.translation_prob[src_word])
-            for dst_subword in self.translation_prob[src_word].keys():
-                self.translation_prob[src_word][dst_subword] = 1.0 / denom
+    def _src_words_counts_in_line(self, line: str) -> Dict[str, int]:
+        return Counter(self.str2int(w) for w in line.strip().split() + [self.null_str])
 
 
 if __name__ == "__main__":
