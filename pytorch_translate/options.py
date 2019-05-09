@@ -713,6 +713,15 @@ def expand_generation_args(group, train=False):
         ),
     )
     group.add_argument(
+        "--max-examples-to-evaluate",
+        default=-1,
+        type=int,
+        help=(
+            "If >0 and smaller than size of evaluation data set, randomly "
+            "sample this many examples to evaluate"
+        ),
+    )
+    group.add_argument(
         "--translation-info-export-path",
         default=None,
         type=str,

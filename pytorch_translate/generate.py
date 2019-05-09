@@ -150,6 +150,11 @@ def _generate_score(models, args, task, dataset):
     # (None if no unknown word replacement, empty if no path to align dictionary)
     align_dict = utils.load_align_dict(args.replace_unk)
 
+    if args.max_examples_to_evaluate > 0:
+        pytorch_translate_data.subsample_pair_dataset(
+            dataset, args.max_examples_to_evaluate
+        )
+
     # Keep track of translations
     # Initialize with empty translations
     # and zero probs scores
