@@ -52,13 +52,6 @@ def get_arg_parser():
         help="Number of training epochs for character IBM models.",
         default=3,
     )
-    parser.add_option(
-        "--num-cpus",
-        type="int",
-        dest="num_cpus",
-        help="Number of cpus for multi-processing.",
-        default=3,
-    )
     return parser
 
 
@@ -71,25 +64,19 @@ class BilingualBPE(BPE):
         super().__init__()
         self.dst2src_ibm_model = Word2CharIBMModel1()
 
-    def _init_params(
-        self, src_txt_path: str, dst_txt_path: str, num_ibm_iters: int, num_cpus: int
-    ):
+    def _init_params(self, src_txt_path: str, dst_txt_path: str, num_ibm_iters: int):
         """
         Args:
             src_txt_path: Text path for source language in parallel data.
             dst_txt_path: Text path for target language in parallel data.
             num_ibm_iters: Number of training epochs for the IBM model.
-            num_cpus: Number of CPUs for training the IBM model with multi-processing.
         """
         logger.info("Initializing vocabulary.")
 
         # Note the reverse side of the model. Target is word based, that is why
         # we give it a reverse order.
         self.dst2src_ibm_model.learn_ibm_parameters(
-            src_path=dst_txt_path,
-            dst_path=src_txt_path,
-            num_iters=num_ibm_iters,
-            num_cpus=num_cpus,
+            src_path=dst_txt_path, dst_path=src_txt_path, num_iters=num_ibm_iters
         )
         logger.info("calculating alignment-based BPE type probs.")
         self.bpe_probs_from_alignment = self._calc_bpe_prob_from_alignment(
@@ -201,12 +188,7 @@ class BilingualBPE(BPE):
             del self.vocab[old_tokens[-1]]
 
     def build_vocab(
-        self,
-        src_txt_path: str,
-        dst_txt_path: str,
-        vocab_size: int,
-        num_ibm_iters: int,
-        num_cpus: int,
+        self, src_txt_path: str, dst_txt_path: str, vocab_size: int, num_ibm_iters: int
     ):
         """
         Note that except initalization, other parts are the same as the
@@ -216,7 +198,6 @@ class BilingualBPE(BPE):
             src_txt_path=src_txt_path,
             dst_txt_path=dst_txt_path,
             num_ibm_iters=num_ibm_iters,
-            num_cpus=num_cpus,
         )
         return self._build_vocab_loop(vocab_size=vocab_size)
 
@@ -230,7 +211,6 @@ if __name__ == "__main__":
         dst_txt_path=options.dst_train_file,
         vocab_size=options.vocab_size,
         num_ibm_iters=options.num_ibm_iters,
-        num_cpus=options.num_cpus,
     )
     bpe_model.segment_txt(
         input_path=options.src_train_file, output_path=options.train_output_file
