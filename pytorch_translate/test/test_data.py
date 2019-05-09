@@ -244,3 +244,30 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
                 self.trg_ref[i] + [lang2],
                 append_dataset[i + self.num_sentences].tolist(),
             )
+
+    def test_subsample_pair_dataset(self):
+        src_dataset = data.InMemoryNumpyDataset()
+        trg_dataset = data.InMemoryNumpyDataset()
+        for _ in range(5):
+            src_dataset.parse(
+                self.src_txt, self.d, reverse_order=True, append_eos=False
+            )
+            trg_dataset.parse(
+                self.trg_txt, self.d, reverse_order=False, append_eos=True
+            )
+
+        pair_dataset = LanguagePairDataset(
+            src=src_dataset,
+            src_sizes=src_dataset.sizes,
+            src_dict=self.d,
+            tgt=trg_dataset,
+            tgt_sizes=trg_dataset.sizes,
+            tgt_dict=self.d,
+            left_pad_source=False,
+        )
+
+        data.subsample_pair_dataset(pair_dataset, 2)
+        self.assertEqual(len(pair_dataset.src), 2)
+        self.assertEqual(pair_dataset.src_sizes.size, 2)
+        self.assertEqual(len(pair_dataset.tgt), 2)
+        self.assertEqual(pair_dataset.tgt_sizes.size, 2)

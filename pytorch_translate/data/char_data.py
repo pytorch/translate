@@ -199,6 +199,37 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
         result.load(path)
         return result
 
+    def subsample(self, indices):
+        """
+        Subsample dataset to include only those items indexed by input
+        argument indices.
+        """
+        word_array_list = []
+        word_offsets = [0]
+        char_array_list = []
+        char_offsets = [0]
+        sizes = []
+        for i in indices:
+            word_inds = self.word_buffer[
+                self.word_offsets[i] : self.word_offsets[i + 1]
+            ]
+            word_array_list.append(word_inds)
+            word_offsets.append(word_offsets[-1] + len(word_inds))
+            sizes.append(len(word_inds))
+
+            for word_index in range(self.word_offsets[i], self.word_offsets[i + 1]):
+                char_inds = self.char_buffer[
+                    self.char_offsets[word_index] : self.char_offsets[word_index + 1]
+                ]
+                char_array_list.append(char_inds)
+                char_offsets.append(char_offsets[-1] + len(char_inds))
+
+        self.word_buffer = np.concatenate(word_array_list)
+        self.word_offsets = np.array(word_offsets, dtype=np.int32)
+        self.char_buffer = np.concatenate(char_array_list)
+        self.char_offsets = np.array(char_offsets, dtype=np.int32)
+        self.sizes = np.array(sizes, dtype=np.int32)
+
 
 class LanguagePairSourceCharDataset(data.LanguagePairDataset):
     """

@@ -220,6 +220,22 @@ class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
         result.load(path, num_examples_limit=num_examples_limit)
         return result
 
+    def subsample(self, indices):
+        """
+        Subsample dataset to include only those items indexed by input
+        argument indices.
+        """
+        array_list = []
+        offsets = [0]
+        sizes = []
+        for i in indices:
+            array_list.append(self[i])
+            offsets.append(offsets[-1] + len(array_list[-1]))
+            sizes.append(len(array_list[-1]))
+        self.buffer = np.concatenate(array_list)
+        self.offsets = np.array(offsets, dtype=np.int32)
+        self.sizes = np.array(sizes, dtype=np.int32)
+
 
 def is_multilingual(args):
     if hasattr(args, "multiling_encoder_lang"):
@@ -260,3 +276,13 @@ class IndexedRawTextDatasetWithLangId(data.IndexedRawTextDataset):
             return torch.cat([tokens, lang_id_tensor])
 
         self.tokens_list = [add_lang_id(t) for t in self.tokens_list]
+
+
+def subsample_pair_dataset(dataset, num_samples):
+    if len(dataset) <= num_samples:
+        return
+    indices = np.random.permutation(len(dataset))[:num_samples]
+    dataset.src.subsample(indices)
+    dataset.src_sizes = dataset.src.sizes
+    dataset.tgt.subsample(indices)
+    dataset.tgt_sizes = dataset.tgt.sizes
