@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 import torch
-from pytorch_translate.rescoring.rescorer import combine_weighted_scores
+from pytorch_translate.rescoring.rescorer import Rescorer, combine_weighted_scores
 from pytorch_translate.tasks import pytorch_translate_task as tasks
 from pytorch_translate.test import utils as test_utils
 
@@ -29,7 +29,6 @@ class TestRescorer(unittest.TestCase):
             "pytorch_translate.utils.load_diverse_ensemble_for_inference",
             return_value=([model], test_args, task),
         ):
-
             scores = torch.tensor(
                 [[80, 0, 0, 0, 0], [0, 0, 0, 80, 0]], dtype=torch.float
             )
@@ -54,3 +53,28 @@ class TestRescorer(unittest.TestCase):
             # 80/(2^1), 0, 0, 80*1.01/(2^1)
             expected = torch.tensor([40.0, 40.4], dtype=torch.float)
             assert torch.equal(combined_scores, expected)
+
+    def test_model_passing_as_parameter(self):
+        test_args = test_utils.ModelParamsDict("transformer")
+        test_args.enable_rescoring = True
+        test_args.length_penalty = 1
+        test_args.l2r_model_weight = 1.0
+        test_args.r2l_model_weight = 0.0
+        test_args.reverse_model_weight = 0.0
+        test_args.lm_model_weight = 1.01
+        test_args.cloze_transformer_weight = 1.0
+        test_args.length_penalty = 1.0
+
+        _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        task = tasks.PytorchTranslateTask(test_args, src_dict, tgt_dict)
+        model = task.build_model(test_args)
+        src_tokens = torch.tensor([1, 2, 3, 4, 5]).cuda()
+        hypos = [
+            {"tokens": torch.tensor([1, 2]).cuda()},
+            {"tokens": torch.tensor([1, 2]).cuda()},
+        ]
+        rescorer = Rescorer(
+            test_args, task, {"l2r_model": {"model": model, "task": task}}
+        )
+        scores = rescorer.score(src_tokens, hypos)
+        assert scores.size()[1] == 5
