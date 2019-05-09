@@ -7,6 +7,7 @@ from enum import Enum
 import torch
 from fairseq import bleu
 from pytorch_translate import hybrid_transformer_rnn  # noqa
+from pytorch_translate import utils
 from pytorch_translate.rescoring.model_scorers import (
     LMScorer,
     R2LModelScorer,
@@ -29,33 +30,45 @@ class FeatureList(Enum):
 class Rescorer:
     """Reranks n-best hypotheses based on extra models and parameters"""
 
-    def __init__(self, args):
+    def __init__(self, args, forward_task=None, models=None):
+        """models = {'l2r_model': {'model': model, 'task': task}, ...}"""
         self.args = args
-
-        assert (
-            args.l2r_model_path is not None
-        ), "Rescoring needs --l2r-model-path which generated given hypotheses"
-        self.l2r_model_scorer = SimpleModelScorer(args, args.l2r_model_path)
-        self.forward_task = self.l2r_model_scorer.task
+        if models is None:
+            models = {}
+        self.l2r_model_scorer = None
+        if args.l2r_model_path or models.get("l2r_model", None):
+            self.l2r_model_scorer = SimpleModelScorer(
+                args, args.l2r_model_path, models.get("l2r_model", None), forward_task
+            )
 
         self.r2l_model_scorer = None
-        if args.r2l_model_path:
-            self.r2l_model_scorer = R2LModelScorer(args, args.r2l_model_path)
+        if args.r2l_model_path or models.get("r2l_model", None):
+            self.r2l_model_scorer = R2LModelScorer(
+                args, args.r2l_model_path, models.get("r2l_model", None), forward_task
+            )
 
         self.reverse_model_scorer = None
-        if args.reverse_model_path:
+        if args.reverse_model_path or models.get("reverse_model", None):
             self.reverse_model_scorer = ReverseModelScorer(
-                args, args.reverse_model_path, self.forward_task
+                args,
+                args.reverse_model_path,
+                models.get("reverse_model", None),
+                forward_task,
             )
 
         self.lm_scorer = None
-        if args.lm_model_path:
-            self.lm_scorer = LMScorer(args, args.lm_model_path, self.forward_task)
+        if args.lm_model_path or models.get("lm_model", None):
+            self.lm_scorer = LMScorer(
+                args, args.lm_model_path, models.get("lm_model", None), forward_task
+            )
 
         self.cloze_transformer_scorer = None
-        if args.cloze_transformer_path:
+        if args.cloze_transformer_path or models.get("cloze_model", None):
             self.cloze_transformer_scorer = SimpleModelScorer(
-                args, args.cloze_transformer_path
+                args,
+                args.cloze_transformer_path,
+                models.get("cloze_model", None),
+                forward_task,
             )
 
     def score(self, src_tokens, hypos):
@@ -71,6 +84,8 @@ class Rescorer:
         return scores
 
     def compute_l2r_model_scores(self, src_tokens, hypos, scores):
+        if not self.l2r_model_scorer:
+            return
         l2r_scores = self.l2r_model_scorer.score(src_tokens, hypos)
         scores[:, FeatureList.L2R_MODEL_SCORE.value] = l2r_scores[:]
 
@@ -239,10 +254,10 @@ def find_top_tokens(args, trans_info, rescorer):
     top_index = combined_scores.max(0)[1]
 
     scores_to_export = {
-        "hypos": [hypo['tokens'].cpu().tolist() for hypo in hypos],
-        "target_tokens": trans_info['target_tokens'].cpu().numpy(),
+        "hypos": [hypo["tokens"].cpu().tolist() for hypo in hypos],
+        "target_tokens": trans_info["target_tokens"].cpu().numpy(),
         "scores": scores.cpu().numpy(),
-        "src_len": src_len.cpu().numpy(),
+        "src_len": src_len,
         "tgt_len": tgt_len.cpu().numpy(),
     }
     return hypos[top_index]["tokens"], scores_to_export
@@ -255,8 +270,13 @@ def main():
         args.translation_info_export_path is not None
     ), "--translation_info_export_path is required for rescoring"
 
-    rescorer = Rescorer(args)
-    dst_dict = rescorer.forward_task.tgt_dict
+    assert args.l2r_model_path is not None, "Rescoring needs forward model"
+
+    _, _, forward_task = utils.load_diverse_ensemble_for_inference(
+        [args.l2r_model_path]
+    )
+    rescorer = Rescorer(args, forward_task)
+    dst_dict = forward_task.tgt_dict
     base_bleu_scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
     rescoring_bleu_scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
 

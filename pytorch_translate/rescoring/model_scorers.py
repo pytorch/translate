@@ -7,25 +7,33 @@ from pytorch_translate import utils
 class SimpleModelScorer(object):
     """ Rescores source and target tokens based on a model"""
 
-    def __init__(self, args, model_path):
+    def __init__(self, args, model_path=None, model=None, forward_task=None):
         """ Initialize a rescorer model
 
         Args:
           args: model arguments
           model_path: checkpoint path for rescoring model
         """
-        self.args = args
         # TODO (T40938917): Allow loading of multiple rescoring models
-        (
-            rescoring_model,
-            rescoring_model_arg,
-            rescoring_task,
-        ) = utils.load_diverse_ensemble_for_inference([model_path])
-        self.task = rescoring_task  # e.g p(y), p(x|y) etc.
-        self.model = rescoring_model[0]
-        self.model.eval()
+        # allow to create an empty scorer w/o model
+        self.args = args
+        self.forward_task = forward_task
+        self.task = None
+        self.model = None
+        # Instantiate the model
+        if model is not None:
+            self.model = model["model"]
+            self.task = model["task"]
+        elif model_path:
+            rescoring_model, _, task = utils.load_diverse_ensemble_for_inference(
+                [model_path]
+            )
+            self.model = rescoring_model[0]
+            self.task = task
 
-        utils.maybe_cuda(self.model)
+        if self.model is not None:
+            self.model.eval()
+            utils.maybe_cuda(self.model)
 
     def convert_hypos_to_tgt_tokens(self, hypos):
         """
@@ -187,10 +195,6 @@ class ReverseModelScorer(SimpleModelScorer):
     Scores p(x|y) with a reverse model and switching src and tgt sentences
     """
 
-    def __init__(self, args, model_path, forward_task):
-        super().__init__(args, model_path)
-        self.forward_task = forward_task
-
     def prepare_inputs(self, src_tokens, hypos):
         """
         For reverse model, we need to switch src_tokens and tgt_tokens.
@@ -246,10 +250,6 @@ class ReverseModelScorer(SimpleModelScorer):
 
 
 class LMScorer(SimpleModelScorer):
-    def __init__(self, args, model_path, forward_task):
-        super().__init__(args, model_path)
-        self.forward_task = forward_task
-
     def convert_hypos_to_tgt_tokens(self, hypos):
         """
         Converts target tokens from the translation model dictionary

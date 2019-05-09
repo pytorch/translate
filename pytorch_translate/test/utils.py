@@ -141,6 +141,8 @@ class ModelParamsDict:
         self.enable_lm_rescoring = False
         self.lm_model_path = None
         self.lm_model_weight = None
+        self.cloze_transformer_path = None
+        self.cloze_transformer_weight = None
         # Modified params
         for param, value in kwargs.items():
             assert hasattr(

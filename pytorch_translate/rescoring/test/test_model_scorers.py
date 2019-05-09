@@ -19,13 +19,11 @@ class TestModelScorers(unittest.TestCase):
         _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
         task = tasks.PytorchTranslateTask(test_args, src_dict, tgt_dict)
         model = task.build_model(test_args)
-
         with patch(
             "pytorch_translate.utils.load_diverse_ensemble_for_inference",
             return_value=([model], test_args, task),
         ):
-            scorer = R2LModelScorer(test_args, None)
-
+            scorer = R2LModelScorer(test_args, "/tmp/model_path.txt")
             pad = task.tgt_dict.pad()
             tgt_tokens = torch.Tensor([[1, 2, 3], [1, 2, pad], [1, pad, pad]])
             expected_tokens = torch.Tensor([[3, 2, 1], [2, 1, pad], [1, pad, pad]])
@@ -37,13 +35,11 @@ class TestModelScorers(unittest.TestCase):
         _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
         task = tasks.PytorchTranslateTask(test_args, src_dict, tgt_dict)
         model = task.build_model(test_args)
-
         with patch(
             "pytorch_translate.utils.load_diverse_ensemble_for_inference",
             return_value=([model], test_args, task),
         ):
-            scorer = SimpleModelScorer(test_args, None)
-
+            scorer = SimpleModelScorer(test_args, "/tmp/model_path.txt")
             hypos = [
                 {"tokens": torch.Tensor([1, 2, 3, 4, 5])},
                 {"tokens": torch.Tensor([1, 2, 3, 4])},
@@ -77,7 +73,7 @@ class TestModelScorers(unittest.TestCase):
             "pytorch_translate.utils.load_diverse_ensemble_for_inference",
             return_value=([model], test_args, task),
         ):
-            scorer = SimpleModelScorer(test_args, None)
+            scorer = SimpleModelScorer(test_args, "/tmp/model_path.txt")
             tgt_tokens = torch.tensor([[2, 11, 22, 0], [2, 33, 44, 55]])
             logprobs = torch.zeros(
                 tgt_tokens.shape[0], tgt_tokens.shape[1], len(tgt_dict)
@@ -108,8 +104,7 @@ class TestModelScorers(unittest.TestCase):
             "pytorch_translate.utils.load_diverse_ensemble_for_inference",
             return_value=([model], test_args, task),
         ):
-            scorer = ReverseModelScorer(test_args, None, task)
-
+            scorer = ReverseModelScorer(test_args, "/tmp/model_path.txt", None, task)
             src_tokens = torch.tensor([6, 7, 8], dtype=torch.int)
             hypos = [
                 {"tokens": torch.tensor([12, 13, 14, eos], dtype=torch.int)},
