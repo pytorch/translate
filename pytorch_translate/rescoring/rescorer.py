@@ -256,7 +256,7 @@ def find_top_tokens(args, trans_info, rescorer):
     scores_to_export = {
         "hypos": [hypo["tokens"].cpu().tolist() for hypo in hypos],
         "target_tokens": trans_info["target_tokens"].cpu().numpy(),
-        "scores": scores.cpu().numpy(),
+        "scores": scores.detach().numpy(),
         "src_len": src_len,
         "tgt_len": tgt_len.cpu().numpy(),
     }
