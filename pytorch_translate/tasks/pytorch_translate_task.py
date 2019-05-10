@@ -2,7 +2,7 @@
 
 import os
 from collections import OrderedDict
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from fairseq import data, options
@@ -10,7 +10,10 @@ from fairseq.data import LanguagePairDataset, NoisingDataset
 from fairseq.data.multi_corpus_sampled_dataset import MultiCorpusSampledDataset
 from fairseq.data.noising import UnsupervisedMTNoising
 from fairseq.tasks import FairseqTask, register_task
-from pytorch_translate import dictionary as pytorch_translate_dictionary
+from pytorch_translate import (
+    dictionary as pytorch_translate_dictionary,
+    utils as pytorch_translate_utils,
+)
 from pytorch_translate.data import (
     char_data,
     data as pytorch_translate_data,
@@ -55,6 +58,45 @@ class PytorchTranslateTask(FairseqTask):
             type=int,
             metavar="N",
             help="max number of tokens in the target sequence",
+        )
+        parser.add_argument(
+            "--word-dropout-prob-map",
+            default=None,
+            help="Use NoisingDataset, and this argument specifies "
+            "the probability a token is dropped randomly",
+        )
+        parser.add_argument(
+            "--word-blank-prob-map",
+            default=None,
+            help="Use NoisingDataset, and this argument specifies "
+            "the probability a token is replaced by unk",
+        )
+        parser.add_argument(
+            "--max-word-shuffle-distance-map",
+            default=None,
+            help="Use NoisingDataset, and this argument specifies "
+            "the maximum distance a word could move during the shuffle",
+        )
+        parser.add_argument(
+            "--dataset-upsampling",
+            default=None,
+            metavar="FILE",
+            help="Upsampling for certain datasets, with upsampling rate "
+            "represented in a dictionary (dataset, rate). sampling ratio = "
+            "upsampling rate * number of lines of the dataset / "
+            "(upsampling rate * number of lines of the dataset"
+            "+ number of total lines of other datsets). At most one of "
+            "dataset_upsampling / dataset_relative_ratio could be specified.",
+        )
+        parser.add_argument(
+            "--dataset-relative-ratio",
+            default=None,
+            metavar="FILE",
+            help="Relative ratio(one-vs-rest) for certain dataset, "
+            "represented in (dataset, ratio) tuple. It would be the final sampling"
+            "ratio for certain dataset. For example when r = 0.5, half of training"
+            "corpus would come from this dataset. At most one of "
+            "dataset_upsampling / dataset_relative_ratio could be specified.",
         )
 
     def __init__(self, args, src_dict, tgt_dict, char_source_dict=None):
@@ -184,7 +226,7 @@ class PytorchTranslateTask(FairseqTask):
 
         return sample
 
-    def _load_dataset_multi_path(
+    def _load_dataset_multi_path_helper(
         self,
         split: str,
         src_multiple_bin_paths: Dict[str, str],
@@ -243,17 +285,96 @@ class PytorchTranslateTask(FairseqTask):
             sampling_func=self._normalized_weighted_sampling(dataset_weights),
         )
 
-    def load_dataset(
-        self,
-        split: str,
-        src_bin_path: Union[str, Dict[str, str]],
-        tgt_bin_path: Union[str, Dict[str, str]],
-        weights_file=None,
-        dataset_upsampling: Optional[Dict[str, float]] = None,
-        dataset_relative_ratio: Optional[Tuple[str, float]] = None,
-        seed: Optional[int] = None,
-        noiser: Optional[Dict[str, UnsupervisedMTNoising]] = None,
+    def _load_dataset_multi_path(
+        self, split: str, src_bin_path: str, tgt_bin_path: str
     ):
+        assert type(tgt_bin_path) is not str
+        assert set(src_bin_path.keys()) == set(tgt_bin_path.keys())
+        source_lang = self.args.source_lang or "src"
+        target_lang = self.args.target_lang or "tgt"
+        direction = source_lang + "-" + target_lang
+        dataset_upsampling = (
+            pytorch_translate_utils.maybe_parse_collection_argument(
+                self.args.dataset_upsampling
+            )[direction]
+            if self.args.dataset_upsampling
+            else None
+        )
+        dataset_relative_ratio = (
+            pytorch_translate_utils.maybe_parse_collection_argument(
+                self.args.dataset_relative_ratio
+            )[direction]
+            if self.args.dataset_relative_ratio
+            else None
+        )
+        noiser = {}
+        noise_options = [
+            "word_dropout_prob",
+            "max_word_shuffle_distance",
+            "word_blanking_prob",
+        ]
+        for option in noise_options:
+            option_map = getattr(self.args, option + "_map", None)
+            if option_map:
+                option_map = pytorch_translate_utils.maybe_parse_collection_argument(
+                    option_map
+                )[direction]
+                for key in option_map:
+                    if key not in noiser:
+                        noiser[key] = {
+                            noise_option: None for noise_option in noise_options
+                        }
+                    noiser[key][option] = option_map[key]
+
+        for key in noiser:
+            noiser[key] = UnsupervisedMTNoising(
+                dictionary=self.src_dict,
+                max_word_shuffle_distance=noiser[key]["max_word_shuffle_distance"] or 0,
+                word_dropout_prob=noiser[key]["word_dropout_prob"] or 0,
+                word_blanking_prob=noiser[key]["word_blanking_prob"] or 0,
+            )
+
+        if dataset_relative_ratio is not None:
+            assert dataset_upsampling is None, "dataset_upsampling and "
+            "dataset_relative_ratio couldn't be specified together."
+            assert dataset_relative_ratio[0] in src_bin_path.keys()
+            self._load_dataset_multi_path_helper(
+                split=split,
+                src_multiple_bin_paths=src_bin_path,
+                tgt_multiple_bin_paths=tgt_bin_path,
+                dataset_relative_ratio=dataset_relative_ratio,
+                seed=self.args.seed,
+                noiser=noiser,
+            )
+        elif dataset_upsampling is not None:
+            for key in dataset_upsampling.keys():
+                assert key in src_bin_path.keys()
+            self._load_dataset_multi_path_helper(
+                split=split,
+                src_multiple_bin_paths=src_bin_path,
+                tgt_multiple_bin_paths=tgt_bin_path,
+                dataset_upsampling=dataset_upsampling,
+                seed=self.args.seed,
+                noiser=noiser,
+            )
+        else:
+            self._load_dataset_multi_path_helper(
+                split=split,
+                src_multiple_bin_paths=src_bin_path,
+                tgt_multiple_bin_paths=tgt_bin_path,
+                seed=self.args.seed,
+                noiser=noiser,
+            )
+
+    def load_dataset(
+        self, split: str, src_bin_path: str, tgt_bin_path: str, weights_file=None
+    ):
+        src_bin_path = pytorch_translate_utils.maybe_parse_collection_argument(
+            src_bin_path
+        )
+        tgt_bin_path = pytorch_translate_utils.maybe_parse_collection_argument(
+            tgt_bin_path
+        )
         # At most one of dataset_upsampling / dataset_relative_ratio could be
         # specified.
         if type(src_bin_path) is str:
@@ -265,39 +386,7 @@ class PytorchTranslateTask(FairseqTask):
                 weights_file=weights_file,
             )
         else:
-            assert type(tgt_bin_path) is not str
-            assert set(src_bin_path.keys()) == set(tgt_bin_path.keys())
-            if dataset_relative_ratio is not None:
-                assert dataset_upsampling is None, "dataset_upsampling and "
-                "dataset_relative_ratio couldn't be specified together."
-                assert dataset_relative_ratio[0] in src_bin_path.keys()
-                self._load_dataset_multi_path(
-                    split=split,
-                    src_multiple_bin_paths=src_bin_path,
-                    tgt_multiple_bin_paths=tgt_bin_path,
-                    dataset_relative_ratio=dataset_relative_ratio,
-                    seed=seed,
-                    noiser=noiser,
-                )
-            elif dataset_upsampling is not None:
-                for key in dataset_upsampling.keys():
-                    assert key in src_bin_path.keys()
-                self._load_dataset_multi_path(
-                    split=split,
-                    src_multiple_bin_paths=src_bin_path,
-                    tgt_multiple_bin_paths=tgt_bin_path,
-                    dataset_upsampling=dataset_upsampling,
-                    seed=seed,
-                    noiser=noiser,
-                )
-            else:
-                self._load_dataset_multi_path(
-                    split=split,
-                    src_multiple_bin_paths=src_bin_path,
-                    tgt_multiple_bin_paths=tgt_bin_path,
-                    seed=seed,
-                    noiser=noiser,
-                )
+            self._load_dataset_multi_path(split, src_bin_path, tgt_bin_path)
 
         if self.args.log_verbose:
             print("Finished loading dataset", flush=True)
