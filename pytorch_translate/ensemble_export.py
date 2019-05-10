@@ -974,6 +974,7 @@ class BeamSearch(torch.jit.ScriptModule):
         if quantize:
             decoder_ens = torch.jit.quantized.quantize_linear_modules(decoder_ens)
             decoder_ens = torch.jit.quantized.quantize_rnn_cell_modules(decoder_ens)
+            decoder_ens = torch.jit.quantized.quantize_rnn_modules(decoder_ens)
         decoder_ens_tile = DecoderBatchedStepEnsemble(
             self.models,
             tgt_dict,
@@ -988,6 +989,9 @@ class BeamSearch(torch.jit.ScriptModule):
                 decoder_ens_tile
             )
             decoder_ens_tile = torch.jit.quantized.quantize_rnn_cell_modules(
+                decoder_ens_tile
+            )
+            decoder_ens_tile = torch.jit.quantized.quantize_rnn_modules(
                 decoder_ens_tile
             )
         prev_token = torch.LongTensor([0])
