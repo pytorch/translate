@@ -2,6 +2,7 @@
 
 import logging
 import math
+import pickle
 from collections import Counter, defaultdict
 from optparse import OptionParser
 from typing import Dict, List, Optional, Set, Tuple
@@ -228,6 +229,15 @@ class BPE(object):
                         output_bpe_tokens += segmentation_cache[word]
                     writer.write(" ".join(output_bpe_tokens))
                     writer.write("\n")
+
+    def save(self, file_path: str) -> None:
+        with open(file_path, "wb") as f:
+            pickle.dump((self.vocab, self.max_bpe_len), f)
+        logger.info(f"Saved the BPE model in {file_path}")
+
+    def load(self, file_path: str) -> None:
+        with open(file_path, "rb") as f:
+            self.vocab, self.max_bpe_len = pickle.load(f)
 
 
 if __name__ == "__main__":
