@@ -99,7 +99,6 @@ class SimpleModelScorer(object):
           * If tgt_tokens don't start and end with eos.
         """
         eos = self.task.target_dictionary.eos()
-        pad = self.task.target_dictionary.pad()
 
         if (tgt_tokens == eos).sum() != 2 * tgt_tokens.size()[0]:
             raise ValueError("Each target should have 2 eos tokens")
@@ -110,7 +109,6 @@ class SimpleModelScorer(object):
         ), "Rescoring doesn't work with vocab reduction"
 
         logprobs = model.get_normalized_probs(decoder_out, log_probs=True)
-        logprobs[:, :, pad] = 0
         return logprobs
 
     def compute_scores(self, tgt_tokens, logprobs):
@@ -126,7 +124,9 @@ class SimpleModelScorer(object):
         )
         hypos_tokens_probs = torch.zeros(tgt_tokens.shape)
         hypos_tokens_probs = logprobs[:, :-1, :][i, j, tgt_tokens]
-        hypos_scores = hypos_tokens_probs.sum(dim=1)
+        pad = self.task.target_dictionary.pad()
+        mask = 1.0 - tgt_tokens.eq(pad).float()
+        hypos_scores = (hypos_tokens_probs * mask).sum(dim=1)
         return hypos_scores
 
     def prepare_inputs(self, src_tokens, hypos):
@@ -134,7 +134,6 @@ class SimpleModelScorer(object):
         tgt_tokens = self.convert_hypos_to_tgt_tokens(hypos).type_as(src_tokens)
         return encoder_inputs, tgt_tokens
 
-    @torch.no_grad()
     def score(self, src_tokens, hypos):
         """ Rescores hypotheses based on a given model and input tokens.
         # TODO: (T40961806) Proper testing for rescoring
@@ -272,7 +271,6 @@ class LMScorer(SimpleModelScorer):
 
         return tgt_tokens
 
-    @torch.no_grad()
     def score(self, src_tokens, hypos):
         if self.model is None:
             return
