@@ -336,17 +336,6 @@ class CheckpointManager:
             new_params_filename=filename, new_averaged_params=new_averaged_params
         )
         extra_state["checkpoint_files"] = list(self._checkpoint_files)
-        if getattr(trainer.task, "src_dict", None) is not None:
-            extra_state["src_vocab"] = trainer.task.src_dict
-            extra_state["tgt_vocab"] = trainer.task.tgt_dict
-        contains_char_source = (
-            (trainer.args.char_source_vocab_file != "")
-            or (getattr(trainer.args, "arch", "") == "char_source")
-            or (getattr(trainer.args, "arch", "") == "char_source_transformer")
-            or getattr(trainer.args, "arch", "") == "char_source_hybrid"
-        )
-        if contains_char_source:
-            extra_state["char_source_dict"] = trainer.task.char_source_dict
 
         self.log_if_verbose(
             f"| Preparing to save checkpoints for epoch {epoch}, "
