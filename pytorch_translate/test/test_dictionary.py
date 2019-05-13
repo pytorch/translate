@@ -3,7 +3,7 @@
 import os
 import unittest
 
-from pytorch_translate import dictionary
+from pytorch_translate.data import dictionary
 from pytorch_translate.test import utils as test_utils
 
 

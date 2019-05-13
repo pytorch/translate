@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from fairseq.models import FairseqEncoder, register_model, register_model_architecture
 from pytorch_translate import char_encoder, model_constants, rnn, utils, vocab_constants
 from pytorch_translate.common_layers import Embedding, VariableTracker
-from pytorch_translate.dictionary import TAGS
+from pytorch_translate.data.dictionary import TAGS
 
 
 logger = logging.getLogger(__name__)

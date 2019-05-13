@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from fairseq import data, tokenizer
 from pytorch_translate import vocab_constants
-from pytorch_translate.dictionary import TAGS
+from pytorch_translate.data.dictionary import TAGS
 
 
 class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):

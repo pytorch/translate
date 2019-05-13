@@ -10,13 +10,11 @@ from fairseq.data import LanguagePairDataset, NoisingDataset
 from fairseq.data.multi_corpus_sampled_dataset import MultiCorpusSampledDataset
 from fairseq.data.noising import UnsupervisedMTNoising
 from fairseq.tasks import FairseqTask, register_task
-from pytorch_translate import (
-    dictionary as pytorch_translate_dictionary,
-    utils as pytorch_translate_utils,
-)
+from pytorch_translate import utils as pytorch_translate_utils
 from pytorch_translate.data import (
     char_data,
     data as pytorch_translate_data,
+    dictionary as pytorch_translate_dictionary,
     utils as data_utils,
     weighted_data,
 )

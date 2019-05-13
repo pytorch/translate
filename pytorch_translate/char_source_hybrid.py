@@ -28,7 +28,7 @@ from pytorch_translate.common_layers import (
     TransformerEncoderGivenEmbeddings,
     VariableTracker,
 )
-from pytorch_translate.dictionary import TAGS
+from pytorch_translate.data.dictionary import TAGS
 
 
 logger = logging.getLogger(__name__)

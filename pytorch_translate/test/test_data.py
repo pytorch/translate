@@ -8,8 +8,8 @@ import numpy as np
 from fairseq.data import LanguagePairDataset, NoisingDataset
 from fairseq.data.multi_corpus_sampled_dataset import MultiCorpusSampledDataset
 from fairseq.data.noising import UnsupervisedMTNoising
-from pytorch_translate import dictionary, preprocess
-from pytorch_translate.data import char_data, data
+from pytorch_translate import preprocess
+from pytorch_translate.data import char_data, data, dictionary
 from pytorch_translate.tasks import pytorch_translate_task as tasks
 from pytorch_translate.test import utils as test_utils
 
