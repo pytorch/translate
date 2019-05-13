@@ -262,6 +262,8 @@ def _generate_score(models, args, task, dataset):
         output_dataset = pytorch_translate_data.InMemoryNumpyDataset()
         output_dataset.load_from_sequences(output_hypos_token_arrays)
         output_dataset.save(args.output_hypos_binary_path)
+    if args.output_source_binary_path:
+        dataset.src.save(args.output_source_binary_path)
     if args.translation_info_export_path is not None:
         f = open(args.translation_info_export_path, "wb")
         pickle.dump(translation_info_list, f)

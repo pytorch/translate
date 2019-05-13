@@ -683,6 +683,16 @@ def expand_generation_args(group, train=False):
         ),
     )
     group.add_argument(
+        "--output-source-binary-path",
+        default=None,
+        type=str,
+        help=(
+            "Optional filename to save binarized source after evaluation "
+            "(primary use case being that this source dataset will be after "
+            "any filtering due to --max-examples-=to-evaluate)"
+        ),
+    )
+    group.add_argument(
         "--translation-info-export-path",
         default=None,
         type=str,
