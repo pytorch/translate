@@ -22,6 +22,7 @@ from caffe2.python.predictor import predictor_exporter
 from fairseq import tasks, utils
 from fairseq.models import ARCH_MODEL_REGISTRY
 from pytorch_translate.char_source_model import CharSourceModel
+from pytorch_translate.data import dictionary
 from pytorch_translate.research.knowledge_distillation import (
     dual_decoder_kd_model,
     hybrid_dual_decoder_kd_model,
@@ -36,7 +37,6 @@ from pytorch_translate import (  # noqa; noqa
     char_source_hybrid,
     char_source_model,
     char_source_transformer_model,
-    dictionary,
     hybrid_transformer_rnn,
     rnn,
     semi_supervised,

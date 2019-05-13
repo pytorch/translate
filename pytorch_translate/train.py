@@ -37,13 +37,13 @@ from pytorch_translate import weighted_criterions  # noqa
 from pytorch_translate import (
     checkpoint,
     constants,
-    dictionary as pytorch_translate_dictionary,
     evals,
     multi_model,
     options as pytorch_translate_options,
     preprocess,
     utils as pytorch_translate_utils,
 )
+from pytorch_translate.data import dictionary as pytorch_translate_dictionary
 from pytorch_translate.dual_learning import dual_learning_criterion  # noqa
 from pytorch_translate.dual_learning import dual_learning_task  # noqa
 from pytorch_translate.research.knowledge_distillation import (  # noqa

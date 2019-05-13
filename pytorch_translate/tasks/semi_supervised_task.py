@@ -16,14 +16,14 @@ from fairseq.data import (
 from fairseq.models import FairseqMultiModel
 from fairseq.tasks import register_task
 from fairseq.tasks.multilingual_translation import MultilingualTranslationTask
-from pytorch_translate import (
+from pytorch_translate import (  # noqa F401 - removing rnn is causing test failures
     beam_decode,
     constants,
-    dictionary as pytorch_translate_dictionary,
     rnn,
 )
 from pytorch_translate.data import (
     data as ptt_data,
+    dictionary as pytorch_translate_dictionary,
     iterators as ptt_iterators,
     utils as ptt_data_utils,
     weighted_data,

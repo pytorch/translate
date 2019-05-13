@@ -7,7 +7,7 @@ from typing import List, Optional
 
 from pytorch_translate import constants, options as pytorch_translate_options, utils
 from pytorch_translate.data import char_data, data as pytorch_translate_data
-from pytorch_translate.dictionary import Dictionary
+from pytorch_translate.data.dictionary import Dictionary
 
 
 def validate_args(args):

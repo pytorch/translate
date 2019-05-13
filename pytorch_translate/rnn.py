@@ -15,7 +15,6 @@ from fairseq.modules import AdaptiveSoftmax
 from pytorch_translate import rnn_cell  # noqa
 from pytorch_translate import (
     attention,
-    dictionary as pytorch_translate_dictionary,
     utils as pytorch_translate_utils,
     vocab_reduction,
 )
