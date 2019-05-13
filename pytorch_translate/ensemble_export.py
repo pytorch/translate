@@ -278,10 +278,6 @@ class EncoderEnsemble(nn.Module):
         self.enable_precompute_reduced_weights = False
 
     def forward(self, src_tokens, src_lengths):
-        outputs = []
-        output_names = []
-        states = []
-
         # (seq_length, batch_size) for compatibility with Caffe2
         src_tokens_seq_first = src_tokens.t()
 
@@ -293,6 +289,13 @@ class EncoderEnsemble(nn.Module):
             futures.append(
                 torch.jit._fork(model.encoder, src_tokens_seq_first, src_lengths)
             )
+
+        return self.get_outputs(src_tokens, futures)
+
+    def get_outputs(self, src_tokens, encoder_futures):
+        outputs = []
+        output_names = []
+        states = []
 
         # underlying assumption is each model has same vocab_reduction_module
         vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
@@ -323,7 +326,7 @@ class EncoderEnsemble(nn.Module):
         # XXX: This loop is where we wait() for each encoder's output to be
         # ready. If you're trying to add more ops, they should probably not
         # go in this loop!
-        for i, (model, future) in enumerate(zip(self.models, futures)):
+        for i, (model, future) in enumerate(zip(self.models, encoder_futures)):
             encoder_out = torch.jit._wait(future)
             # "primary" encoder output (vector representations per source token)
             encoder_outputs = encoder_out[0]
