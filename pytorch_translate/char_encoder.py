@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from pytorch_translate import common_layers  # noqa
 from pytorch_translate import rnn, utils
-from pytorch_translate.dictionary import TAGS
+from pytorch_translate.data.dictionary import TAGS
 from torch.nn.utils.rnn import pack_padded_sequence
 
 

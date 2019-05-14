@@ -19,7 +19,6 @@ from pytorch_translate import (
     char_source_hybrid,
     char_source_model,
     char_source_transformer_model,
-    dictionary as pytorch_translate_dictionary,
     options as pytorch_translate_options,
     utils as pytorch_translate_utils,
 )

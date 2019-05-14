@@ -7,7 +7,7 @@ from typing import Dict, NamedTuple, Optional
 import numpy as np
 import torch
 from fairseq import data, tokenizer
-from pytorch_translate import dictionary as pytorch_translate_dictionary
+from pytorch_translate.data import dictionary as pytorch_translate_dictionary
 
 
 # The n-th source|target language is represented with the token

@@ -10,10 +10,8 @@ import numpy as np
 import torch
 from fairseq import data
 from fairseq.trainer import Trainer
-from pytorch_translate import (
-    dictionary as pytorch_translate_dictionary,
-    vocab_constants,
-)
+from pytorch_translate import vocab_constants
+from pytorch_translate.data import dictionary as pytorch_translate_dictionary
 from pytorch_translate.tasks import pytorch_translate_task as tasks
 
 
