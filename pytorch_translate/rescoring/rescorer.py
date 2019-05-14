@@ -120,10 +120,8 @@ class Rescorer:
         scores[:, FeatureList.CLOZE_SCORE.value] = cloze_scores[:]
 
 
-def get_arg_parser():
-    parser = argparse.ArgumentParser(
-        description=("Rescore generated hypotheses with extra models")
-    )
+def add_args(parser):
+    """add rescorer specific arguments"""
     parser.add_argument(
         "--translation-info-export-path",
         default=None,
@@ -202,7 +200,6 @@ def get_arg_parser():
         type=float,
         help=("Provide a weight for the cloze transformer model"),
     )
-    return parser
 
 
 def combine_weighted_scores(scores, weights, src_len, tgt_len, lenpen):
@@ -264,7 +261,11 @@ def find_top_tokens(args, trans_info, rescorer):
 
 
 def main():
-    args = get_arg_parser().parse_args()
+    parser = argparse.ArgumentParser(
+        description=("Rescore generated hypotheses with extra models")
+    )
+    add_args(parser)
+    args = parser.parse_args()
 
     assert (
         args.translation_info_export_path is not None
