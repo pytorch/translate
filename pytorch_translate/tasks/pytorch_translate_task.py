@@ -268,7 +268,6 @@ class PytorchTranslateTask(FairseqTask):
         print(f"|dataset_weights:{dataset_weights}")
         self.datasets[split] = MultiCorpusSampledDataset(
             datasets=datasets,
-            default_key=list(dataset_weights.keys())[0],
             sampling_func=self._normalized_weighted_sampling(dataset_weights),
         )
 
