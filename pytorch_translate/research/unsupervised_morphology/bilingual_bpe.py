@@ -138,7 +138,7 @@ class BilingualBPE(BPE):
 
     def bpe_alignment_prob(self, bpe_token: str, freq: int):
         if bpe_token in self.bpe_probs_from_alignment:
-            return self.bpe_probs_from_alignment[bpe_token]
+            return freq * self.bpe_probs_from_alignment[bpe_token]
         else:
             # In cases where the alignment model did not cover long character
             # sequences in training data.
