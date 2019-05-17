@@ -236,18 +236,17 @@ class VocabReduction(nn.Module):
             "(to ensure its position in possible_translation_tokens is also 0), "
             f"instead of {self.dst_dict.pad()}."
         )
-        vocab_list = [src_tokens.new_tensor([self.dst_dict.pad()]).cpu()]
+        vocab_list = [src_tokens.new_tensor([self.dst_dict.pad()])]
 
         if decoder_input_tokens is not None:
             flat_decoder_input_tokens = decoder_input_tokens.view(-1)
-            # The tensors should be on CPU since unique is currently CPU-only.
-            vocab_list.append(flat_decoder_input_tokens.cpu())
+            vocab_list.append(flat_decoder_input_tokens)
 
         if self.translation_candidates is not None:
             reduced_vocab = self.translation_candidates.index_select(
                 dim=0, index=src_tokens.view(-1)
             ).view(-1)
-            vocab_list.append(reduced_vocab.cpu())
+            vocab_list.append(reduced_vocab)
         if (
             self.vocab_reduction_params is not None
             and self.vocab_reduction_params["num_top_words"] > 0
@@ -255,7 +254,7 @@ class VocabReduction(nn.Module):
             top_words = torch.arange(
                 self.vocab_reduction_params["num_top_words"]
             ).long()
-            vocab_list.append(top_words.cpu())
+            vocab_list.append(top_words)
 
         # Get bag of words predicted by word predictor
         if self.predictor is not None:
@@ -267,7 +266,7 @@ class VocabReduction(nn.Module):
             )
             # flatten indices for entire batch [1, batch * k]
             topk_indices = topk_indices.view(-1)
-            vocab_list.append(topk_indices.detach().cpu())
+            vocab_list.append(topk_indices.detach())
 
         all_translation_tokens = torch.cat(vocab_list, dim=0)
         possible_translation_tokens = torch.unique(
