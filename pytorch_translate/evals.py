@@ -393,18 +393,20 @@ def save_and_eval(
                 args=args, trainer=trainer, extra_state=extra_state
             )
 
-    # We don't all_gather the translation_samples since the sample sentences
-    # could be pretty long, and only the master uses it anyway.
-    master_extra_state = None
+    # extra_state["tune_bleu"] needs to be sync'ed between master and workers
+    # since we only do BLEU eval on master, but then need that info for
+    # determining when to do lr_shrink on all workers.
+    master_tune_bleu = None
     master_stop_training = None
     if is_master:
-        master_extra_state = extra_state
+        master_tune_bleu = extra_state["tune_bleu"]
         master_stop_training = (
             stop_due_to_time_limit or stop_due_to_tune_loss or stop_due_to_tune_bleu
         )
-    extra_state, stop_training = pytorch_translate_utils.all_gather_from_master(
-        args=args, data=[master_extra_state, master_stop_training]
+    tune_bleu, stop_training = pytorch_translate_utils.all_gather_from_master(
+        args=args, data=[master_tune_bleu, master_stop_training]
     )
+    extra_state["tune_bleu"] = tune_bleu
 
     # Basic sanity checks that extra_state is populated correctly.
     assert (

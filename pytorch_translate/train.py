@@ -102,7 +102,6 @@ def default_extra_state(args) -> Dict[str, Any]:
             "lowest_loss": None,
             "num_since_best": 0,
         },
-        # "last_eval_bleu": 0,
         "tune_bleu": {
             "current": None,
             "best": None,
