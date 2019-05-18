@@ -167,6 +167,8 @@ class PytorchTranslateTask(FairseqTask):
         dst_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
             corpus.target.data_file
         )
+        if getattr(self.args, "reverse_target", None):
+            dst_dataset.reverse()
         weights_dataset = None
         if corpus.weights_file and os.path.exists(corpus.weights_file):
             weights_dataset = weighted_data.IndexedWeightsDataset(corpus.weights_file)

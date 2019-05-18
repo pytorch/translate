@@ -69,6 +69,15 @@ class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
         assert self.offsets is not None
         np.savez(path, buffer=self.buffer, offsets=self.offsets)
 
+    def reverse(self, eos_token=True):
+        for i in range(len(self.offsets) - 1):
+            start_offset = self.offsets[i]
+            end_offset = self.offsets[i + 1] - 1 if eos_token else self.offsets[i + 1]
+
+            self.buffer[start_offset:end_offset] = self.buffer[start_offset:end_offset][
+                ::-1
+            ]
+
     def load(self, path, num_examples_limit: Optional[int] = None):
         npz = np.load(path)
 

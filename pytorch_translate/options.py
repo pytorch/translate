@@ -390,6 +390,14 @@ def add_preprocessing_args(parser):
         default=True,
         help=("If true, feed source sentence to model in reverse order."),
     )
+    group.add_argument(
+        "--reverse-target",
+        type=utils.bool_flag,
+        nargs="?",
+        const=True,
+        default=False,
+        help=("If true, feed target sentence to model in reverse order."),
+    )
 
 
 def validate_preprocessing_args(args):
