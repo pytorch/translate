@@ -63,6 +63,19 @@ def reorder_encoder_output(encoder_out, new_order):
     )
 
 
+class DummyPyTextRNNPointerModel:
+    # We want to ship a PyText Seq2Seq model we're calling RNNPointerModel.
+    # We also need to be able to export this model in PyText which relies
+    # on logic in ensemble_export. Problem is the logic in ensemble_export
+    # is model dependent, so if our RNNPointer implementation is in
+    # PyText we need to somehow forward define it in the translate library.
+    # This is the purpose of this class. In PyText our implementation will
+    # inherit from this class and therefore we can have model specific logic
+    # of a PyText model in translate, without having to directly import a class
+    # from PyText.
+    pass
+
+
 @register_model("rnn")
 class RNNModel(FairseqModel):
     def __init__(self, task, encoder, decoder):

@@ -440,7 +440,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
         self.enable_precompute_reduced_weights = False
 
-    def forward(self, input_tokens, prev_scores, timestep, *inputs):
+    def forward(self, input_tokens, prev_scores, timestep, *inputs, src_tuple=None):
         """
         Decoder step inputs correspond one-to-one to encoder outputs.
         HOWEVER: after the first step, encoder outputs (i.e, the first
@@ -452,7 +452,6 @@ class DecoderBatchedStepEnsemble(nn.Module):
         state_outputs = []
         beam_axis_per_state = []
         reduced_output_weights_per_model = []
-
         # from flat to (batch x 1)
         input_tokens = input_tokens.unsqueeze(1)
 
@@ -474,6 +473,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
         for i, model in enumerate(self.models):
             if (
                 isinstance(model, rnn.RNNModel)
+                or isinstance(model, rnn.DummyPyTextRNNPointerModel)
                 or isinstance(model, char_source_model.CharSourceModel)
                 or isinstance(model, word_prediction_model.WordPredictionModel)
             ):
@@ -510,11 +510,14 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 reduced_output_weights_per_model.append(reduced_output_weights)
 
                 # no batching, we only care about care about "max" length
-                src_length_int = int(encoder_output.size()[0])
-                src_length = torch.LongTensor(np.array([src_length_int]))
-
-                # notional, not actually used for decoder computation
-                src_tokens = torch.LongTensor(np.array([[0] * src_length_int]))
+                if src_tuple:
+                    src_tokens, src_length = src_tuple
+                    src_tokens = src_tokens.t()
+                else:
+                    # notional, not actually used for decoder computation
+                    src_length_int = int(encoder_output.size()[0])
+                    src_length = torch.LongTensor(np.array([src_length_int]))
+                    src_tokens = torch.LongTensor(np.array([[0] * src_length_int]))
                 src_embeddings = encoder_output.new_zeros(encoder_output.shape)
 
                 encoder_out = (
@@ -559,7 +562,11 @@ class DecoderBatchedStepEnsemble(nn.Module):
                     )
                     logits, attn_scores, _ = decoder_output
 
-                    log_probs = F.log_softmax(logits, dim=2)
+                    log_probs = (
+                        logits
+                        if isinstance(model, rnn.DummyPyTextRNNPointerModel)
+                        else F.log_softmax(logits, dim=2)
+                    )
 
                     log_probs_per_model.append(log_probs)
                     attn_weights_per_model.append(attn_scores)
