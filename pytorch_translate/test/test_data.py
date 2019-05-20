@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 from fairseq.data import LanguagePairDataset, NoisingDataset
-from fairseq.data.multi_corpus_sampled_dataset import MultiCorpusSampledDataset
+from fairseq.data.concat_dataset import ConcatDataset
 from fairseq.data.noising import UnsupervisedMTNoising
 from pytorch_translate import preprocess
 from pytorch_translate.data import char_data, data, dictionary
@@ -78,7 +78,7 @@ class TestLoadData(unittest.TestCase):
         split = "1"
         task.load_dataset(split, src_bin_path, tgt_bin_path)
         self.assertEqual(len(task.datasets[split]), 16)
-        self.assertIsInstance(task.datasets[split], MultiCorpusSampledDataset)
+        self.assertIsInstance(task.datasets[split], ConcatDataset)
 
     def test_load_data_noising(self):
         num_paths = 4
