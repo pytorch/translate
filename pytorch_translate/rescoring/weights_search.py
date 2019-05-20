@@ -6,7 +6,7 @@ import pickle
 import numpy as np
 import torch
 from fairseq import bleu
-from pytorch_translate.dictionary import Dictionary
+from pytorch_translate.data.dictionary import Dictionary
 from pytorch_translate.generate import smoothed_sentence_bleu
 
 
