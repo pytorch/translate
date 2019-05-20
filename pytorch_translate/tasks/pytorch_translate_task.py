@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from fairseq import data, options
-from fairseq.data import LanguagePairDataset, NoisingDataset
+from fairseq.data import ConcatDataset, LanguagePairDataset, NoisingDataset
 from fairseq.data.multi_corpus_sampled_dataset import MultiCorpusSampledDataset
 from fairseq.data.noising import UnsupervisedMTNoising
 from fairseq.tasks import FairseqTask, register_task
@@ -253,24 +253,24 @@ class PytorchTranslateTask(FairseqTask):
                 left_pad_source=False,
             )
         total_line_count = sum(len(datasets[key]) for key in datasets)
-        if dataset_relative_ratio is not None:
+        if dataset_relative_ratio:
             ds, ratio = dataset_relative_ratio
             line_count = len(datasets[ds])
             # By definition ratio = u * line_count / sum(#lines of other datasets)
             u = (total_line_count - line_count) / line_count * ratio
             dataset_upsampling = {key: u}
+        elif not dataset_upsampling:
+            dataset_upsampling = {}
 
-        dataset_weights = {
-            key: 1.0 * len(datasets[key]) / total_line_count
-            for key in src_multiple_bin_paths.keys()
-        }
-        if dataset_upsampling is not None:
-            for k, v in dataset_upsampling.items():
-                dataset_weights[k] *= v
-        print(f"|dataset_weights:{dataset_weights}")
-        self.datasets[split] = MultiCorpusSampledDataset(
-            datasets=datasets,
-            sampling_func=self._normalized_weighted_sampling(dataset_weights),
+        print(f"|dataset upsampling:{dataset_upsampling}")
+        ds_list = []
+        sample_ratios = []
+        for key, val in datasets.items():
+            ds_list.append(val)
+            sample_ratios.append(dataset_upsampling.get(key, 1.0))
+
+        self.datasets[split] = ConcatDataset(
+            datasets=datasets.values(), sample_ratios=sample_ratios
         )
 
     def _load_dataset_multi_path(
