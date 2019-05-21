@@ -228,7 +228,9 @@ class ReverseModelScorer(SimpleModelScorer):
         src_string = self.forward_task.src_dict.string(src_tokens)
         src_tokens_mapped = self.task.tgt_dict.encode_line(
             src_string, add_if_not_exist=False
-        )
+        )[
+            :-1
+        ]  # remove eos
         # Swap target and source tokens with necessary modifications
         tgt_tokens = (
             torch.cat(
@@ -237,6 +239,7 @@ class ReverseModelScorer(SimpleModelScorer):
                     reversed(src_tokens_mapped)
                     if self.forward_task.args.reverse_source
                     else src_tokens_mapped,
+                    torch.tensor([eos]).type_as(src_tokens_mapped),
                 ),
                 dim=0,
             )
@@ -252,6 +255,8 @@ class ReverseModelScorer(SimpleModelScorer):
         src_tokens = torch.full(
             (len(hypos), max_tgt_len), fill_value=pad, dtype=torch.long
         ).type_as(tgt_tokens)
+        if not getattr(self.args, "append_eos_to_source", False):
+            src_tokens = src_tokens[:, :-1]  # remove eos placeholder column
 
         src_lengths = torch.zeros(len(hypos)).type_as(src_tokens)
         for i, hypo in enumerate(hypos):
@@ -259,6 +264,9 @@ class ReverseModelScorer(SimpleModelScorer):
             tgt_tokens_mapped = self.task.src_dict.encode_line(
                 tgt_string, add_if_not_exist=False
             )
+            if not getattr(self.args, "append_eos_to_source", False):
+                tgt_tokens_mapped = tgt_tokens_mapped[:-1]  # last token is eos
+
             src_lengths[i] = len(tgt_tokens_mapped)
             src_tokens[i, : len(tgt_tokens_mapped)] = (
                 reversed(tgt_tokens_mapped)
