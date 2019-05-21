@@ -145,10 +145,14 @@ class SimpleModelScorer(object):
 
     def score(self, src_tokens, hypos):
         """ Rescores hypotheses based on a given model and input tokens.
-        # TODO: (T40961806) Proper testing for rescoring
         """
         if self.model is None:
             return
+
+        # if cuda is available, we convert src_tokens to cuda. all other
+        # tensors copy src_tokens's type (cpu or gpu)
+        if torch.cuda.is_available():
+            src_tokens = src_tokens.cuda()
 
         encoder_inputs, tgt_tokens = self.prepare_inputs(src_tokens, hypos)
         encoder_outs = self.encode(encoder_inputs)
