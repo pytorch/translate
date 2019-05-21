@@ -65,9 +65,38 @@ class MultiheadAttention(BaseAttention):
         self._fair_attn = fair_multihead.MultiheadAttention(d_model, nheads)
         self.use_src_length_mask = src_length_mask
 
-    def forward(self, decoder_state, source_hids, src_lengths):
+    def forward(self, decoder_state, source_hids, src_lengths, squeeze=True):
+        """
+        Computes MultiheadAttention with respect to either a vector
+        or a tensor
+
+        Inputs:
+            decoder_state: (bsz x decoder_hidden_state_dim) or
+                (bsz x T x decoder_hidden_state_dim)
+            source_hids: srclen x bsz x context_dim
+            src_lengths: bsz x 1, actual sequence lengths
+            squeeze: Whether or not to squeeze on the time dimension.
+                Even if decoder_state.dim() is 2 dimensional an
+                explicit time step dimension will be unsqueezed.
+        Outputs:
+          [batch_size, max_src_len] if decoder_state.dim() == 2 & squeeze
+            or
+          [batch_size, 1, max_src_len] if decoder_state.dim() == 2 & !squeeze
+            or
+          [batch_size, T, max_src_len] if decoder_state.dim() == 3 & !squeeze
+            or
+          [batch_size, T, max_src_len] if decoder_state.dim() == 3 & squeeze & T != 1
+            or
+          [batch_size, max_src_len] if decoder_state.dim() == 3 & squeeze & T == 1
+        """
         batch_size = decoder_state.shape[0]
-        query = decoder_state.unsqueeze(1).transpose(0, 1)
+        if decoder_state.dim() == 3:
+            query = decoder_state
+        elif decoder_state.dim() == 2:
+            query = decoder_state.unsqueeze(1)
+        else:
+            raise ValueError("decoder state must be either 2 or 3 dimensional")
+        query = query.transpose(0, 1)
         value = key = source_hids
 
         src_len_mask = None
@@ -81,7 +110,16 @@ class MultiheadAttention(BaseAttention):
         attn, attn_weights = self._fair_attn.forward(
             query, key, value, key_padding_mask=src_len_mask, need_weights=True
         )
+        # attn.shape = T X bsz X embed_dim
+        # attn_weights.shape = bsz X T X src_len
 
-        # attn.shape = tgt_len X bsz X embed_dim
-        # attn_weights.shape = src_len X tgt_len X bsz
-        return attn.squeeze(0), attn_weights.transpose(0, 2).squeeze(1)
+        attn_weights = attn_weights.transpose(0, 2)
+        # attn_weights.shape = src_len X T X bsz
+
+        if squeeze:
+            attn = attn.squeeze(0)
+            # attn.shape = squeeze(T) X bsz X embed_dim
+            attn_weights = attn_weights.squeeze(1)
+            # attn_weights.shape = src_len X squeeze(T) X bsz
+            return attn, attn_weights
+        return attn, attn_weights
