@@ -57,21 +57,6 @@ class SimpleModelScorer(object):
 
         return tgt_tokens
 
-    def prepare_encoder_inputs(self, src_tokens, number_of_hypos):
-        """ Prepare encoder inputs as inputs to the encoder
-
-        Args:
-          src_tokens: source tokens
-          number_of_hypos: repeat src_tokens by number_of_hypos
-
-        Returns:
-          Tuple containing src_tokens [number_of_hypos, source_length] and
-          [src_length]
-        """
-        src_length = len(src_tokens)
-        src_tokens = src_tokens.repeat(number_of_hypos, 1)
-        return (src_tokens, [src_length])
-
     def encode(self, encoder_inputs):
         encoder_out = self.model.encoder(*encoder_inputs)
         return [encoder_out]
@@ -130,7 +115,12 @@ class SimpleModelScorer(object):
         return hypos_scores
 
     def prepare_inputs(self, src_tokens, hypos):
-        encoder_inputs = self.prepare_encoder_inputs(src_tokens, len(hypos))
+        src_lengths = (
+            torch.tensor([len(src_tokens)]).repeat(len(hypos)).type_as(src_tokens)
+        )
+        src_tokens = src_tokens.repeat(len(hypos), 1)
+        encoder_inputs = (src_tokens, src_lengths)
+
         tgt_tokens = self.convert_hypos_to_tgt_tokens(hypos).type_as(src_tokens)
         return encoder_inputs, tgt_tokens
 
@@ -182,7 +172,11 @@ class R2LModelScorer(SimpleModelScorer):
         return reversed_tgt_tokens
 
     def prepare_inputs(self, src_tokens, hypos):
-        encoder_inputs = self.prepare_encoder_inputs(src_tokens, len(hypos))
+        src_lengths = (
+            torch.tensor([len(src_tokens)]).repeat(len(hypos)).type_as(src_tokens)
+        )
+        src_tokens = src_tokens.repeat(len(hypos), 1)
+        encoder_inputs = (src_tokens, src_lengths)
         tgt_tokens = self.convert_hypos_to_tgt_tokens(hypos).type_as(src_tokens)
         tgt_tokens = self.reverse_tgt_tokens(tgt_tokens)
 
@@ -232,19 +226,20 @@ class ReverseModelScorer(SimpleModelScorer):
             (len(hypos), max_tgt_len), fill_value=pad, dtype=torch.long
         ).type_as(tgt_tokens)
 
+        src_lengths = torch.zeros(len(hypos)).type_as(src_tokens)
         for i, hypo in enumerate(hypos):
             tgt_string = self.forward_task.tgt_dict.string(hypo["tokens"])
             tgt_tokens_mapped = self.task.src_dict.encode_line(
                 tgt_string, add_if_not_exist=False
             )
+            src_lengths[i] = len(tgt_tokens_mapped)
             src_tokens[i, : len(tgt_tokens_mapped)] = (
                 reversed(tgt_tokens_mapped)
                 if self.task.args.reverse_source
                 else tgt_tokens_mapped
             )
 
-        src_length = src_tokens.shape[1]
-        encoder_inputs = (src_tokens, [src_length])
+        encoder_inputs = (src_tokens, src_lengths)
         return encoder_inputs, tgt_tokens
 
 
