@@ -168,46 +168,52 @@ class MultiheadAttentionTest(unittest.TestCase):
                 context_dim=d_model, decoder_hidden_state_dim=d_model, nheads=nheads
             )
 
-            result = (
-                multihead_attn_module(
-                    decoder_state=decoder_state_tensor,
-                    source_hids=source_hid_tensor,
-                    src_lengths=src_lengths_tensor,
-                )[0]
-                .detach()
-                .numpy()
-            )
+            for squeeze in [True, False]:
+                result = (
+                    multihead_attn_module(
+                        decoder_state=decoder_state_tensor,
+                        source_hids=source_hid_tensor,
+                        src_lengths=src_lengths_tensor,
+                        squeeze=squeeze,
+                    )[0]
+                    .detach()
+                    .numpy()
+                )
 
-            Q_fc = self._fc(Q, "in_proj_", multihead_attn_module, end=d_model)
-            K_fc = self._fc(
-                K, "in_proj_", multihead_attn_module, start=d_model, end=2 * d_model
-            )
-            V_fc = self._fc(V, "in_proj_", multihead_attn_module, start=2 * d_model)
+                if not squeeze:
+                    self.assertEqual(result.ndim, 3)
+                    result = np.squeeze(result, axis=0)
 
-            Q_split = self._split_heads_ref(
-                Q_fc, [batch_sz, 1, d_model], nheads, d_head
-            )
-            K_split = self._split_heads_ref(K_fc, dims, nheads, d_head)
-            V_split = self._split_heads_ref(V_fc, dims, nheads, d_head)
+                Q_fc = self._fc(Q, "in_proj_", multihead_attn_module, end=d_model)
+                K_fc = self._fc(
+                    K, "in_proj_", multihead_attn_module, start=d_model, end=2 * d_model
+                )
+                V_fc = self._fc(V, "in_proj_", multihead_attn_module, start=2 * d_model)
 
-            attn_heads = self._scaled_dot_attn_ref(
-                Q=Q_split,
-                K=K_split,
-                V=V_split,
-                dims=Q_split.shape,
-                src_lengths=src_lengths,
-            )
+                Q_split = self._split_heads_ref(
+                    Q_fc, [batch_sz, 1, d_model], nheads, d_head
+                )
+                K_split = self._split_heads_ref(K_fc, dims, nheads, d_head)
+                V_split = self._split_heads_ref(V_fc, dims, nheads, d_head)
 
-            combined_attn_heads = self._combine_heads_ref(
-                X=attn_heads, dims=[batch_sz, 1], nheads=nheads, d_head=d_head
-            )
+                attn_heads = self._scaled_dot_attn_ref(
+                    Q=Q_split,
+                    K=K_split,
+                    V=V_split,
+                    dims=Q_split.shape,
+                    src_lengths=src_lengths,
+                )
 
-            reference = self._fc(
-                combined_attn_heads, "out_proj.", multihead_attn_module
-            )
-            reference = np.squeeze(reference, axis=1)
-            self.assertEqual(tuple(result.shape), (batch_sz, d_model))
-            np.testing.assert_allclose(result, reference, atol=1e-5)
+                combined_attn_heads = self._combine_heads_ref(
+                    X=attn_heads, dims=[batch_sz, 1], nheads=nheads, d_head=d_head
+                )
+
+                reference = self._fc(
+                    combined_attn_heads, "out_proj.", multihead_attn_module
+                )
+                reference = np.squeeze(reference, axis=1)
+                self.assertEqual(tuple(result.shape), (batch_sz, d_model))
+                np.testing.assert_allclose(result, reference, atol=1e-5)
 
     def test_multihead_attn_no_masking(self):
         self._multihead_attn_test_helper(use_src_lengths=None)
