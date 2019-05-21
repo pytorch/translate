@@ -13,7 +13,7 @@ class IndexedWeightsDataset(data.indexed_dataset.IndexedDataset):
         with open(path, "r") as f:
             for line in f:
                 self.values.append(float(line.strip("\n")))
-            self.size = len(self.values)
+            self._len = len(self.values)
 
     def __getitem__(self, i):
         self.check_index(i)
@@ -23,7 +23,7 @@ class IndexedWeightsDataset(data.indexed_dataset.IndexedDataset):
         pass
 
     def __len__(self):
-        return self.size
+        return self._len
 
 
 class WeightedLanguagePairDataset(data.language_pair_dataset.LanguagePairDataset):
