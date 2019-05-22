@@ -5,7 +5,6 @@ from collections import OrderedDict
 from fairseq import options
 from fairseq.data import RoundRobinZipDatasets
 from fairseq.tasks import register_task
-from fairseq.tasks.multilingual_translation import MultilingualTranslationTask
 from pytorch_translate import constants
 from pytorch_translate.data import (
     data as pytorch_translate_data,
@@ -13,35 +12,27 @@ from pytorch_translate.data import (
     weighted_data,
 )
 from pytorch_translate.tasks import utils as tasks_utils
+from pytorch_translate.tasks.pytorch_translate_multi_task import (
+    PyTorchTranslateMultiTask,
+)
 
 
 @register_task(constants.MULTILINGUAL_TRANSLATION_TASK)
-class PyTorchTranslateMultilingualTranslationTask(MultilingualTranslationTask):
-    """A task for training multiple translation models simultaneously.
-
-    We iterate round-robin over batches from multiple language pairs, ordered
-    according to the `--lang-pairs` argument.
-
-    The training loop is roughly:
-
-        for i in range(len(epoch)):
-            for lang_pair in args.lang_pairs:
-                batch = next_batch_for_lang_pair(lang_pair)
-                loss = criterion(model_for_lang_pair(lang_pair), batch)
-                loss.backward()
-            optimizer.step()
-
-    In practice, `next_batch_for_lang_pair` is abstracted in a FairseqDataset
-    (e.g., `RoundRobinZipDatasets`) and `model_for_lang_pair` is a model that
-    implements the `FairseqMultiModel` interface.
-
-    During inference it is required to specify a single `--source-lang` and
-    `--target-lang`, instead of `--lang-pairs`.
+class PyTorchTranslateMultilingualTranslationTask(PyTorchTranslateMultiTask):
+    """
+    PyTorchTranslateMultilingualTranslationTask is eventually subclasses
+    fairseq.tasks.MultilingualTranslationTask. The major differences are-
+    - There is no --data folder containing data binaries and vocabularies,
+      instead we use paths from --vocabulary, --multilingual-*-text-file and
+      --multilingual-*-binary-path
+    - loss_weights is used to weigh losses from different datasets differently.
+      This is achieved by using pytorch_translate's WeightedLanguagePairDataset
+    - The dictionaries are instances of pytorch_translate's Dictionary class
     """
 
     @staticmethod
     def add_args(parser):
-        MultilingualTranslationTask.add_args(parser)
+        PyTorchTranslateMultiTask.add_args(parser)
         """Add task-specific arguments to the parser."""
         parser.add_argument(
             "--vocabulary",

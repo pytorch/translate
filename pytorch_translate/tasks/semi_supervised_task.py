@@ -7,15 +7,12 @@ from typing import Optional
 from fairseq import models
 from fairseq.data import (
     BacktranslationDataset,
-    FairseqDataset,
     LanguagePairDataset,
     RoundRobinZipDatasets,
     TransformEosDataset,
-    data_utils,
 )
 from fairseq.models import FairseqMultiModel
 from fairseq.tasks import register_task
-from fairseq.tasks.multilingual_translation import MultilingualTranslationTask
 from pytorch_translate import (  # noqa F401 - removing rnn is causing test failures
     beam_decode,
     constants,
@@ -24,20 +21,19 @@ from pytorch_translate import (  # noqa F401 - removing rnn is causing test fail
 from pytorch_translate.data import (
     data as ptt_data,
     dictionary as pytorch_translate_dictionary,
-    iterators as ptt_iterators,
     utils as ptt_data_utils,
     weighted_data,
+)
+from pytorch_translate.tasks.pytorch_translate_multi_task import (
+    PyTorchTranslateMultiTask,
 )
 from pytorch_translate.tasks.pytorch_translate_task import PytorchTranslateTask
 
 
 @register_task(constants.SEMI_SUPERVISED_TASK)
-class PytorchTranslateSemiSupervised(PytorchTranslateTask):
+class PytorchTranslateSemiSupervised(PyTorchTranslateMultiTask):
     def __init__(self, args, dicts, training):
-        super().__init__(args, dicts[self.source_lang], dicts[self.target_lang])
-        self.dicts = dicts
-        self.langs = list(dicts.keys())
-        self.lang_pairs = [
+        lang_pairs = [
             f"{self.source_lang}-{self.target_lang}",
             f"{self.target_lang}-{self.source_lang}",
             (
@@ -49,17 +45,19 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
                 f"{constants.MONOLINGUAL_DATA_IDENTIFIER}"
             ),
         ]
+        # This is explicitly set so that we can re-use code from
+        # MultilingualTranslationTask. During initialization, it sets
+        # args.lang_pairs as self.lang_pairs
+        args.lang_pairs = lang_pairs
+        super().__init__(args, dicts, training)
         self.eval_lang_pairs = [
             f"{self.source_lang}-{self.target_lang}",
             f"{self.target_lang}-{self.source_lang}",
         ]
-        self.training = training
         self.remove_eos_from_source = not args.append_eos_to_source
         self.args = args
-        # This is explicitly set so that we can re-use code from
-        # MultilingualTranslationTask
-        self.args.lang_pairs = self.lang_pairs
         self.model = None
+
         """
         loss_weights refers to weights given to training loss for constituent
         models for specified number of epochs. If we don't specify a model, they
@@ -145,7 +143,7 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
         return ptt_data_utils.load_monolingual_dataset(
             bin_path=bin_path,
             is_source=is_source,
-            char_source_dict=self.char_source_dict,
+            char_source_dict=None,
             log_verbose=self.args.log_verbose,
             num_examples_limit=num_examples_limit,
         )
@@ -360,78 +358,3 @@ class PytorchTranslateSemiSupervised(PytorchTranslateTask):
         self.forward_model = model.models[forward_pair]
         self.backward_model = model.models[backward_pair]
         return model
-
-    def train_step(self, sample, model, criterion, optimizer, ignore_grad=False):
-        return MultilingualTranslationTask.train_step(
-            self, sample, model, criterion, optimizer
-        )
-
-    def valid_step(self, sample, model, criterion):
-        return MultilingualTranslationTask.valid_step(self, sample, model, criterion)
-
-    def init_logging_output(self, sample):
-        return MultilingualTranslationTask.init_logging_output(sample)
-
-    def grad_denom(self, sample_sizes, criterion):
-        return MultilingualTranslationTask.grad_denom(self, sample_sizes, criterion)
-
-    def aggregate_logging_outputs(self, logging_outputs, criterion):
-        return MultilingualTranslationTask.aggregate_logging_outputs(
-            self, logging_outputs, criterion
-        )
-
-    def get_batch_iterator(
-        self,
-        dataset,
-        max_tokens=None,
-        max_sentences=None,
-        max_positions=None,
-        ignore_invalid_inputs=False,
-        required_batch_size_multiple=1,
-        seed=1,
-        num_shards=1,
-        shard_id=0,
-        num_workers=0,
-    ):
-        assert isinstance(dataset, FairseqDataset)
-
-        # get indices ordered by example size
-        with data_utils.numpy_seed(seed):
-            indices = dataset.ordered_indices()
-
-        # filter examples that are too large
-        indices = data_utils.filter_by_size(
-            indices,
-            dataset.size,
-            max_positions,
-            raise_exception=(not ignore_invalid_inputs),
-        )
-
-        # create mini-batches with given size constraints
-        batch_sampler = data_utils.batch_by_size(
-            indices,
-            dataset.num_tokens,
-            max_tokens=max_tokens,
-            max_sentences=max_sentences,
-            required_batch_size_multiple=required_batch_size_multiple,
-        )
-
-        # return a reusable, sharded iterator
-        return ptt_iterators.WeightedEpochBatchIterator(
-            dataset=dataset,
-            collate_fn=dataset.collater,
-            batch_sampler=batch_sampler,
-            seed=seed,
-            num_shards=num_shards,
-            shard_id=shard_id,
-            num_workers=num_workers,
-            weights=self.loss_weights,
-        )
-
-    @property
-    def source_dictionary(self):
-        return self.dicts[self.source_lang]
-
-    @property
-    def target_dictionary(self):
-        return self.dicts[self.target_lang]
