@@ -84,23 +84,42 @@ class SimpleModelScorer(object):
           * If tgt_tokens don't start and end with eos.
         """
         eos = self.task.target_dictionary.eos()
+        unk = self.task.target_dictionary.unk()
 
         if (tgt_tokens == eos).sum() != 2 * tgt_tokens.size()[0]:
             raise ValueError("Each target should have 2 eos tokens")
 
         decoder_out = list(model.decoder(tgt_tokens, encoder_outs[0]))
-        assert (
-            len(decoder_out) == 2 or decoder_out[2] is None
-        ), "Rescoring doesn't work with vocab reduction"
+        possible_translation_tokens = decoder_out[2] if len(decoder_out) == 3 else None
 
         logprobs = model.get_normalized_probs(decoder_out, log_probs=True)
-        return logprobs
 
-    def compute_scores(self, tgt_tokens, logprobs):
+        if possible_translation_tokens is not None:
+            unk_pos = torch.nonzero(possible_translation_tokens == unk)
+            if unk_pos.size()[0] != 0:
+                # add unk_reward if unk appears in possible_translation_tokens
+                unk_index = unk_pos[0][0]
+                logprobs[:, :, unk_index] += self.args.unk_reward
+
+        return logprobs, possible_translation_tokens
+
+    def compute_scores(self, tgt_tokens, logprobs, possible_translation_tokens=None):
         """ logprobs have the log probabilities for each possible token
         for each hypothesis. here, we extract the logprobs matching the
         target tokens.
         """
+
+        def clean_tgt_tokens(tgt_tokens, possible_translation_tokens):
+            for i, hypo_tokens in enumerate(tgt_tokens):
+                for j, hypo_token in enumerate(hypo_tokens):
+                    tgt_tokens[i][j] = (
+                        possible_translation_tokens == hypo_token
+                    ).nonzero()
+            return tgt_tokens
+
+        if possible_translation_tokens is not None:
+            tgt_tokens = clean_tgt_tokens(tgt_tokens, possible_translation_tokens)
+
         tgt_tokens = tgt_tokens[:, 1:]  # get rid of initial eos token
 
         i, j = torch.meshgrid(
@@ -133,8 +152,12 @@ class SimpleModelScorer(object):
 
         encoder_inputs, tgt_tokens = self.prepare_inputs(src_tokens, hypos)
         encoder_outs = self.encode(encoder_inputs)
-        logprobs = self.decode(self.args, self.model, encoder_outs, tgt_tokens)
-        hypos_scores = self.compute_scores(tgt_tokens, logprobs)
+        logprobs, possible_translation_tokens = self.decode(
+            self.args, self.model, encoder_outs, tgt_tokens
+        )
+        hypos_scores = self.compute_scores(
+            tgt_tokens, logprobs, possible_translation_tokens
+        )
 
         return hypos_scores
 

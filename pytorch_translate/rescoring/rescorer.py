@@ -200,6 +200,16 @@ def add_args(parser):
         type=float,
         help=("Provide a weight for the cloze transformer model"),
     )
+    parser.add_argument(
+        "--unk-reward",
+        default=-1.0,
+        type=float,
+        help=(
+            "Value to add to (log-prob) score for UNK tokens. "
+            "Value < 0 (the usual case) encourages fewer UNKs, while > 0 "
+            "encourages more UNKs."
+        ),
+    )
 
 
 def combine_weighted_scores(scores, weights, src_len, tgt_len, lenpen):
