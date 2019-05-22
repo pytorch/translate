@@ -154,3 +154,33 @@ class TestModelScorers(unittest.TestCase):
                     [[eos, 6, 7, 8, eos], [eos, 6, 7, 8, eos]], dtype=torch.int
                 ),
             ), "Target tokens are not as expected"
+
+    def test_padding(self):
+        """Same sentence should produce the same score with or without padding
+        """
+        eos = self.task.tgt_dict.eos()
+
+        src_tokens = torch.tensor([6, 7, 8], dtype=torch.long)
+        hypos_with_padding = [
+            {"tokens": torch.tensor([12, 13, 14, 15, 16, eos], dtype=torch.long)},
+            {"tokens": torch.tensor([22, 23, 24, 25, eos], dtype=torch.long)},
+            {"tokens": torch.tensor([32, 33, eos], dtype=torch.long)},
+        ]
+        hypos_without_padding = [
+            {"tokens": torch.tensor([22, 23, 24, 25, eos], dtype=torch.long)},
+            {"tokens": torch.tensor([32, 33, eos], dtype=torch.long)},
+        ]
+
+        with patch(
+            "pytorch_translate.utils.load_diverse_ensemble_for_inference",
+            return_value=([self.model], self.args, self.task),
+        ):
+            scorer = SimpleModelScorer(
+                self.args, "/tmp/model_path.txt", None, self.task
+            )
+            scores_with_padding = scorer.score(src_tokens, hypos_with_padding)
+            scores_without_padding = scorer.score(src_tokens, hypos_without_padding)
+            assert (
+                scores_with_padding[1] == scores_without_padding[0]
+                and scores_with_padding[2] == scores_without_padding[1]
+            ), "Scores with and without padding should not be different"
