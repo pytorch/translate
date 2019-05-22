@@ -23,11 +23,7 @@ def get_arg_parser():
         default=1000,
         help="Number of iterations of random search",
     )
-    parser.add_argument("--evaluate-oracle-bleu", default=False, action="store_true")
     parser.add_argument("--report-oracle-bleu", default=False, action="store_true")
-    parser.add_argument(
-        "--report-intermediate-results", default=False, action="store_true"
-    )
     return parser
 
 
@@ -63,12 +59,7 @@ def identify_nonzero_features(scores_info):
     return np.where(nonzero_features)[0]
 
 
-def random_search(
-    scores_info_export_path,
-    num_trials,
-    report_oracle_bleu=False,
-    report_intermediate_results=False,
-):
+def random_search(scores_info_export_path, num_trials, report_oracle_bleu=False):
     with open(scores_info_export_path, "rb") as f:
         scores_info = pickle.load(f)
 
@@ -95,7 +86,7 @@ def random_search(
                 torch.IntTensor(example["hypos"][best_hypo_ind]),
             )
 
-        print("oracle BLEU", oracle_scorer.score())
+        print("oracle BLEU: ", oracle_scorer.score())
 
     num_features = scores_info[0]["scores"].shape[1]
     assert all(
@@ -103,7 +94,8 @@ def random_search(
     ), "All examples must have the same number of scores!"
     feature_weights = np.zeros(num_features)
     feature_weights[0] = 1
-    score = evaluate_weights(scores_info, feature_weights, length_penalty=0)
+    score = evaluate_weights(scores_info, feature_weights, length_penalty=1)
+    print("base BLEU: ", score)
     best_score = score
     best_weights = feature_weights
     best_length_penalty = 0
@@ -122,12 +114,9 @@ def random_search(
             best_weights = feature_weights
             best_length_penalty = length_penalty
 
-        if report_intermediate_results:
-            print(f"\r[{i}]  best: {best_score}", end="", flush=True)
+        print(f"\r[{i}]  best: {best_score}", end="", flush=True)
 
-    if report_intermediate_results:
-        print()
-    print("best BLEU: ", best_score)
+    print()
     print("best weights: ", best_weights)
     print("best length penalty: ", length_penalty)
 
@@ -142,10 +131,7 @@ def main():
     ), "--scores-info-export-path is required for weights search"
 
     random_search(
-        args.scores_info_export_path,
-        args.num_trials,
-        args.report_oracle_bleu,
-        args.report_intermediate_results,
+        args.scores_info_export_path, args.num_trials, args.report_oracle_bleu
     )
 
 
