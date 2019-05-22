@@ -84,7 +84,6 @@ class TestModelScorers(unittest.TestCase):
             assert hypos_scores[1] == 4.5
 
     def test_simple_scorer_prepare_inputs(self):
-        self.args.append_eos_to_source = True
         pad = self.task.tgt_dict.pad()
         eos = self.task.tgt_dict.eos()
 
@@ -155,6 +154,28 @@ class TestModelScorers(unittest.TestCase):
                 ),
             ), "Target tokens are not as expected"
 
+            # Turn off append_eos_to_source and verify outputs again
+            self.args.append_eos_to_source = False
+            (encoder_inputs, tgt_tokens) = scorer.prepare_inputs(src_tokens, hypos)
+
+            # Test encoder inputs
+            assert torch.equal(
+                encoder_inputs[0],
+                torch.tensor([[12, 13, 14], [22, 23, pad]], dtype=torch.int),
+            ), "Encoder inputs are not as expected"
+            max_tgt_len = max(len(hypo["tokens"]) for hypo in hypos)
+            assert (
+                encoder_inputs[1][0] == max_tgt_len - 1
+            ), " Src length is not as expected"
+
+            # Test target tokens
+            assert torch.equal(
+                tgt_tokens,
+                torch.tensor(
+                    [[eos, 6, 7, 8, eos], [eos, 6, 7, 8, eos]], dtype=torch.int
+                ),
+            ), "Target tokens are not as expected"
+
     def test_padding(self):
         """Same sentence should produce the same score with or without padding
         """
@@ -184,3 +205,42 @@ class TestModelScorers(unittest.TestCase):
                 scores_with_padding[1] == scores_without_padding[0]
                 and scores_with_padding[2] == scores_without_padding[1]
             ), "Scores with and without padding should not be different"
+
+    def test_reverse_model_scorer(self):
+        """Verify that reverse model is working correctly, by having one
+        forward and one backward scorers, and asserting that we get the same
+        scores from two scorers when source and targets are reversed
+
+        """
+        eos = self.task.tgt_dict.eos()
+
+        src_tokens = torch.tensor([6, 7, 8], dtype=torch.long)
+        hypos = [
+            {"tokens": torch.tensor([12, 13, 14, 15, eos], dtype=torch.long)},
+            {"tokens": torch.tensor([22, 23, 24, eos], dtype=torch.long)},
+            {"tokens": torch.tensor([32, 33, eos], dtype=torch.long)},
+        ]
+
+        reverse_src_tokens_0 = torch.tensor([12, 13, 14, 15], dtype=torch.long)
+        reverse_src_tokens_1 = torch.tensor([22, 23, 24], dtype=torch.long)
+        reverse_src_tokens_2 = torch.tensor([32, 33], dtype=torch.long)
+        reverse_hypos = [{"tokens": torch.tensor([6, 7, 8, eos], dtype=torch.long)}]
+
+        with patch(
+            "pytorch_translate.utils.load_diverse_ensemble_for_inference",
+            return_value=([self.model], self.args, self.task),
+        ):
+            scorer = SimpleModelScorer(
+                self.args, "/tmp/model_path.txt", None, self.task
+            )
+            reverse_scorer = ReverseModelScorer(
+                self.args, "/tmp/model_path.txt", None, self.task
+            )
+            forward_scores = scorer.score(src_tokens, hypos)
+            reverse_score_0 = reverse_scorer.score(reverse_src_tokens_0, reverse_hypos)
+            reverse_score_1 = reverse_scorer.score(reverse_src_tokens_1, reverse_hypos)
+            reverse_score_2 = reverse_scorer.score(reverse_src_tokens_2, reverse_hypos)
+
+            assert forward_scores[0].detach() == reverse_score_0.detach()
+            assert forward_scores[1].detach() == reverse_score_1.detach()
+            assert forward_scores[2].detach() == reverse_score_2.detach()

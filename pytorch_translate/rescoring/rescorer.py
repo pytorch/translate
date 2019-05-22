@@ -210,6 +210,12 @@ def add_args(parser):
             "encourages more UNKs."
         ),
     )
+    parser.add_argument(
+        "--append-eos-to-source",
+        default=False,
+        type=bool,
+        help=("If true, append EOS to source sentences"),
+    )
 
 
 def combine_weighted_scores(scores, weights, src_len, tgt_len, lenpen):
