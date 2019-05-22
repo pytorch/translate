@@ -12,10 +12,10 @@ from fairseq.models import (
     transformer as fairseq_transformer,
 )
 from pytorch_translate import (
+    multilingual_model,
     transformer as pytorch_translate_transformer,
     vocab_reduction,
 )
-from pytorch_translate.common_layers import TransformerTokenEmbedding
 from pytorch_translate.utils import torch_find
 
 
@@ -167,10 +167,12 @@ class HybridTransformerRNNModel(FairseqModel):
             freeze=args.decoder_freeze_embed,
         )
 
-        encoder = pytorch_translate_transformer.TransformerEncoder(
+        encoder = HybridTransformerRNNModel.build_encoder(
             args, src_dict, encoder_embed_tokens, proj_to_decoder=False
         )
-        decoder = HybridRNNDecoder(args, src_dict, tgt_dict, decoder_embed_tokens)
+        decoder = HybridTransformerRNNModel.build_decoder(
+            args, src_dict, tgt_dict, decoder_embed_tokens
+        )
         return HybridTransformerRNNModel(task, encoder, decoder)
 
     def get_targets(self, sample, net_output):
@@ -181,6 +183,16 @@ class HybridTransformerRNNModel(FairseqModel):
                 possible_translation_tokens, targets, len(self.task.target_dictionary)
             )
         return targets
+
+    @classmethod
+    def build_encoder(cls, args, src_dict, embed_tokens, proj_to_decoder=False):
+        return pytorch_translate_transformer.TransformerEncoder(
+            args, src_dict, embed_tokens, proj_to_decoder=False
+        )
+
+    @classmethod
+    def build_decoder(cls, args, src_dict, tgt_dict, embed_tokens):
+        return HybridRNNDecoder(args, src_dict, tgt_dict, embed_tokens)
 
 
 class HybridRNNDecoder(FairseqIncrementalDecoder):
@@ -490,3 +502,21 @@ def base_architecture(args):
     args.relu_dropout = getattr(args, "relu_dropout", 0.0)
     args.dropout = getattr(args, "dropout", 0.1)
     vocab_reduction.set_arg_defaults(args)
+
+
+@register_model("multilingual_hybrid_transformer_rnn")
+class MultilingualHybridTransformerModel(multilingual_model.MultilingualModel):
+    single_model_cls = HybridTransformerRNNModel
+
+    @staticmethod
+    def add_args(parser):
+        HybridTransformerRNNModel.add_args(parser)
+        multilingual_model.MultilingualModel.add_args(parser)
+
+
+@register_model_architecture(
+    "multilingual_hybrid_transformer_rnn", "multilingual_hybrid_transformer_rnn"
+)
+def semi_supervised_transformer(args):
+    base_architecture(args)
+    multilingual_model.MultilingualModel.set_multilingual_arch_args(args)
