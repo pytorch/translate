@@ -34,7 +34,7 @@ class MultilingualCorpusConfig(NamedTuple):
 class ParallelCorpusConfig(NamedTuple):
     source: CorpusConfig
     target: CorpusConfig
-    weights_file: Optional[str]
+    weights_file: Optional[str] = None
 
 
 class ParallelCorporaMapConfig(NamedTuple):
