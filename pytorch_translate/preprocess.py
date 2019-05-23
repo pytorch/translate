@@ -5,60 +5,14 @@ import os
 import tempfile
 from typing import List, Optional
 
-from pytorch_translate import constants, options as pytorch_translate_options, utils
+from pytorch_translate import (
+    constants,
+    multilingual_utils,
+    options as pytorch_translate_options,
+    utils,
+)
 from pytorch_translate.data import char_data, data as pytorch_translate_data
 from pytorch_translate.data.dictionary import Dictionary
-
-
-def validate_args(args):
-    if not (
-        (
-            args.train_source_text_file
-            or args.train_source_binary_path
-            or args.multiling_train_source_text_file
-        )
-        and (
-            args.train_target_text_file
-            or args.train_target_binary_path
-            or args.multiling_train_target_text_file
-        )
-        and (
-            args.eval_source_text_file
-            or args.eval_source_binary_path
-            or args.multiling_eval_source_text_file
-        )
-        and (
-            args.eval_target_text_file
-            or args.eval_target_binary_path
-            or args.multiling_eval_target_text_file
-        )
-    ):
-        raise ValueError(
-            "At least one of --*_text_file or --*_binary_path flags must be "
-            "specified for each of --{train, eval}_{source, target}_*"
-        )
-
-    for file_type in (
-        "train_source_text_file",
-        "train_target_text_file",
-        "eval_source_text_file",
-        "eval_target_text_file",
-    ):
-        text_file = getattr(args, file_type)
-        if text_file and not os.path.isfile(text_file):
-            raise ValueError(
-                f"Please specify an existing text file for "
-                f"--{file_type}={text_file}"
-            )
-
-    for file_type in ("source_vocab_file", "target_vocab_file"):
-        vocab_file = getattr(args, file_type)
-        if not vocab_file:
-            raise ValueError(
-                f"--{file_type} must be specified - even if you don't have "
-                f"a vocab file, you must still specify a location "
-                f"for it to be written to."
-            )
 
 
 def maybe_generate_temp_file_path(output_path=None):
@@ -209,6 +163,8 @@ def preprocess_corpora(args):
     # binarizing.
     if pytorch_translate_data.is_multilingual(args):
         preprocess_corpora_multilingual(args)
+    elif pytorch_translate_data.is_multilingual_many_to_one(args):
+        preprocess_corpora_multilingual_many_to_one(args)
     else:
 
         # Vocabs are built before preprocessing because we might need to use
@@ -417,6 +373,82 @@ def build_vocab_multicorpus(
 
 
 def preprocess_corpora_multilingual(args):
+    source_langs = multilingual_utils.get_source_langs(args.lang_pairs.split(","))
+    target_langs = multilingual_utils.get_target_langs(args.lang_pairs.split(","))
+
+    dict_paths, dict_objects = multilingual_utils.prepare_dicts(
+        args, list(set(source_langs + target_langs))
+    )
+    train_binary_path_config = []
+    eval_binary_path_config = []
+    for lang_pair in args.lang_pairs.split(","):
+        source_lang, target_lang = lang_pair.split("-")
+        source_corpus, target_corpus = multilingual_utils.get_parallel_corpus_for_lang_pair(
+            args.multilingual_train_text_file, lang_pair
+        )
+        source_binary_path = maybe_generate_temp_file_path(
+            multilingual_utils.default_binary_path(
+                args.save_dir, lang_pair, source_lang, "train"
+            )
+        )
+        binarize_text_file(
+            text_file=source_corpus,
+            dictionary=dict_objects[source_lang],
+            output_path=source_binary_path,
+            append_eos=args.append_eos_to_source,
+            reverse_order=args.reverse_source,
+        )
+        target_binary_path = maybe_generate_temp_file_path(
+            multilingual_utils.default_binary_path(
+                args.save_dir, lang_pair, target_lang, "train"
+            )
+        )
+        binarize_text_file(
+            text_file=target_corpus,
+            dictionary=dict_objects[target_lang],
+            output_path=target_binary_path,
+            append_eos=True,
+            reverse_order=False,
+        )
+        train_binary_path_config.append(
+            f"{lang_pair}:{source_binary_path},{target_binary_path}"
+        )
+        source_corpus, target_corpus = multilingual_utils.get_parallel_corpus_for_lang_pair(
+            args.multilingual_eval_text_file, lang_pair
+        )
+        source_binary_path = maybe_generate_temp_file_path(
+            multilingual_utils.default_binary_path(
+                args.save_dir, lang_pair, source_lang, "eval"
+            )
+        )
+        binarize_text_file(
+            text_file=source_corpus,
+            dictionary=dict_objects[source_lang],
+            output_path=source_binary_path,
+            append_eos=args.append_eos_to_source,
+            reverse_order=args.reverse_source,
+        )
+        target_binary_path = maybe_generate_temp_file_path(
+            multilingual_utils.default_binary_path(
+                args.save_dir, lang_pair, target_lang, "eval"
+            )
+        )
+        binarize_text_file(
+            text_file=target_corpus,
+            dictionary=dict_objects[target_lang],
+            output_path=target_binary_path,
+            append_eos=True,
+            reverse_order=False,
+        )
+        eval_binary_path_config.append(
+            f"{lang_pair}:{source_binary_path},{target_binary_path}"
+        )
+    args.vocabulary = [f"{lang}:{dict_paths[lang]}" for lang in dict_paths]
+    args.multilingual_train_binary_path = train_binary_path_config
+    args.multilingual_eval_binary_path = eval_binary_path_config
+
+
+def preprocess_corpora_multilingual_many_to_one(args):
     source_dicts = build_vocab_multicorpus(
         args.multiling_source_lang,
         args.multiling_train_source_text_file,

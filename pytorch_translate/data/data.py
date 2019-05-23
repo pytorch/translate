@@ -7,6 +7,7 @@ from typing import Dict, NamedTuple, Optional
 import numpy as np
 import torch
 from fairseq import data, tokenizer
+from pytorch_translate import constants
 from pytorch_translate.data import dictionary as pytorch_translate_dictionary
 
 
@@ -246,10 +247,25 @@ class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
         self.sizes = np.array(sizes, dtype=np.int32)
 
 
-def is_multilingual(args):
+def is_multilingual_many_to_one(args):
+    """
+    Checks whether we would be using the multilingual implementation in
+    pytorch_translate/multilingual.py. This is currently used as the default
+    many-to-one multilingual architecture.
+    """
     if hasattr(args, "multiling_encoder_lang"):
         return bool(args.multiling_encoder_lang)
     return args.multiling_source_lang is not None
+
+
+def is_multilingual(args):
+    """
+    Checks whether we would be using the multilingual implementation that
+    extends fariseq's MultilingualTranslationTask and FairseqMultiModel
+    """
+    if args.task == constants.MULTILINGUAL_TRANSLATION_TASK:
+        return True
+    return False
 
 
 class IndexedRawTextDatasetWithLangId(data.IndexedRawTextDataset):
