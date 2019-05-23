@@ -277,7 +277,17 @@ class LanguagePairSourceCharDataset(data.LanguagePairDataset):
         if self.tgt:
             example["target"] = self.tgt[i].long()
         if self.weights:
-            example["weight"] = self.weights[i]
+            """
+            If weight for example is missing, use last seen weight. Sometimes we
+            just want to assign a weight to the entire dataset with a single value
+            but also maintain the IndexedInMemoryDataset convention of weights.
+            This way, even if we don't care/know about dataset size, we can
+            assign same weight to all examples.
+            """
+            if len(self.weights) <= i:
+                example["weight"] = self.weights[-1]
+            else:
+                example["weight"] = self.weights[i]
         else:
             example["weight"] = 1.0
 
