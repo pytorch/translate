@@ -2,7 +2,6 @@
 
 import contextlib
 import os
-import random
 import tempfile
 import unittest
 from io import StringIO
@@ -533,6 +532,94 @@ class TestTranslation(unittest.TestCase):
                     ],
                 )
 
+    def test_multilingual_hybrid(self):
+        """
+        Tests multilingual translation task. Important flags:
+        `--multilingual-*-binary-path`, `--task`, `--arch`,
+        `--source-vocabulary`, `--target-vocabulary`, `--vocabulary`.
+        """
+        with contextlib.redirect_stdout(StringIO()):
+            with tempfile.TemporaryDirectory("test_multilingual_hybrid") as data_dir:
+                create_dummy_multilingual_data(data_dir)
+                train_translation_model(
+                    data_dir,
+                    [
+                        "--task",
+                        "pytorch_translate_multilingual_task",
+                        "--arch",
+                        "multilingual_hybrid_transformer_rnn",
+                        "--encoder-embed-dim",
+                        "8",
+                        "--encoder-ffn-embed-dim",
+                        "16",
+                        "--encoder-attention-heads",
+                        "4",
+                        "--encoder-layers",
+                        "3",
+                        "--decoder-embed-dim",
+                        "8",
+                        "--decoder-attention-heads",
+                        "4",
+                        "--decoder-layers",
+                        "2",
+                        "--decoder-lstm-units",
+                        "16",
+                        "--decoder-out-embed-dim",
+                        "8",
+                        "--lang-pairs",
+                        "xh-en,zu-en,en-xh",
+                        "--multilingual-train-text-file",
+                        (
+                            "xh-en:"
+                            f"{os.path.join(data_dir, 'train.xhen.xh')},"
+                            f"{os.path.join(data_dir, 'train.xhen.en')}"
+                        ),
+                        "--multilingual-eval-text-file",
+                        (
+                            "xh-en:"
+                            f"{os.path.join(data_dir, 'tune.xhen.xh')},"
+                            f"{os.path.join(data_dir, 'tune.xhen.en')}"
+                        ),
+                        "--multilingual-train-text-file",
+                        (
+                            "zu-en:"
+                            f"{os.path.join(data_dir, 'train.zuen.zu')},"
+                            f"{os.path.join(data_dir, 'train.zuen.en')}"
+                        ),
+                        "--multilingual-eval-text-file",
+                        (
+                            "zu-en:"
+                            f"{os.path.join(data_dir, 'tune.zuen.zu')},"
+                            f"{os.path.join(data_dir, 'tune.zuen.en')}"
+                        ),
+                        "--multilingual-train-text-file",
+                        (
+                            "en-xh:"
+                            f"{os.path.join(data_dir, 'train.xhen.en')},"
+                            f"{os.path.join(data_dir, 'train.xhen.xh')}"
+                        ),
+                        "--multilingual-eval-text-file",
+                        (
+                            "en-xh:"
+                            f"{os.path.join(data_dir, 'tune.xhen.en')},"
+                            f"{os.path.join(data_dir, 'tune.xhen.xh')}"
+                        ),
+                        # set these to empty to satisfy argument validation
+                        "--train-source-text-file",
+                        "",
+                        "--train-target-text-file",
+                        "",
+                        "--eval-source-text-file",
+                        "",
+                        "--eval-target-text-file",
+                        "",
+                    ],
+                    # fairseq MultlilingualTranslationTask expects mandatory
+                    # data directory positional argument
+                    set_empty_data_positional_arg=True,
+                    set_lang_args=False,
+                )
+
     def test_word_prediction(self):
         """ Tests a word prediction model, which will use a learned vocab
         reduction via the word prediction model. It uses a custom criterion
@@ -578,11 +665,18 @@ class TestTranslation(unittest.TestCase):
                 generate_main(data_dir)
 
 
-def train_translation_model(data_dir, extra_flags, criterion=None):
+def train_translation_model(
+    data_dir,
+    extra_flags,
+    criterion=None,
+    set_empty_data_positional_arg=False,
+    set_lang_args=True,
+):
     parser = train.get_parser_with_args()
     args = options.parse_args_and_arch(
         parser,
-        [
+        ([""] if set_empty_data_positional_arg else [])
+        + [
             "--save-dir",
             data_dir,
             "--train-source-text-file",
@@ -631,11 +725,8 @@ def train_translation_model(data_dir, extra_flags, criterion=None):
             "1",
             "--local-num-gpus",
             "1" if torch.cuda.device_count() >= 1 else "0",
-            "--source-lang",
-            "in",
-            "--target-lang",
-            "out",
         ]
+        + (["--source-lang", "in", "--target-lang", "out"] if set_lang_args else [])
         + (extra_flags or [])
         + (criterion or ["--criterion", "label_smoothed_cross_entropy"]),
     )
