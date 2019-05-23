@@ -16,7 +16,9 @@ from pytorch_translate import (
     utils as pytorch_translate_utils,
 )
 from pytorch_translate.dual_learning.dual_learning_task import DualLearningTask
-from pytorch_translate.tasks.semi_supervised_task import PytorchTranslateSemiSupervised
+from pytorch_translate.tasks.pytorch_translate_multi_task import (
+    PyTorchTranslateMultiTask,
+)
 
 
 def log_mid_epoch_stats(trainer, progress, extra_meters, log_output):
@@ -256,7 +258,7 @@ def calculate_bleu_on_subset(
     corresponding dataset
     lang_pair is passed to identify model to be used for generation
     """
-    if isinstance(task, PytorchTranslateSemiSupervised) or isinstance(
+    if isinstance(task, PyTorchTranslateMultiTask) or isinstance(
         task, DualLearningTask
     ):
         for key, dataset in task.datasets[dataset_split].datasets.items():
