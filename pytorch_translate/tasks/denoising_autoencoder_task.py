@@ -124,7 +124,7 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
             split=split,
             remove_eos_from_source=not self.args.append_eos_to_source,
             append_eos_to_target=True,
-            char_source_dict=self.char_source_dict,
+            char_source_dict=None,
             log_verbose=self.args.log_verbose,
         )
 
