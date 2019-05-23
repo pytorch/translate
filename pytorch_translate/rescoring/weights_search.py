@@ -6,6 +6,7 @@ import pickle
 import numpy as np
 import torch
 from fairseq import bleu
+from pytorch_translate import vocab_constants
 from pytorch_translate.data.dictionary import Dictionary
 from pytorch_translate.generate import smoothed_sentence_bleu
 
@@ -37,8 +38,9 @@ class DummyTask:
 
 
 def evaluate_weights(scores_info, feature_weights, length_penalty):
-    pad, eos, unk = (0, 1, 2)
-    scorer = bleu.Scorer(pad, eos, unk)
+    scorer = bleu.Scorer(
+        vocab_constants.PAD_ID, vocab_constants.EOS_ID, vocab_constants.UNK_ID
+    )
 
     for example in scores_info:
         weighted_scores = (example["scores"] * feature_weights).sum(axis=1)
@@ -66,8 +68,9 @@ def random_search(scores_info_export_path, num_trials, report_oracle_bleu=False)
     dummy_task = DummyTask()
 
     if report_oracle_bleu:
-        pad, eos, unk = (0, 1, 2)
-        oracle_scorer = bleu.Scorer(pad, eos, unk)
+        oracle_scorer = bleu.Scorer(
+            vocab_constants.PAD_ID, vocab_constants.EOS_ID, vocab_constants.UNK_ID
+        )
 
         for example in scores_info:
             smoothed_bleu = []
