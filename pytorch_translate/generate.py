@@ -26,7 +26,9 @@ from pytorch_translate.data import data as pytorch_translate_data
 from pytorch_translate.dual_learning.dual_learning_models import DualLearningModel
 from pytorch_translate.research.beam_search import competing_completed
 from pytorch_translate.research.multisource import multisource_data, multisource_decode
-from pytorch_translate.tasks.semi_supervised_task import PytorchTranslateSemiSupervised
+from pytorch_translate.tasks.pytorch_translate_multi_task import (
+    PyTorchTranslateMultiTask,
+)
 
 
 def generate_score(
@@ -203,7 +205,7 @@ def _generate_score(models, args, task, dataset):
             maxlen_b=args.max_len_b,
             cuda=use_cuda,
             timer=gen_timer,
-            prefix_size=1 if pytorch_translate_data.is_multilingual(args) else 0,
+            prefix_size=1 if pytorch_translate_data.is_multilingual_many_to_one(args) else 0,
         )
 
         for trans_info in _iter_translations(
@@ -351,7 +353,7 @@ def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
     Yields:
         For each sentence in `translations`, yields a TranslationInfo.
     """
-    is_multilingual = pytorch_translate_data.is_multilingual(args)
+    is_multilingual = pytorch_translate_data.is_multilingual_many_to_one(args)
 
     for sample_id, src_tokens, target_tokens, hypos in translations:
         # Process input and ground truth
@@ -643,7 +645,7 @@ def generate(args):
         task.load_dataset(
             args.gen_subset, args.source_binary_file, args.target_binary_file
         )
-    elif pytorch_translate_data.is_multilingual(args):
+    elif pytorch_translate_data.is_multilingual_many_to_one(args):
         task.set_encoder_langs(model_args[0].multiling_encoder_lang)
         task.set_decoder_langs(model_args[0].multiling_decoder_lang)
         task.load_dataset_from_text_multilingual(
@@ -673,7 +675,7 @@ def generate(args):
         )
 
     lang_pair = None
-    if isinstance(task, PytorchTranslateSemiSupervised):
+    if isinstance(task, PyTorchTranslateMultiTask):
         if args.source_lang and args.target_lang:
             lang_pair = args.source_lang + "-" + args.target_lang
         else:
