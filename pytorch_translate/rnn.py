@@ -649,7 +649,7 @@ class RNNModel(FairseqModel):
         base_architecture(args)
         # set default value for old checkpoints
         args.left_pad_source = getattr(args, "left_pad_source", False)
-        if pytorch_translate_data.is_multilingual(args):
+        if pytorch_translate_data.is_multilingual_many_to_one(args):
             return RNNModel.build_model_multilingual(args, task)
         src_dict, dst_dict = task.source_dictionary, task.target_dictionary
 
