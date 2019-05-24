@@ -36,8 +36,9 @@ class SequenceGenerator(object):
     ):
         """Generates translations of a given source sentence.
         Args:
-            models: List of FairseqModel objects. Each one must implement
-                reorder_encoder_output() method to replicate encoder outputs.
+            models: List of FairseqEncoderDecoderModel objects. Each one must
+                implement reorder_encoder_output() method to replicate encoder
+                outputs.
             min/maxlen: The length of the generated output will be bounded by
                 minlen and maxlen (not including the end-of-sentence marker).
             stop_early: Stop generation immediately after we finalize beam_size

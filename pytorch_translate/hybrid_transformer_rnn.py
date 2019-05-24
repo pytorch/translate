@@ -5,8 +5,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from fairseq import utils
 from fairseq.models import (
+    FairseqEncoderDecoderModel,
     FairseqIncrementalDecoder,
-    FairseqModel,
     register_model,
     register_model_architecture,
     transformer as fairseq_transformer,
@@ -20,7 +20,7 @@ from pytorch_translate.utils import torch_find
 
 
 @register_model("hybrid_transformer_rnn")
-class HybridTransformerRNNModel(FairseqModel):
+class HybridTransformerRNNModel(FairseqEncoderDecoderModel):
     def __init__(self, task, encoder, decoder):
         super().__init__(encoder, decoder)
         self.task = task

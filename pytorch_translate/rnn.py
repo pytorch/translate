@@ -7,7 +7,7 @@ import torch.onnx.operators
 from fairseq import options, utils
 from fairseq.models import (
     FairseqEncoder,
-    FairseqModel,
+    FairseqEncoderDecoderModel,
     register_model,
     register_model_architecture,
 )
@@ -77,7 +77,7 @@ class DummyPyTextRNNPointerModel:
 
 
 @register_model("rnn")
-class RNNModel(FairseqModel):
+class RNNModel(FairseqEncoderDecoderModel):
     def __init__(self, task, encoder, decoder):
         super().__init__(encoder, decoder)
         self.task = task

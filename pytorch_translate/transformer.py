@@ -8,8 +8,8 @@ import torch.nn.functional as F
 from fairseq import options, utils
 from fairseq.models import (
     FairseqEncoder,
+    FairseqEncoderDecoderModel,
     FairseqIncrementalDecoder,
-    FairseqModel,
     register_model,
     register_model_architecture,
     transformer as fairseq_transformer,
@@ -38,7 +38,7 @@ def build_embedding(dictionary, embed_dim, path=None, freeze=False):
 
 
 @register_model("ptt_transformer")
-class TransformerModel(FairseqModel):
+class TransformerModel(FairseqEncoderDecoderModel):
     def __init__(self, task, encoder, decoder):
         super().__init__(encoder, decoder)
         self.task = task
