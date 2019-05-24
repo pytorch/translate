@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 
-from fairseq.models import FairseqModel, register_model, register_model_architecture
+from fairseq.models import (
+    FairseqEncoderDecoderModel,
+    register_model,
+    register_model_architecture,
+)
 from pytorch_translate import (
     hybrid_transformer_rnn,
     transformer as pytorch_translate_transformer,
@@ -9,7 +13,7 @@ from pytorch_translate.utils import torch_find
 
 
 @register_model("hybrid_dual_decoder_kd")
-class HybridDualDecoderKDModel(FairseqModel):
+class HybridDualDecoderKDModel(FairseqEncoderDecoderModel):
     def __init__(self, task, encoder, teacher_decoder, student_decoder):
         super().__init__(encoder, student_decoder)
         self.teacher_decoder = teacher_decoder

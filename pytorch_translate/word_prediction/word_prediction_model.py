@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 
-from fairseq.models import FairseqModel, register_model, register_model_architecture
+from fairseq.models import (
+    FairseqEncoderDecoderModel,
+    register_model,
+    register_model_architecture,
+)
 from pytorch_translate import rnn
 from pytorch_translate.rnn import LSTMSequenceEncoder, RNNDecoder, RNNEncoder, RNNModel
 from pytorch_translate.utils import torch_find
 from pytorch_translate.word_prediction import word_predictor
 
 
-class WordPredictionModel(FairseqModel):
+class WordPredictionModel(FairseqEncoderDecoderModel):
     """
     An architecuture which jointly learns translation and target words
     prediction, as described in http://aclweb.org/anthology/D17-1013.

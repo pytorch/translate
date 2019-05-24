@@ -186,7 +186,8 @@ class CharSourceHybridModel(hybrid_transformer_rnn.HybridTransformerRNNModel):
         self, src_tokens, src_lengths, char_inds, word_lengths, prev_output_tokens
     ):
         """
-        Overriding FairseqModel.forward() due to different encoder inputs.
+        Overriding FairseqEncoderDecoderModel.forward() due to different encoder
+        inputs.
         """
         encoder_out = self.encoder(src_tokens, src_lengths, char_inds, word_lengths)
         decoder_out = self.decoder(prev_output_tokens, encoder_out)

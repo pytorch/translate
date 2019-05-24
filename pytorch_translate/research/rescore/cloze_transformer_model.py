@@ -1,35 +1,14 @@
 #!/usr/bin/env python3
 
-import math
-
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from fairseq import options, utils
-from fairseq.models import (
-    FairseqEncoder,
-    FairseqIncrementalDecoder,
-    FairseqModel,
-    register_model,
-    register_model_architecture,
-    transformer as fairseq_transformer,
-)
-from fairseq.modules import AdaptiveSoftmax, SinusoidalPositionalEmbedding
-from pytorch_translate import utils as pytorch_translate_utils, vocab_reduction
-from pytorch_translate.common_layers import (
-    TransformerEmbedding,
-    TransformerEncoderGivenEmbeddings,
-    TransformerTokenEmbedding,
-    VariableTracker,
-)
-from pytorch_translate.semi_supervised import SemiSupervisedModel
+from fairseq import utils
+from fairseq.models import register_model, register_model_architecture
 from pytorch_translate.transformer import (
     TransformerDecoder,
     TransformerModel,
     base_architecture,
     build_embedding,
 )
-from pytorch_translate.utils import torch_find
 
 
 @register_model("cloze_transformer")

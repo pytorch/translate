@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from fairseq import bleu, data, options, progress_bar, tasks, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
-from fairseq.models import FairseqModel, FairseqMultiModel
+from fairseq.models import FairseqEncoderDecoderModel, FairseqMultiModel
 from pytorch_translate import hybrid_transformer_rnn  # noqa
 from pytorch_translate import rnn  # noqa
 from pytorch_translate import transformer  # noqa
@@ -35,7 +35,7 @@ def generate_score(
     args: argparse.Namespace,
     task: tasks.FairseqTask,
     dataset: data.FairseqDataset,
-    models: List[FairseqModel],
+    models: List[FairseqEncoderDecoderModel],
     lang_pair: Optional[str] = None,
 ):
     """
@@ -45,7 +45,7 @@ def generate_score(
         args: Command-line arguments.
         task: FairseqTask object.
         dataset: Dataset set object for a specific split for a specific model
-        models: List[FairseqModel], an ensemble of models
+        models: List[FairseqEncoderDecoderModel], an ensemble of models
         lang_pair: Optional model key in a multi model object. Specify None in
             single model set up
     """
