@@ -297,7 +297,8 @@ def main():
     base_bleu_scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
     rescoring_bleu_scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
 
-    translation_info_list = pickle.load(open(args.translation_info_export_path, "rb"))
+    with open(args.translation_info_export_path, "rb") as file:
+        translation_info_list = pickle.load(file)
     scores_to_export_list = []
     for trans_info in tqdm(translation_info_list):
         trans_info["hypos"] = [
@@ -322,9 +323,8 @@ def main():
     print("| Rescoring ", rescoring_bleu_scorer.result_string())
 
     if args.scores_info_export_path is not None:
-        f = open(args.scores_info_export_path, "wb")
-        pickle.dump(scores_to_export_list, f)
-        f.close()
+        with open(args.scores_info_export_path, "wb") as file:
+            pickle.dump(scores_to_export_list, file)
 
 
 if __name__ == "__main__":
