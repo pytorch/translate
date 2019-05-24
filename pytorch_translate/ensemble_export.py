@@ -713,6 +713,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
         for i, (model, fut) in enumerate(zip(self.models, futures)):
             if (
                 isinstance(model, rnn.RNNModel)
+                or isinstance(model, rnn.DummyPyTextRNNPointerModel)
                 or isinstance(model, char_source_model.CharSourceModel)
                 or isinstance(model, word_prediction_model.WordPredictionModel)
             ):
