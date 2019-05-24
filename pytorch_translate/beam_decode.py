@@ -195,6 +195,30 @@ class SequenceGenerator(object):
             encoder_inputs = (encoder_input["src_tokens"], encoder_input["src_lengths"])
         return encoder_inputs
 
+    def _build_constraints(self, src_tokens, beam_size):
+        """
+        Stub functions for adding application specific constraint checks on
+        the candidates being generated during beam search. This and the below
+        stub functions can be implemented in a child class without needing to
+        touch the actual beam search code
+        """
+        pass
+
+    def _apply_constraint_penalty(self, scores):
+        pass
+
+    def _update_constraints(self, constraints, next_tokens, idx):
+        pass
+
+    def _reorder_constraints(self, constraints, new_indices):
+        pass
+
+    def _apply_eos_constraints(self, constraints, eos_bbsz_idx, eos_scores):
+        pass
+
+    def _finalize_constrained_results(self, finalized, device):
+        pass
+
     def _decode_target(
         self,
         encoder_input,
@@ -254,6 +278,9 @@ class SequenceGenerator(object):
 
         # helper function for allocating buffers on the fly
         buffers = {}
+
+        # init constraints
+        constraints = self._build_constraints(encoder_input["src_tokens"][0], beam_size)
 
         def buffer(name, type_of=tokens):  # noqa
             if name not in buffers:
@@ -407,6 +434,7 @@ class SequenceGenerator(object):
             scores_buf = scores_buf.type_as(logprobs)
 
             if step < maxlen:
+                self._apply_constraint_penalty(scores)  # stub call
                 if prefix_tokens is not None and step < prefix_tokens.size(1):
                     logprobs_slice = logprobs.view(bsz, -1, logprobs.size(-1))[:, 0, :]
                     cand_scores = torch.gather(
@@ -474,6 +502,7 @@ class SequenceGenerator(object):
                         mask=eos_mask[:, :beam_size],
                         out=eos_scores,
                     )
+                    self._apply_eos_constraints(constraints, eos_bbsz_idx, eos_scores)
                     num_remaining_sent -= finalize_hypos(
                         step, eos_bbsz_idx, eos_scores, cand_scores
                     )
@@ -527,6 +556,9 @@ class SequenceGenerator(object):
                 index=active_hypos,
                 out=tokens_buf.view(bsz, beam_size, -1)[:, :, step + 1],
             )
+            # update constraints for next step
+            constraints = self._reorder_constraints(constraints, active_bbsz_idx)
+            self._update_constraints(constraints, tokens_buf[:, step + 1], step)
             if step > 0:
                 torch.index_select(
                     scores[:, :step],
@@ -562,7 +594,7 @@ class SequenceGenerator(object):
             finalized[sent] = sorted(
                 finalized[sent], key=lambda r: r["score"], reverse=True
             )
-
+        self._finalize_constrained_results(finalized, scores.device)
         return finalized
 
     def _encode(self, encoder_input):
