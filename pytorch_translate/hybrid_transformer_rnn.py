@@ -137,6 +137,7 @@ class HybridTransformerRNNModel(FairseqEncoderDecoderModel):
         )
         parser.add_argument(
             "--decoder-out-embed-dim",
+            default=None,
             type=int,
             metavar="N",
             help="decoder output embedding dimension",
@@ -220,7 +221,7 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         self.input_dim = self.lstm_units + self.attention_dim
 
         self.num_attention_heads = args.decoder_attention_heads
-        self.out_embed_dim = args.decoder_out_embed_dim
+        self.bottleneck_dim = args.decoder_out_embed_dim
 
     def _init_components(self, args, src_dict, dst_dict, embed_tokens):
         self.initial_rnn_layer = nn.LSTM(
@@ -249,9 +250,14 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
                 nn.LSTM(input_size=self.input_dim, hidden_size=self.lstm_units)
             )
 
-        self.bottleneck_layer = fairseq_transformer.Linear(
-            self.input_dim, self.out_embed_dim
-        )
+        self.bottleneck_layer = None
+        if self.bottleneck_dim is not None:
+            self.out_embed_dim = self.bottleneck_dim
+            self.bottleneck_layer = fairseq_transformer.Linear(
+                self.input_dim, self.out_embed_dim
+            )
+        else:
+            self.out_embed_dim = self.input_dim
 
         self.embed_out = nn.Parameter(torch.Tensor(len(dst_dict), self.out_embed_dim))
         nn.init.normal_(self.embed_out, mean=0, std=self.out_embed_dim ** -0.5)
@@ -378,7 +384,8 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
 
         x = torch.cat([x, attention_out], dim=2)
         x = self._concat_latent_code(x, encoder_out)
-        x = self.bottleneck_layer(x)
+        if self.bottleneck_layer is not None:
+            x = self.bottleneck_layer(x)
 
         # T x B x C -> B x T x C
         x = x.transpose(0, 1)
