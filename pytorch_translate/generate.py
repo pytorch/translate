@@ -530,7 +530,7 @@ def get_parser_with_args():
     )
     generation_group.add_argument(
         "--target-text-file",
-        default="",
+        default=None,
         metavar="FILE",
         help="Path to raw text file containing examples in target dialect. "
         "This overrides what would be loaded from the data dir.",
@@ -619,9 +619,6 @@ def validate_args(args):
             (src_file and os.path.isfile(src_file))
             for src_file in args.source_text_file
         ), "Please specify a valid file for --source-text-file"
-        assert args.target_text_file and os.path.isfile(
-            args.target_text_file
-        ), "Please specify a valid file for --target-text-file"
 
 
 def generate(args):
