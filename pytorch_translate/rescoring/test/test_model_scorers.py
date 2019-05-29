@@ -241,6 +241,6 @@ class TestModelScorers(unittest.TestCase):
             reverse_score_1 = reverse_scorer.score(reverse_src_tokens_1, reverse_hypos)
             reverse_score_2 = reverse_scorer.score(reverse_src_tokens_2, reverse_hypos)
 
-            assert forward_scores[0].detach() == reverse_score_0.detach()
-            assert forward_scores[1].detach() == reverse_score_1.detach()
-            assert forward_scores[2].detach() == reverse_score_2.detach()
+            assert forward_scores[0] == reverse_score_0
+            assert forward_scores[1] == reverse_score_1
+            assert forward_scores[2] == reverse_score_2
