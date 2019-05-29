@@ -33,6 +33,9 @@ class SimpleModelScorer(object):
 
         if self.model is not None:
             self.model.eval()
+            # Turn off gradient computation in eval mode
+            for param in self.model.parameters():
+                param.requires_grad = False
             utils.maybe_cuda(self.model)
 
     def convert_hypos_to_tgt_tokens(self, hypos):
