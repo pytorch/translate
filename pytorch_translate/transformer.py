@@ -177,6 +177,14 @@ class TransformerModel(FairseqEncoderDecoderModel):
             help="comma separated list of adaptive softmax cutoff points. "
             "Must be used with adaptive_loss criterion",
         )
+        parser.add_argument(
+            "--decoder-out-embed-dim",
+            default=None,
+            type=int,
+            metavar="N",
+            help="decoder output embedding dimension (bottleneck layer before"
+            "output layer if specified.)",
+        )
 
         # Args for vocab reduction
         vocab_reduction.add_args(parser)
@@ -365,16 +373,28 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
         self.adaptive_softmax = None
 
+        self.bottleneck_layer = None
+        out_embed_dim = embed_dim
+        if args.decoder_out_embed_dim is not None:
+            assert (
+                not args.share_all_embeddings
+                and not args.share_decoder_input_output_embed
+            ), "--decoder-out-embed-dim is incompatible with sharing output embeddings!"
+            self.bottleneck_layer = fairseq_transformer.Linear(
+                embed_dim, args.decoder_out_embed_dim
+            )
+            out_embed_dim = args.decoder_out_embed_dim
+
         if args.adaptive_softmax_cutoff is not None:
             self.adaptive_softmax = AdaptiveSoftmax(
                 len(dst_dict),
-                args.decoder_embed_dim,
+                out_embed_dim,
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int),
                 dropout=args.dropout,
             )
         elif not self.share_input_output_embed:
-            self.embed_out = nn.Parameter(torch.Tensor(len(dst_dict), embed_dim))
-            nn.init.normal_(self.embed_out, mean=0, std=embed_dim ** -0.5)
+            self.embed_out = nn.Parameter(torch.Tensor(len(dst_dict), out_embed_dim))
+            nn.init.normal_(self.embed_out, mean=0, std=out_embed_dim ** -0.5)
 
         self.vocab_reduction_module = None
         if args.vocab_reduction_params:
@@ -447,6 +467,9 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
         # T x B x C -> B x T x C
         x = x.transpose(0, 1)
+
+        if self.bottleneck_layer is not None:
+            x = self.bottleneck_layer(x)
 
         if self.adaptive_softmax is not None:
             return x, attn, None
@@ -592,6 +615,7 @@ def base_architecture(args):
     )
     args.decoder_layers = getattr(args, "decoder_layers", 3)
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 4)
+    args.decoder_out_embed_dim = getattr(args, "decoder_out_embed_dim", None)
     args.decoder_freeze_embed = getattr(args, "decoder_freeze_embed", False)
     args.decoder_learned_pos = getattr(args, "decoder_learned_pos", False)
     args.decoder_normalize_before = getattr(args, "decoder_normalize_before", False)
