@@ -241,6 +241,17 @@ class TestONNX(unittest.TestCase):
         }
         self._test_batched_beam_decoder_step(test_args)
 
+    def test_batched_beam_decoder_transformer_bottleneck(self):
+        test_args = test_utils.ModelParamsDict(arch="transformer")
+        lexical_dictionaries = test_utils.create_lexical_dictionaries()
+        test_args.vocab_reduction_params = {
+            "lexical_dictionaries": lexical_dictionaries,
+            "num_top_words": 5,
+            "max_translation_candidates_per_word": 1,
+        }
+        test_args.decoder_out_embed_dim = 5
+        self._test_batched_beam_decoder_step(test_args)
+
     def test_batched_beam_decoder_hybrid_transformer_rnn(self):
         test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
         lexical_dictionaries = test_utils.create_lexical_dictionaries()
