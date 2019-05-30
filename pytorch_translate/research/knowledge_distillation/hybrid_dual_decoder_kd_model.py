@@ -156,7 +156,7 @@ class StudentHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
         self.input_dim = self.lstm_units + self.attention_dim
 
         self.num_attention_heads = args.student_decoder_attention_heads
-        self.out_embed_dim = args.student_decoder_out_embed_dim
+        self.bottleneck_dim = args.student_decoder_out_embed_dim
 
 
 @register_model_architecture("hybrid_dual_decoder_kd", "hybrid_dual_decoder_kd")
