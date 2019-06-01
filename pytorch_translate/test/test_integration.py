@@ -567,7 +567,7 @@ class TestTranslation(unittest.TestCase):
                         "--decoder-out-embed-dim",
                         "8",
                         "--lang-pairs",
-                        "xh-en,zu-en,en-xh",
+                        "xh-en,zu-en",
                         "--multilingual-train-text-file",
                         (
                             "xh-en:"
@@ -591,18 +591,6 @@ class TestTranslation(unittest.TestCase):
                             "zu-en:"
                             f"{os.path.join(data_dir, 'tune.zuen.zu')},"
                             f"{os.path.join(data_dir, 'tune.zuen.en')}"
-                        ),
-                        "--multilingual-train-text-file",
-                        (
-                            "en-xh:"
-                            f"{os.path.join(data_dir, 'train.xhen.en')},"
-                            f"{os.path.join(data_dir, 'train.xhen.xh')}"
-                        ),
-                        "--multilingual-eval-text-file",
-                        (
-                            "en-xh:"
-                            f"{os.path.join(data_dir, 'tune.xhen.en')},"
-                            f"{os.path.join(data_dir, 'tune.xhen.xh')}"
                         ),
                         # set these to empty to satisfy argument validation
                         "--train-source-text-file",
