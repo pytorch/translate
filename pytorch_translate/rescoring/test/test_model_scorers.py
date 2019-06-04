@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import torch
 from pytorch_translate.rescoring.model_scorers import (
+    LMScorer,
     R2LModelScorer,
     ReverseModelScorer,
     SimpleModelScorer,
@@ -175,6 +176,44 @@ class TestModelScorers(unittest.TestCase):
                     [[eos, 6, 7, 8, eos], [eos, 6, 7, 8, eos]], dtype=torch.int
                 ),
             ), "Target tokens are not as expected"
+
+    def test_lm_scorer_prepare_inputs(self):
+        pad = self.task.tgt_dict.pad()
+        eos = self.task.tgt_dict.eos()
+        self.task.dictionary = self.task.tgt_dict
+
+        src_tokens = torch.tensor([6, 7, 8], dtype=torch.int)
+        hypos = [
+            {"tokens": torch.tensor([12, 13, 14, eos], dtype=torch.int)},
+            {"tokens": torch.tensor([22, 23, eos], dtype=torch.int)},
+        ]
+
+        with patch(
+            "pytorch_translate.utils.load_diverse_ensemble_for_inference",
+            return_value=([self.model], self.args, self.task),
+        ):
+            scorer = LMScorer(self.args, "/tmp/model_path.txt", None, self.task)
+            encoder_inputs, (tgt_tokens, tokens_to_score) = scorer.prepare_inputs(
+                src_tokens, hypos
+            )
+
+            # Test encoder inputs
+            assert torch.equal(
+                encoder_inputs[0], torch.tensor([[6, 7, 8], [6, 7, 8]], dtype=torch.int)
+            ), "Encoder inputs are not as expected"
+            assert torch.equal(
+                encoder_inputs[1], torch.tensor([3, 3], dtype=torch.int)
+            ), "Src lengths are not as expected"
+
+            assert torch.equal(
+                tgt_tokens,
+                torch.tensor([[eos, 12, 13, 14], [eos, 22, 23, pad]], dtype=torch.int),
+            ), "Target tokens are not as expected"
+
+            assert torch.equal(
+                tokens_to_score,
+                torch.tensor([[12, 13, 14, eos], [22, 23, eos, pad]], dtype=torch.int),
+            ), "Tokens to score are not as expected"
 
     def test_padding(self):
         """Same sentence should produce the same score with or without padding

@@ -39,8 +39,7 @@ class SimpleModelScorer(object):
             utils.maybe_cuda(self.model)
 
     def convert_hypos_to_tgt_tokens(self, hypos):
-        """
-        hypos is a list of hypotheses containing elements of type dict.
+        """ hypos is a list of hypotheses containing elements of type dict.
         each hypothesis dictionary contains target tokens.
         we convert these target tokens to a tensor, also eos token to the
         left and right, and padding to the end.
@@ -293,40 +292,67 @@ class ReverseModelScorer(SimpleModelScorer):
 
 class LMScorer(SimpleModelScorer):
     def convert_hypos_to_tgt_tokens(self, hypos):
+        """ hypos is a list of hypotheses containing elements of type dict.
+        each hypothesis dictionary contains target tokens.
+        we convert these target tokens to two tensors, tgt_tokens with eos to the
+        left and tokens_to_score with eos right.
         """
-        Converts target tokens from the translation model dictionary
-        to language model dictionary
-        """
-        # TODO: (T41818693) Map translation model vs LM model differences
-        # and come up with a solution
+
+        # Prepare tgt_tokens and tokens_to_score placeholders
+        eos = self.task.dictionary.eos()
+        pad = self.task.dictionary.pad()
         max_tgt_len = max(len(hypo["tokens"]) for hypo in hypos)
-        pad = self.task.dictionary.pad_index
         tgt_tokens = torch.full(
             (len(hypos), max_tgt_len), fill_value=pad, dtype=torch.long
         )
+        tokens_to_score = tgt_tokens.clone()
 
+        # Convert tokens from translation dict to lm dictionary
+        tgt_tokens[:, 0] = torch.tensor(eos)  # tgt_tokens start with eos
         for i, hypo in enumerate(hypos):
             tgt_string = self.forward_task.tgt_dict.string(hypo["tokens"])
             tgt_mapped = self.task.dictionary.encode_line(
                 tgt_string, add_if_not_exist=False
-            )
-            tgt_tokens[i, : len(tgt_mapped)] = tgt_mapped
+            )  # encode_line puts eos to last token
+            tgt_tokens[i, 1 : len(tgt_mapped)] = tgt_mapped[:-1]
+            tokens_to_score[i, : len(tgt_mapped)] = tgt_mapped
 
-        return tgt_tokens
+        return tgt_tokens, tokens_to_score
+
+    def prepare_inputs(self, src_tokens, hypos):
+        """ Language model requires encoder_inputs, tgt_tokens (starts with eos)
+        and tokens_to_score (ends with eos)
+        """
+        src_lengths = (
+            torch.tensor([len(src_tokens)]).repeat(len(hypos)).type_as(src_tokens)
+        )
+        src_tokens = src_tokens.repeat(len(hypos), 1)
+        encoder_inputs = (src_tokens, src_lengths)
+        (tgt_tokens, tokens_to_score) = self.convert_hypos_to_tgt_tokens(hypos)
+        return (
+            encoder_inputs,
+            (tgt_tokens.type_as(src_tokens), tokens_to_score.type_as(src_tokens)),
+        )
 
     def score(self, src_tokens, hypos):
         if self.model is None:
             return
 
-        _, tgt_tokens = self.prepare_inputs(src_tokens, hypos)
+        _, (tgt_tokens, tokens_to_score) = self.prepare_inputs(src_tokens, hypos)
 
-        decoder_out = self.model.decoder(tgt_tokens)
+        decoder_out = self.model.forward(
+            src_tokens=tgt_tokens, src_lengths=(tgt_tokens != 1).sum(1)
+        )
         logprobs = self.model.get_normalized_probs(decoder_out, log_probs=True)
-        hypos_tokens_probs = logprobs.gather(
-            dim=2, index=tgt_tokens.unsqueeze(2)
-        ).squeeze(2)
 
-        pad = self.task.dictionary.pad_index
+        unk_index = self.task.dictionary.unk()
+        logprobs[:, :, unk_index] += self.args.unk_reward
+
+        hypos_tokens_probs = logprobs.gather(
+            dim=2, index=tokens_to_score.unsqueeze(-1)
+        ).view(tgt_tokens.shape)
+
+        pad = self.task.dictionary.pad()
         hypos_tokens_probs = (tgt_tokens != pad).float() * hypos_tokens_probs
 
         return hypos_tokens_probs.sum(dim=1)
