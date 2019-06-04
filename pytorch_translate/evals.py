@@ -1,20 +1,13 @@
 #!/usr/bin/env python3
 
 import math
-import os
-import shutil
 import time
 from collections import OrderedDict, defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from fairseq import distributed_utils, progress_bar, utils
 from fairseq.meters import AverageMeter
-from pytorch_translate import (
-    checkpoint,
-    constants,
-    generate,
-    utils as pytorch_translate_utils,
-)
+from pytorch_translate import checkpoint, generate, utils as pytorch_translate_utils
 from pytorch_translate.dual_learning.dual_learning_task import DualLearningTask
 from pytorch_translate.tasks.pytorch_translate_multi_task import (
     PyTorchTranslateMultiTask,
@@ -376,13 +369,24 @@ def save_and_eval(
         averaged_params: OrderedDict = checkpoint_manager.get_averaged_params(
             new_params=trainer.get_model().state_dict()
         )
-        extra_state, stop_due_to_tune_bleu, new_best_averaged_checkpoint, translation_samples = evaluate_bleu(
-            args=args,
-            task=task,
-            extra_state=extra_state,
-            trainer=trainer,
-            averaged_params=averaged_params,
-        )
+
+        # TODO: fix after masked lm work completes
+        if "save_only" not in args or not args.save_only:
+            (
+                extra_state,
+                stop_due_to_tune_bleu,
+                new_best_averaged_checkpoint,
+                translation_samples,
+            ) = evaluate_bleu(
+                args=args,
+                task=task,
+                extra_state=extra_state,
+                trainer=trainer,
+                averaged_params=averaged_params,
+            )
+        else:
+            new_best_averaged_checkpoint = True
+            stop_due_to_tune_bleu = False
         # checkpoint_manager takes ownership of averaged_params.
         extra_state = checkpoint_manager.save(
             args=args,
@@ -410,10 +414,12 @@ def save_and_eval(
     )
     extra_state["tune_bleu"] = tune_bleu
 
-    # Basic sanity checks that extra_state is populated correctly.
-    assert (
-        extra_state["tune_eval"]["loss"] is not None
-        and extra_state["tune_eval"]["perplexity"] is not None
-        and extra_state["tune_bleu"]["current"] is not None
-    )
+    # TODO: fix after masked lm work completes
+    if "save_only" not in args or not args.save_only:
+        # Basic sanity checks that extra_state is populated correctly.
+        assert (
+            extra_state["tune_eval"]["loss"] is not None
+            and extra_state["tune_eval"]["perplexity"] is not None
+            and extra_state["tune_bleu"]["current"] is not None
+        )
     return extra_state, stop_training, translation_samples

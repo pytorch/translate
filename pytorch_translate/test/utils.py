@@ -162,10 +162,14 @@ class TestDataset(torch.utils.data.Dataset):
         return len(self.data)
 
 
-def dummy_dictionary(dummy_tokens=3, additional_token_list=None):
+def dummy_dictionary(
+    dummy_tokens=3,
+    additional_token_list=None,
+    dictionary_cls=pytorch_translate_dictionary.Dictionary,
+):
     """First adds the amount of dummy_tokens that you specify, then
     finally the additional_token_list, which is a list of string token values"""
-    d = pytorch_translate_dictionary.Dictionary()
+    d = dictionary_cls()
     for i in range(dummy_tokens):
         token = f"token_{i}"
         d.add_symbol(token)
