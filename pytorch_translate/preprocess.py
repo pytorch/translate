@@ -136,7 +136,7 @@ def binarize_text_file_multilingual(
     return output_path
 
 
-def preprocess_corpora(args):
+def preprocess_corpora(args, dictionary_cls=Dictionary):
     if (
         args.train_source_binary_path is not None
         and args.train_target_binary_path is not None
@@ -164,13 +164,15 @@ def preprocess_corpora(args):
     if pytorch_translate_data.is_multilingual(args):
         preprocess_corpora_multilingual(args)
     elif pytorch_translate_data.is_multilingual_many_to_one(args):
-        preprocess_corpora_multilingual_many_to_one(args)
+        preprocess_corpora_multilingual_many_to_one(args, dictionary_cls)
     else:
 
         # Vocabs are built before preprocessing because we might need to use
         # both monolingual and bilingual corpora sources to build the vocab
         # (in the case of semisupervised training)
-        source_dict, char_source_dict, target_dict = build_vocabs(args=args)
+        source_dict, char_source_dict, target_dict = build_vocabs(
+            args=args, dictionary_cls=dictionary_cls
+        )
 
         preprocess_bilingual_corpora(
             args=args,
@@ -240,7 +242,7 @@ def preprocess_monolingual_corpora(
         )
 
 
-def build_vocabs(args: argparse.Namespace):
+def build_vocabs(args: argparse.Namespace, dictionary_cls=Dictionary):
     """
     Builds vocabs or loads them from existing vocab files. If args.task
     is pytorch_translate_semi_supervised, we use the monolingual corpora in
@@ -257,7 +259,7 @@ def build_vocabs(args: argparse.Namespace):
         if getattr(args, "train_mono_target_text_file", None):
             target_files.append(args.train_mono_target_text_file)
 
-    source_dict = Dictionary.build_vocab_file_if_nonexistent(
+    source_dict = dictionary_cls.build_vocab_file_if_nonexistent(
         corpus_files=source_files,
         vocab_file=args.source_vocab_file,
         max_vocab_size=args.source_max_vocab_size,
@@ -269,7 +271,7 @@ def build_vocabs(args: argparse.Namespace):
     char_source_dict = None
     if use_char_source:
         embed_bytes = getattr(args, "embed_bytes", False)
-        char_source_dict = Dictionary.build_vocab_file_if_nonexistent(
+        char_source_dict = dictionary_cls.build_vocab_file_if_nonexistent(
             corpus_files=source_files,
             vocab_file=args.char_source_vocab_file,
             max_vocab_size=args.char_source_max_vocab_size,
@@ -278,7 +280,7 @@ def build_vocabs(args: argparse.Namespace):
             embed_bytes=embed_bytes,
         )
 
-    target_dict = Dictionary.build_vocab_file_if_nonexistent(
+    target_dict = dictionary_cls.build_vocab_file_if_nonexistent(
         corpus_files=target_files,
         vocab_file=args.target_vocab_file,
         max_vocab_size=args.target_max_vocab_size,
@@ -357,12 +359,13 @@ def build_vocab_multicorpus(
     vocab_files,
     max_vocab_size,
     tokens_with_penalty=None,
+    dictionary_cls=Dictionary,
 ):
     lang2corpus = {lang: [] for lang in vocab_langs}
     for lang, corpus_file in zip(corpus_langs, corpus_files):
         lang2corpus[lang].append(corpus_file)
     return {
-        lang: Dictionary.build_vocab_file_if_nonexistent(
+        lang: dictionary_cls.build_vocab_file_if_nonexistent(
             corpus_files=lang2corpus[lang],
             vocab_file=vocab_file,
             max_vocab_size=max_vocab_size,
@@ -383,7 +386,10 @@ def preprocess_corpora_multilingual(args):
     eval_binary_path_config = []
     for lang_pair in args.lang_pairs.split(","):
         source_lang, target_lang = lang_pair.split("-")
-        source_corpus, target_corpus = multilingual_utils.get_parallel_corpus_for_lang_pair(
+        (
+            source_corpus,
+            target_corpus,
+        ) = multilingual_utils.get_parallel_corpus_for_lang_pair(
             args.multilingual_train_text_file, lang_pair
         )
         source_binary_path = maybe_generate_temp_file_path(
@@ -413,7 +419,10 @@ def preprocess_corpora_multilingual(args):
         train_binary_path_config.append(
             f"{lang_pair}:{source_binary_path},{target_binary_path}"
         )
-        source_corpus, target_corpus = multilingual_utils.get_parallel_corpus_for_lang_pair(
+        (
+            source_corpus,
+            target_corpus,
+        ) = multilingual_utils.get_parallel_corpus_for_lang_pair(
             args.multilingual_eval_text_file, lang_pair
         )
         source_binary_path = maybe_generate_temp_file_path(
@@ -448,13 +457,14 @@ def preprocess_corpora_multilingual(args):
     args.multilingual_eval_binary_path = eval_binary_path_config
 
 
-def preprocess_corpora_multilingual_many_to_one(args):
+def preprocess_corpora_multilingual_many_to_one(args, dictionary_cls=Dictionary):
     source_dicts = build_vocab_multicorpus(
         args.multiling_source_lang,
         args.multiling_train_source_text_file,
         args.multiling_encoder_lang,
         args.multiling_source_vocab_file,
         args.source_max_vocab_size,
+        dictionary_cls,
     )
     source_corpus_lang_ids = [
         args.multiling_encoder_lang.index(l) for l in args.multiling_source_lang
@@ -492,6 +502,7 @@ def preprocess_corpora_multilingual_many_to_one(args):
         args.multiling_target_vocab_file,
         args.target_max_vocab_size,
         args.penalized_target_tokens_file,
+        dictionary_cls,
     )
     target_corpus_lang_ids = [
         args.multiling_decoder_lang.index(l) for l in args.multiling_target_lang

@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# Copyright (c) 2017-present, Facebook, Inc.
+# All rights reserved.
+#
+# This source code is licensed under the license found in the LICENSE file in
+# the root directory of this source tree. An additional grant of patent rights
+# can be found in the PATENTS file in the same directory.
 
 import contextlib
 import os
@@ -8,7 +14,7 @@ from io import StringIO
 
 import torch
 from fairseq import options
-from pytorch_translate import generate, train
+from pytorch_translate import generate, models, train  # noqa need to load models
 from pytorch_translate.test.utils import (
     create_dummy_data,
     create_dummy_multilingual_data,
@@ -660,9 +666,53 @@ class TestTranslation(unittest.TestCase):
                         "--attention-type",
                         "dot",
                     ],
-                    criterion=["--criterion", "word_prediction"],
+                    criterion=[
+                        "--criterion",
+                        "word_prediction",
+                        "--label-smoothing",
+                        "0.1",
+                    ],
                 )
                 generate_main(data_dir)
+
+    def test_pretrained_masked_lm_for_translation(self):
+        with contextlib.redirect_stdout(StringIO()):
+            with tempfile.TemporaryDirectory("test_mlm") as data_dir:
+                create_dummy_data(data_dir)
+                train_translation_model(
+                    data_dir,
+                    [
+                        "--arch",
+                        "xlm_base",
+                        data_dir,
+                        # semi-supervised task args:
+                        "--task",
+                        "pytorch_translate_cross_lingual_lm",
+                        # transformer args:
+                        "--encoder-embed-dim",
+                        "4",
+                        "--encoder-ffn-embed-dim",
+                        "4",
+                        "--encoder-attention-heads",
+                        "2",
+                        "--encoder-layers",
+                        "1",
+                        # dict files
+                        "--source-vocab-file",
+                        os.path.join(data_dir, "dictionary-in.txt"),
+                        "--target-vocab-file",
+                        os.path.join(data_dir, "dictionary-out.txt"),
+                        # additoinal ones
+                        "--raw-text",
+                        "--monolingual-langs",
+                        "in,out",
+                        "--save-only",
+                        "--masked-lm-only",
+                        "--num-segment",
+                        "2",
+                    ],
+                    criterion=["--criterion", "masked_lm_loss"],
+                )
 
 
 def train_translation_model(
@@ -706,8 +756,6 @@ def train_translation_model(
             "--clip-norm",
             "5.0",
             "--sentence-avg",
-            "--label-smoothing",
-            "0.1",
             "--beam",
             "3",
             "--stop-no-best-bleu-eval",
@@ -728,7 +776,15 @@ def train_translation_model(
         ]
         + (["--source-lang", "in", "--target-lang", "out"] if set_lang_args else [])
         + (extra_flags or [])
-        + (criterion or ["--criterion", "label_smoothed_cross_entropy"]),
+        + (
+            criterion
+            or [
+                "--criterion",
+                "label_smoothed_cross_entropy",
+                "--label-smoothing",
+                "0.1",
+            ]
+        ),
     )
     train.validate_and_set_default_args(args)
     train.main(args)

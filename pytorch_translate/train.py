@@ -273,6 +273,8 @@ def setup_training_model(args):
             weights_file=getattr(args, "train_weights_path", None),
             is_train=True,
         )
+    elif args.task == "pytorch_translate_cross_lingual_lm":
+        task.load_dataset(args.train_subset, combine=True, epoch=0)
     else:
         # Support both single and multi path loading for now
         task.load_dataset(
@@ -284,12 +286,15 @@ def setup_training_model(args):
 
     if args.task == "dual_learning_task":
         task.load_dataset(split=args.valid_subset, seed=args.seed)
+    elif args.task == "pytorch_translate_cross_lingual_lm":
+        task.load_dataset(args.valid_subset, combine=True, epoch=0)
     else:
         task.load_dataset(
             split=args.valid_subset,
             src_bin_path=args.eval_source_binary_path,
             tgt_bin_path=args.eval_target_binary_path,
         )
+
     return task, model, criterion
 
 
