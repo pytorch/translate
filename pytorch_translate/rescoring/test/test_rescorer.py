@@ -32,12 +32,16 @@ class TestRescorer(unittest.TestCase):
             scores = torch.tensor(
                 [[80, 0, 0, 0, 0], [0, 0, 0, 80, 0]], dtype=torch.float
             )
-            src_tokens = torch.tensor([1, 2, 3, 4, 5])
-            hypos = [{"tokens": torch.tensor([1, 2])}, {"tokens": torch.tensor([1, 2])}]
+            src_tokens = torch.tensor([[1, 2, 3, 4, 5]])
+            hypos = [
+                [{"tokens": torch.tensor([1, 2])}, {"tokens": torch.tensor([1, 2])}]
+            ]
 
             src_len = len(src_tokens)
+
             tgt_len = torch.tensor(
-                [len(hypo["tokens"]) for hypo in hypos], dtype=torch.float
+                [len(hypo["tokens"]) for hypo_ in hypos for hypo in hypo_],
+                dtype=torch.float,
             )
             weights = [
                 test_args.l2r_model_weight,
@@ -68,13 +72,55 @@ class TestRescorer(unittest.TestCase):
         _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
         task = tasks.PytorchTranslateTask(test_args, src_dict, tgt_dict)
         model = task.build_model(test_args)
-        src_tokens = torch.tensor([1, 2, 3, 4, 5]).cuda()
-        hypos = [
-            {"tokens": torch.tensor([1, 2]).cuda()},
-            {"tokens": torch.tensor([1, 2]).cuda()},
-        ]
+        src_tokens = torch.tensor([[1, 2, 3, 4, 5]])
+        hypos = [[{"tokens": torch.tensor([1, 2])}, {"tokens": torch.tensor([1, 2])}]]
         rescorer = Rescorer(
             test_args, task, {"l2r_model": {"model": model, "task": task}}
         )
         scores = rescorer.score(src_tokens, hypos)
         assert scores.size()[1] == 5
+
+    def test_batch_computation(self):
+        test_args = test_utils.ModelParamsDict("transformer")
+        test_args.enable_rescoring = True
+        test_args.length_penalty = 1
+        test_args.l2r_model_path = "/tmp/test_rescorer_model.pt"
+        test_args.l2r_model_weight = 1.0
+        test_args.r2l_model_weight = 0.0
+        test_args.reverse_model_weight = 0.0
+        test_args.cloze_transformer_weight = 1.0
+        test_args.lm_model_weight = 0.0
+        test_args.length_penalty = 1.0
+
+        _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        task = tasks.PytorchTranslateTask(test_args, src_dict, tgt_dict)
+        model = task.build_model(test_args)
+        torch.save(model, test_args.l2r_model_path)
+        with patch(
+            "pytorch_translate.utils.load_diverse_ensemble_for_inference",
+            return_value=([model], test_args, task),
+        ):
+            rescorer = Rescorer(test_args)
+            src_tokens = torch.tensor([[1, 3, 3, 4, 2], [1, 3, 2, 0, 0]])
+            hypos = [
+                [
+                    {"tokens": torch.tensor([1, 5, 2])},
+                    {"tokens": torch.tensor([6, 3, 5, 2])},
+                ],
+                [
+                    {"tokens": torch.tensor([1, 2])},
+                    {"tokens": torch.tensor([1, 5, 6, 2])},
+                ],
+            ]
+            scores = rescorer.score(src_tokens, hypos)
+
+            src_tokens = torch.tensor([[1, 3, 3, 4, 2]])
+            hypos = [
+                [
+                    {"tokens": torch.tensor([1, 5, 2])},
+                    {"tokens": torch.tensor([6, 3, 5, 2])},
+                ]
+            ]
+            scores_single = rescorer.score(src_tokens, hypos)
+
+            assert torch.equal(scores[0], scores_single[0])

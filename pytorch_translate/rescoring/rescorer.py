@@ -73,7 +73,8 @@ class Rescorer:
 
     def score(self, src_tokens, hypos):
         """run models and compute scores based on p(y), p(x|y) etc."""
-        scores = torch.zeros((len(hypos), len(FeatureList)), dtype=torch.float)
+        len_hypos = sum(len(hypo) for hypo in hypos)
+        scores = torch.zeros((len_hypos, len(FeatureList)), dtype=torch.float)
 
         self.compute_l2r_model_scores(src_tokens, hypos, scores)
         self.compute_r2l_model_scores(src_tokens, hypos, scores)
@@ -217,6 +218,10 @@ def add_args(parser):
         help=("If true, append EOS to source sentences"),
     )
 
+    parser.add_argument(
+        "--rescore-batch-size", default=1, type=int, help="batch size for rescoring"
+    )
+
 
 def combine_weighted_scores(scores, weights, src_len, tgt_len, lenpen):
     """ Combines scores from different models and returns
@@ -243,11 +248,17 @@ def combine_weighted_scores(scores, weights, src_len, tgt_len, lenpen):
     return weighted_scores.sum(dim=1)
 
 
-def find_top_tokens(args, trans_info, rescorer):
+def find_top_tokens(args, trans_batch_info, rescorer, pad):
     """ Rescore translations and combine weights to find top hypo tokens
     """
-    src_tokens = trans_info["src_tokens"].cuda()
-    hypos = trans_info["hypos"]
+    len_src_tokens = [len(trans_info["src_tokens"]) for trans_info in trans_batch_info]
+    bsz = len(trans_batch_info)
+    src_tokens = torch.zeros(bsz, max(len_src_tokens)).fill_(pad).long().cuda()
+    for i in range(bsz):
+        src_tokens[i, : len_src_tokens[i]] = (
+            trans_batch_info[i]["src_tokens"].view(1, -1).long().cuda()
+        )
+    hypos = [trans_info["hypos"] for trans_info in trans_batch_info]
 
     scores = rescorer.score(src_tokens, hypos)
 
@@ -259,21 +270,30 @@ def find_top_tokens(args, trans_info, rescorer):
         args.lm_model_weight,
         args.cloze_transformer_weight,
     ]
-    src_len = len(src_tokens)
-    tgt_len = torch.tensor([len(hypo["tokens"]) for hypo in hypos], dtype=torch.float)
-    combined_scores = combine_weighted_scores(
-        scores, weights, src_len, tgt_len, args.length_penalty
-    )
-    top_index = combined_scores.max(0)[1]
-
-    scores_to_export = {
-        "hypos": [hypo["tokens"].cpu().tolist() for hypo in hypos],
-        "target_tokens": trans_info["target_tokens"].cpu().numpy(),
-        "scores": scores.detach().numpy(),
-        "src_len": src_len,
-        "tgt_len": tgt_len.cpu().numpy(),
-    }
-    return hypos[top_index]["tokens"], scores_to_export
+    bsz, src_len = src_tokens.size()
+    beam_size = len(hypos[0])
+    scores_to_export = []
+    top_hypos = []
+    for i in range(bsz):
+        score = scores[i * beam_size : (i + 1) * beam_size, :]
+        tgt_len = torch.tensor(
+            [len(hypo["tokens"]) for hypo in hypos[i]], dtype=torch.float
+        )
+        combined_scores = combine_weighted_scores(
+            score, weights, len_src_tokens[i], tgt_len, args.length_penalty
+        )
+        top_index = combined_scores.max(0)[1]
+        scores_to_export.append(
+            {
+                "hypos": [hypo["tokens"].cpu().tolist() for hypo in hypos[i]],
+                "target_tokens": trans_batch_info[i]["target_tokens"].cpu().numpy(),
+                "scores": score.detach().numpy(),
+                "src_len": len_src_tokens[i],
+                "tgt_len": tgt_len.cpu().numpy(),
+            }
+        )
+        top_hypos.append(hypos[i][top_index]["tokens"])
+    return top_hypos, scores_to_export
 
 
 def main():
@@ -299,25 +319,31 @@ def main():
 
     with open(args.translation_info_export_path, "rb") as file:
         translation_info_list = pickle.load(file)
+
     scores_to_export_list = []
-    for trans_info in tqdm(translation_info_list):
-        trans_info["hypos"] = [
-            {"score": hypo["score"], "tokens": hypo["tokens"].cuda()}
-            for hypo in trans_info["hypos"]
-        ]
-
-        base_bleu_scorer.add(
-            trans_info["target_tokens"].int().cpu(),
-            trans_info["hypos"][0]["tokens"].int().cpu(),
+    trans_batch_info = []
+    for k in tqdm(range(0, len(translation_info_list), args.rescore_batch_size)):
+        trans_batch_info = translation_info_list[k : k + args.rescore_batch_size]
+        for j in range(len(trans_batch_info)):
+            trans_batch_info[j]["hypos"] = [
+                {"score": hypo["score"], "tokens": hypo["tokens"].cuda()}
+                for hypo in trans_batch_info[j]["hypos"]
+            ]
+        top_tokens, scores_to_export = find_top_tokens(
+            args, trans_batch_info, rescorer, dst_dict.pad()
         )
-
-        top_tokens, scores_to_export = find_top_tokens(args, trans_info, rescorer)
         if args.scores_info_export_path is not None:
-            scores_to_export_list.append(scores_to_export)
+            scores_to_export_list += scores_to_export
 
-        rescoring_bleu_scorer.add(
-            trans_info["target_tokens"].int().cpu(), top_tokens.int().cpu()
-        )
+        for i, trans_info in enumerate(trans_batch_info):
+            base_bleu_scorer.add(
+                trans_info["target_tokens"].int().cpu(),
+                trans_info["hypos"][0]["tokens"].int().cpu(),
+            )
+            rescoring_bleu_scorer.add(
+                trans_info["target_tokens"].int().cpu(), top_tokens[i].int().cpu()
+            )
+        trans_batch_info = []
 
     print("| Base ", base_bleu_scorer.result_string())
     print("| Rescoring ", rescoring_bleu_scorer.result_string())

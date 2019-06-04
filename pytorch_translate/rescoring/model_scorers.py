@@ -137,17 +137,25 @@ class SimpleModelScorer(object):
         return hypos_scores
 
     def prepare_inputs(self, src_tokens, hypos):
-        src_lengths = (
-            torch.tensor([len(src_tokens)]).repeat(len(hypos)).type_as(src_tokens)
+        beam_size = len(hypos) // len(src_tokens)
+        bsz, src_length = src_tokens.size()
+        src_tokens_expand = (
+            src_tokens.unsqueeze(dim=1)
+            .expand(-1, beam_size, -1)
+            .contiguous()
+            .view(bsz * beam_size, -1)
         )
-        src_tokens = src_tokens.repeat(len(hypos), 1)
-        encoder_inputs = (src_tokens, src_lengths)
-
+        src_lengths = (
+            torch.tensor(src_length).repeat(bsz * beam_size).type_as(src_tokens)
+        )
+        encoder_inputs = (src_tokens_expand, src_lengths)
         tgt_tokens = self.convert_hypos_to_tgt_tokens(hypos).type_as(src_tokens)
         return encoder_inputs, tgt_tokens
 
     def score(self, src_tokens, hypos):
         """ Rescores hypotheses based on a given model and input tokens.
+            src_tokens: a tensor with size bsz x max_src_len
+            hypos: a nested list, hypos[i] = [h_0, ..., h_{beam_size}]
         """
         if self.model is None:
             return
@@ -156,6 +164,8 @@ class SimpleModelScorer(object):
         # tensors copy src_tokens's type (cpu or gpu)
         if torch.cuda.is_available():
             src_tokens = src_tokens.cuda()
+
+        hypos = [hypo for _ in hypos for hypo in _]
 
         encoder_inputs, tgt_tokens = self.prepare_inputs(src_tokens, hypos)
         encoder_outs = self.encode(encoder_inputs)
