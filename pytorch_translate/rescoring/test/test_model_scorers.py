@@ -183,17 +183,13 @@ class TestModelScorers(unittest.TestCase):
 
         src_tokens = torch.tensor([[6, 7, 8]], dtype=torch.long)
         hypos_with_padding = [
-            [
-                {"tokens": torch.tensor([12, 13, 14, 15, 16, eos], dtype=torch.long)},
-                {"tokens": torch.tensor([22, 23, 24, 25, eos], dtype=torch.long)},
-                {"tokens": torch.tensor([32, 33, eos], dtype=torch.long)},
-            ]
+            {"tokens": torch.tensor([12, 13, 14, 15, 16, eos], dtype=torch.long)},
+            {"tokens": torch.tensor([22, 23, 24, 25, eos], dtype=torch.long)},
+            {"tokens": torch.tensor([32, 33, eos], dtype=torch.long)},
         ]
         hypos_without_padding = [
-            [
-                {"tokens": torch.tensor([22, 23, 24, 25, eos], dtype=torch.long)},
-                {"tokens": torch.tensor([32, 33, eos], dtype=torch.long)},
-            ]
+            {"tokens": torch.tensor([22, 23, 24, 25, eos], dtype=torch.long)},
+            {"tokens": torch.tensor([32, 33, eos], dtype=torch.long)},
         ]
 
         with patch(
@@ -220,17 +216,15 @@ class TestModelScorers(unittest.TestCase):
 
         src_tokens = torch.tensor([[6, 7, 8]], dtype=torch.long)
         hypos = [
-            [
-                {"tokens": torch.tensor([12, 13, 14, 15, eos], dtype=torch.long)},
-                {"tokens": torch.tensor([22, 23, 24, eos], dtype=torch.long)},
-                {"tokens": torch.tensor([32, 33, eos], dtype=torch.long)},
-            ]
+            {"tokens": torch.tensor([12, 13, 14, 15, eos], dtype=torch.long)},
+            {"tokens": torch.tensor([22, 23, 24, eos], dtype=torch.long)},
+            {"tokens": torch.tensor([32, 33, eos], dtype=torch.long)},
         ]
 
         reverse_src_tokens_0 = torch.tensor([[12, 13, 14, 15]], dtype=torch.long)
         reverse_src_tokens_1 = torch.tensor([[22, 23, 24]], dtype=torch.long)
         reverse_src_tokens_2 = torch.tensor([[32, 33]], dtype=torch.long)
-        reverse_hypos = [[{"tokens": torch.tensor([6, 7, 8, eos], dtype=torch.long)}]]
+        reverse_hypos = [{"tokens": torch.tensor([6, 7, 8, eos], dtype=torch.long)}]
 
         with patch(
             "pytorch_translate.utils.load_diverse_ensemble_for_inference",

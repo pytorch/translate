@@ -33,15 +33,12 @@ class TestRescorer(unittest.TestCase):
                 [[80, 0, 0, 0, 0], [0, 0, 0, 80, 0]], dtype=torch.float
             )
             src_tokens = torch.tensor([[1, 2, 3, 4, 5]])
-            hypos = [
-                [{"tokens": torch.tensor([1, 2])}, {"tokens": torch.tensor([1, 2])}]
-            ]
+            hypos = [{"tokens": torch.tensor([1, 2])}, {"tokens": torch.tensor([1, 2])}]
 
             src_len = len(src_tokens)
 
             tgt_len = torch.tensor(
-                [len(hypo["tokens"]) for hypo_ in hypos for hypo in hypo_],
-                dtype=torch.float,
+                [len(hypo["tokens"]) for hypo in hypos], dtype=torch.float
             )
             weights = [
                 test_args.l2r_model_weight,
@@ -73,7 +70,7 @@ class TestRescorer(unittest.TestCase):
         task = tasks.PytorchTranslateTask(test_args, src_dict, tgt_dict)
         model = task.build_model(test_args)
         src_tokens = torch.tensor([[1, 2, 3, 4, 5]])
-        hypos = [[{"tokens": torch.tensor([1, 2])}, {"tokens": torch.tensor([1, 2])}]]
+        hypos = [{"tokens": torch.tensor([1, 2])}, {"tokens": torch.tensor([1, 2])}]
         rescorer = Rescorer(
             test_args, task, {"l2r_model": {"model": model, "task": task}}
         )
@@ -103,23 +100,17 @@ class TestRescorer(unittest.TestCase):
             rescorer = Rescorer(test_args)
             src_tokens = torch.tensor([[1, 3, 3, 4, 2], [1, 3, 2, 0, 0]])
             hypos = [
-                [
-                    {"tokens": torch.tensor([1, 5, 2])},
-                    {"tokens": torch.tensor([6, 3, 5, 2])},
-                ],
-                [
-                    {"tokens": torch.tensor([1, 2])},
-                    {"tokens": torch.tensor([1, 5, 6, 2])},
-                ],
+                {"tokens": torch.tensor([1, 5, 2])},
+                {"tokens": torch.tensor([6, 3, 5, 2])},
+                {"tokens": torch.tensor([1, 2])},
+                {"tokens": torch.tensor([1, 5, 6, 2])},
             ]
             scores = rescorer.score(src_tokens, hypos)
 
             src_tokens = torch.tensor([[1, 3, 3, 4, 2]])
             hypos = [
-                [
-                    {"tokens": torch.tensor([1, 5, 2])},
-                    {"tokens": torch.tensor([6, 3, 5, 2])},
-                ]
+                {"tokens": torch.tensor([1, 5, 2])},
+                {"tokens": torch.tensor([6, 3, 5, 2])},
             ]
             scores_single = rescorer.score(src_tokens, hypos)
 

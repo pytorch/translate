@@ -173,7 +173,7 @@ class SimpleModelScorer(object):
     def score(self, src_tokens, hypos):
         """ Rescores hypotheses based on a given model and input tokens.
             src_tokens: a tensor with size bsz x max_src_len
-            hypos: a nested list, hypos[i] = [h_0, ..., h_{beam_size}]
+            hypos: a list with length of bsz * beam_size
         """
         if self.model is None:
             return
@@ -182,8 +182,6 @@ class SimpleModelScorer(object):
         # tensors copy src_tokens's type (cpu or gpu)
         if torch.cuda.is_available():
             src_tokens = src_tokens.cuda()
-
-        hypos = [hypo for _ in hypos for hypo in _]
 
         encoder_inputs, tgt_tokens = self.prepare_inputs(src_tokens, hypos)
         hypos_scores, _, _ = self.score_tokens(encoder_inputs, tgt_tokens)

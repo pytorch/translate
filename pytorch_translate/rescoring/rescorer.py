@@ -73,8 +73,8 @@ class Rescorer:
 
     def score(self, src_tokens, hypos):
         """run models and compute scores based on p(y), p(x|y) etc."""
-        len_hypos = sum(len(hypo) for hypo in hypos)
-        scores = torch.zeros((len_hypos, len(FeatureList)), dtype=torch.float)
+
+        scores = torch.zeros((len(hypos), len(FeatureList)), dtype=torch.float)
 
         self.compute_l2r_model_scores(src_tokens, hypos, scores)
         self.compute_r2l_model_scores(src_tokens, hypos, scores)
@@ -258,7 +258,7 @@ def find_top_tokens(args, trans_batch_info, rescorer, pad):
         src_tokens[i, : len_src_tokens[i]] = (
             trans_batch_info[i]["src_tokens"].view(1, -1).long().cuda()
         )
-    hypos = [trans_info["hypos"] for trans_info in trans_batch_info]
+    hypos = [hypo for trans_info in trans_batch_info for hypo in trans_info["hypos"]]
 
     scores = rescorer.score(src_tokens, hypos)
 
@@ -271,7 +271,8 @@ def find_top_tokens(args, trans_batch_info, rescorer, pad):
         args.cloze_transformer_weight,
     ]
     bsz, src_len = src_tokens.size()
-    beam_size = len(hypos[0])
+    beam_size = len(hypos) // bsz
+    hypos = [hypos[i * beam_size : (i + 1) * beam_size] for i in range(bsz)]
     scores_to_export = []
     top_hypos = []
     for i in range(bsz):
