@@ -152,6 +152,24 @@ class SimpleModelScorer(object):
         tgt_tokens = self.convert_hypos_to_tgt_tokens(hypos).type_as(src_tokens)
         return encoder_inputs, tgt_tokens
 
+    def score_tokens(self, encoder_inputs, hypos):
+        """calculate scores for arbitrary hypos given encoder_inputs
+           input:
+               hypos: a tensor of length bsz*beam_size
+           output:
+               hypos_scores: \sum log prob over the entire hypo
+               encoder_outs: hidden vectors from encoder
+                             (e.g., used to stabilize rl training)
+               logprobs: log prob over all time-steps
+                         (e.g., used for word-level rl training)
+        """
+        encoder_outs = self.encode(encoder_inputs)
+        logprobs, possible_translation_tokens = self.decode(
+            self.args, self.model, encoder_outs, hypos
+        )
+        hypos_scores = self.compute_scores(hypos, logprobs, possible_translation_tokens)
+        return hypos_scores, encoder_outs, logprobs
+
     def score(self, src_tokens, hypos):
         """ Rescores hypotheses based on a given model and input tokens.
             src_tokens: a tensor with size bsz x max_src_len
@@ -168,14 +186,7 @@ class SimpleModelScorer(object):
         hypos = [hypo for _ in hypos for hypo in _]
 
         encoder_inputs, tgt_tokens = self.prepare_inputs(src_tokens, hypos)
-        encoder_outs = self.encode(encoder_inputs)
-        logprobs, possible_translation_tokens = self.decode(
-            self.args, self.model, encoder_outs, tgt_tokens
-        )
-        hypos_scores = self.compute_scores(
-            tgt_tokens, logprobs, possible_translation_tokens
-        )
-
+        hypos_scores, _, _ = self.score_tokens(encoder_inputs, tgt_tokens)
         return hypos_scores
 
 
