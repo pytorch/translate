@@ -122,19 +122,7 @@ class Rescorer:
 
 
 def add_args(parser):
-    """add rescorer specific arguments"""
-    parser.add_argument(
-        "--translation-info-export-path",
-        default=None,
-        type=str,
-        help=("Optional path to save translation info output in pickled format"),
-    )
-    parser.add_argument(
-        "--scores-info-export-path",
-        default=None,
-        type=str,
-        help=("Optional path to save score output in pickled format"),
-    )
+    """add rescorer specific arguments usable for training"""
     parser.add_argument(
         "--l2r-model-path",
         default=None,
@@ -184,7 +172,7 @@ def add_args(parser):
         help=("Provide a weight for the lm rescoring model"),
     )
     parser.add_argument(
-        "--length-penalty",
+        "--rescore-length-penalty",
         default=1.0,
         type=float,
         help=("Provide a weight for length penalty used in rescoring"),
@@ -201,6 +189,10 @@ def add_args(parser):
         type=float,
         help=("Provide a weight for the cloze transformer model"),
     )
+
+
+def add_args_rescore(parser):
+    """add arguments only used in rescoring mode"""
     parser.add_argument(
         "--unk-reward",
         default=-1.0,
@@ -217,9 +209,20 @@ def add_args(parser):
         type=bool,
         help=("If true, append EOS to source sentences"),
     )
-
     parser.add_argument(
-        "--rescore-batch-size", default=1, type=int, help="batch size for rescoring"
+        "--batch-size", default=1, type=int, help="batch size for rescoring"
+    )
+    parser.add_argument(
+        "--translation-info-export-path",
+        default=None,
+        type=str,
+        help=("Optional path to save translation info output in pickled format"),
+    )
+    parser.add_argument(
+        "--scores-info-export-path",
+        default=None,
+        type=str,
+        help=("Optional path to save score output in pickled format"),
     )
 
 
@@ -281,7 +284,7 @@ def find_top_tokens(args, trans_batch_info, rescorer, pad):
             [len(hypo["tokens"]) for hypo in hypos[i]], dtype=torch.float
         )
         combined_scores = combine_weighted_scores(
-            score, weights, len_src_tokens[i], tgt_len, args.length_penalty
+            score, weights, len_src_tokens[i], tgt_len, args.rescore_length_penalty
         )
         top_index = combined_scores.max(0)[1]
         scores_to_export.append(
@@ -302,6 +305,7 @@ def main():
         description=("Rescore generated hypotheses with extra models")
     )
     add_args(parser)
+    add_args_rescore(parser)
     args = parser.parse_args()
 
     assert (
@@ -323,8 +327,8 @@ def main():
 
     scores_to_export_list = []
     trans_batch_info = []
-    for k in tqdm(range(0, len(translation_info_list), args.rescore_batch_size)):
-        trans_batch_info = translation_info_list[k : k + args.rescore_batch_size]
+    for k in tqdm(range(0, len(translation_info_list), args.batch_size)):
+        trans_batch_info = translation_info_list[k : k + args.batch_size]
         for j in range(len(trans_batch_info)):
             trans_batch_info[j]["hypos"] = [
                 {"score": hypo["score"], "tokens": hypo["tokens"].cuda()}
