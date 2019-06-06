@@ -8,10 +8,10 @@ from typing import Any, Dict, Tuple
 
 import numpy as np
 import torch
-from fairseq import data
+from fairseq import data, options
 from fairseq.trainer import Trainer
 from pytorch_translate import rnn  # noqa
-from pytorch_translate import vocab_constants
+from pytorch_translate import models, train, vocab_constants
 from pytorch_translate.data import dictionary as pytorch_translate_dictionary
 from pytorch_translate.tasks import pytorch_translate_task as tasks
 
@@ -443,3 +443,78 @@ def create_dummy_multilingual_data(data_dir, num_examples=100, maxlen=5):
         _create_dummy_data(f"train.{langpair}.{tgt}")
         _create_dummy_data(f"tune.{langpair}.{src}")
         _create_dummy_data(f"tune.{langpair}.{tgt}")
+
+
+def train_translation_model(
+    data_dir,
+    extra_flags,
+    criterion=None,
+    set_empty_data_positional_arg=False,
+    set_lang_args=True,
+):
+    parser = train.get_parser_with_args()
+    args = options.parse_args_and_arch(
+        parser,
+        ([""] if set_empty_data_positional_arg else [])
+        + [
+            "--save-dir",
+            data_dir,
+            "--train-source-text-file",
+            os.path.join(data_dir, "train.in"),
+            "--train-target-text-file",
+            os.path.join(data_dir, "train.out"),
+            "--eval-source-text-file",
+            os.path.join(data_dir, "valid.in"),
+            "--eval-target-text-file",
+            os.path.join(data_dir, "valid.out"),
+            "--source-max-vocab-size",
+            "26",
+            "--target-max-vocab-size",
+            "26",
+            "--max-tokens",
+            "500",
+            "--optimizer",
+            "sgd",
+            "--lr",
+            "0.05",
+            "--lr-scheduler",
+            "fixed",
+            "--lr-shrink",
+            "0.95",
+            "--momentum",
+            "0.0",
+            "--clip-norm",
+            "5.0",
+            "--sentence-avg",
+            "--beam",
+            "3",
+            "--stop-no-best-bleu-eval",
+            "5",
+            "--unk-reward",
+            "0.5",
+            "--num-avg-checkpoints",
+            "10",
+            "--max-epoch",
+            "1",
+            "--stop-time-hr",
+            "1",
+            "--no-progress-bar",
+            "--distributed-world-size",
+            "1",
+            "--local-num-gpus",
+            "1" if torch.cuda.device_count() >= 1 else "0",
+        ]
+        + (["--source-lang", "in", "--target-lang", "out"] if set_lang_args else [])
+        + (extra_flags or [])
+        + (
+            criterion
+            or [
+                "--criterion",
+                "label_smoothed_cross_entropy",
+                "--label-smoothing",
+                "0.1",
+            ]
+        ),
+    )
+    train.validate_and_set_default_args(args)
+    train.main(args)

@@ -18,6 +18,7 @@ from pytorch_translate import generate, models, train  # noqa need to load model
 from pytorch_translate.test.utils import (
     create_dummy_data,
     create_dummy_multilingual_data,
+    train_translation_model,
 )
 
 
@@ -701,81 +702,6 @@ class TestTranslation(unittest.TestCase):
                     ],
                     criterion=["--criterion", "masked_lm_loss"],
                 )
-
-
-def train_translation_model(
-    data_dir,
-    extra_flags,
-    criterion=None,
-    set_empty_data_positional_arg=False,
-    set_lang_args=True,
-):
-    parser = train.get_parser_with_args()
-    args = options.parse_args_and_arch(
-        parser,
-        ([""] if set_empty_data_positional_arg else [])
-        + [
-            "--save-dir",
-            data_dir,
-            "--train-source-text-file",
-            os.path.join(data_dir, "train.in"),
-            "--train-target-text-file",
-            os.path.join(data_dir, "train.out"),
-            "--eval-source-text-file",
-            os.path.join(data_dir, "valid.in"),
-            "--eval-target-text-file",
-            os.path.join(data_dir, "valid.out"),
-            "--source-max-vocab-size",
-            "26",
-            "--target-max-vocab-size",
-            "26",
-            "--max-tokens",
-            "500",
-            "--optimizer",
-            "sgd",
-            "--lr",
-            "0.05",
-            "--lr-scheduler",
-            "fixed",
-            "--lr-shrink",
-            "0.95",
-            "--momentum",
-            "0.0",
-            "--clip-norm",
-            "5.0",
-            "--sentence-avg",
-            "--beam",
-            "3",
-            "--stop-no-best-bleu-eval",
-            "5",
-            "--unk-reward",
-            "0.5",
-            "--num-avg-checkpoints",
-            "10",
-            "--max-epoch",
-            "1",
-            "--stop-time-hr",
-            "1",
-            "--no-progress-bar",
-            "--distributed-world-size",
-            "1",
-            "--local-num-gpus",
-            "1" if torch.cuda.device_count() >= 1 else "0",
-        ]
-        + (["--source-lang", "in", "--target-lang", "out"] if set_lang_args else [])
-        + (extra_flags or [])
-        + (
-            criterion
-            or [
-                "--criterion",
-                "label_smoothed_cross_entropy",
-                "--label-smoothing",
-                "0.1",
-            ]
-        ),
-    )
-    train.validate_and_set_default_args(args)
-    train.main(args)
 
 
 def generate_main(data_dir, extra_flags=None):

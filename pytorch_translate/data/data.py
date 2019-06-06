@@ -268,6 +268,10 @@ def is_multilingual(args):
     return False
 
 
+def is_latent_variable(args):
+    return args.task == constants.LATENT_VARIABLE_TASK
+
+
 class IndexedRawTextDatasetWithLangId(data.IndexedRawTextDataset):
     """Adds language IDs to an IndexedRawTextDataset"""
 
