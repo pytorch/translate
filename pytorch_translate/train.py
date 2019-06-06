@@ -156,12 +156,16 @@ def clear_per_step_extra_state(extra_state: Dict[str, Any]) -> Dict[str, Any]:
     return extra_state
 
 
-def validate_and_set_default_args(args):
+def validate_args(args):
+    pytorch_translate_options.check_unsupported_fairseq_flags(args)
+    pytorch_translate_options.validate_preprocessing_args(args)
+    pytorch_translate_options.validate_generation_args(args)
+
+
+def set_default_args(args):
     # Prevents generate from printing individual translated sentences when
     # calculating BLEU score.
     args.quiet = True
-
-    pytorch_translate_options.check_unsupported_fairseq_flags(args)
 
     # Set default init method for multi-GPU training if the user didn't specify
     # them.
@@ -207,8 +211,6 @@ def validate_and_set_default_args(args):
             save_dir=args.save_dir, dialect=args.source_lang
         )
 
-    pytorch_translate_options.validate_preprocessing_args(args)
-    pytorch_translate_options.validate_generation_args(args)
     if args.multiling_encoder_lang and not args.multiling_source_vocab_file:
         args.multiling_source_vocab_file = [
             pytorch_translate_dictionary.default_dictionary_path(
@@ -223,6 +225,11 @@ def validate_and_set_default_args(args):
             )
             for l in args.multiling_decoder_lang
         ]
+
+
+def validate_and_set_default_args(args):
+    set_default_args(args)
+    validate_args(args)
 
 
 def setup_training_model(args):

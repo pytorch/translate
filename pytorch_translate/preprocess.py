@@ -165,6 +165,8 @@ def preprocess_corpora(args, dictionary_cls=Dictionary):
         preprocess_corpora_multilingual(args)
     elif pytorch_translate_data.is_multilingual_many_to_one(args):
         preprocess_corpora_multilingual_many_to_one(args, dictionary_cls)
+    elif pytorch_translate_data.is_latent_variable(args):
+        preprocess_corpora_latent_variable(args)
     else:
 
         # Vocabs are built before preprocessing because we might need to use
@@ -532,6 +534,10 @@ def preprocess_corpora_multilingual_many_to_one(args, dictionary_cls=Dictionary)
         reverse_order=False,
         prepend_language_id=True,
     )
+
+
+def preprocess_corpora_latent_variable(args):
+    pass
 
 
 def main():

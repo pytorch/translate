@@ -362,6 +362,9 @@ def save_and_eval(
             f"have a checkpoint_manager defined."
         )
 
+    # trick to prepare the task for evaluation, e.g. in latent variable model we need to set eval_key in RoundRobinZipDataset
+    if hasattr(task, "prepare_for_eval") and callable(task.prepare_for_eval):
+        task.prepare_for_eval()
     # Only save checkpoints and eval tune BLEU on the master - all other
     # processes will just get the results from the master.
     translation_samples: Optional[List] = None
