@@ -401,6 +401,8 @@ def save_and_eval(
             checkpoint_manager.save_best_averaged_checkpoint(
                 args=args, trainer=trainer, extra_state=extra_state
             )
+    if hasattr(task, "prepare_for_train") and callable(task.prepare_for_train):
+        task.prepare_for_train()
 
     # extra_state["tune_bleu"] needs to be sync'ed between master and workers
     # since we only do BLEU eval on master, but then need that info for
