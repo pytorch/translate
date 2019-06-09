@@ -55,6 +55,7 @@ from pytorch_translate.research.knowledge_distillation import (  # noqa
 from pytorch_translate.research.rescore import (  # noqa
     cloze_transformer_model,
     rescoring_criterion,
+    rescoring_word_criterion,
 )
 from pytorch_translate.word_prediction import word_prediction_criterion  # noqa
 from pytorch_translate.word_prediction import word_prediction_model  # noqa
