@@ -18,6 +18,9 @@ from pytorch_translate.data import (
     utils as data_utils,
     weighted_data,
 )
+from pytorch_translate.data.language_pair_upsampling_dataset import (
+    LanguagePairUpsamplingDataset,
+)
 from pytorch_translate.research.multisource import multisource_data
 
 
@@ -267,9 +270,9 @@ class PytorchTranslateTask(FairseqTask):
         sample_ratios = []
         for key, val in datasets.items():
             ds_list.append(val)
-            sample_ratios.append(dataset_upsampling.get(key, 1.0))
+            sample_ratios.append(int(dataset_upsampling.get(key, 1)))
 
-        self.datasets[split] = ConcatDataset(
+        self.datasets[split] = LanguagePairUpsamplingDataset(
             datasets=datasets.values(), sample_ratios=sample_ratios
         )
 
