@@ -241,7 +241,10 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
             )
 
         self.attention = fairseq_transformer.MultiheadAttention(
-            self.attention_dim, self.num_attention_heads, dropout=args.attention_dropout
+            self.attention_dim,
+            self.num_attention_heads,
+            dropout=args.attention_dropout,
+            encoder_decoder_attention=True,
         )
 
         self.extra_rnn_layers = nn.ModuleList([])
