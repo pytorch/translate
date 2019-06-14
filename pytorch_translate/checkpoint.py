@@ -296,6 +296,14 @@ class CheckpointManager:
                 f"| Finished removing old checkpoint {checkpoint_to_remove}."
             )
 
+    def remove_all_checkpoints(self):
+        """
+        Removes all checkpoints besides
+         average_checkpoint.pt and last_checkpoint.pt
+        """
+        for checkpoint_to_remove in self._checkpoint_files:
+            self._remove_checkpoint(checkpoint_to_remove)
+
     def save(
         self,
         args,
