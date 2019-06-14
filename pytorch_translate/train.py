@@ -641,6 +641,11 @@ def train(
 
     train_meter.stop()
     print(f"| done training in {train_meter.sum:.1f} seconds")
+
+    # the checkpoint manager may be None
+    if checkpoint_manager:
+        checkpoint_manager.remove_all_checkpoints()
+
     print(
         f"| Best BLEU score of {extra_state['tune_bleu']['best']} was from "
         f"epoch {extra_state['tune_bleu']['best_epoch']}"
