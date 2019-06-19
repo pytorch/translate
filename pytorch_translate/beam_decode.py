@@ -7,6 +7,7 @@ import torch
 from fairseq import search, utils
 from fairseq.models import FairseqIncrementalDecoder
 from pytorch_translate import utils as pytorch_translate_utils
+from pytorch_translate.transformer_aan import TransformerAANDecoder
 from torch import Tensor
 
 
@@ -716,6 +717,8 @@ class SequenceGenerator(object):
                 if self.temperature != 1.0:
                     decoder_out[0].div_(self.temperature)
                 attn = decoder_out[1]
+                if isinstance(model.decoder, TransformerAANDecoder):
+                    attn = attn["attn"]
                 if len(decoder_out) == 3:
                     possible_translation_tokens = decoder_out[2]
                 else:
@@ -740,7 +743,7 @@ class SequenceGenerator(object):
                 all_log_probs.append(log_probs)
 
             if attn is not None:
-                attn = attn[:, -1, :]
+                attn = attn[:, -1, :].data
                 if avg_attn is None:
                     avg_attn = attn
                 else:

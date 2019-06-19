@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import argparse
 import builtins as __builtin__
 import collections
 import datetime
@@ -15,24 +14,14 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as np
 import torch
-from fairseq import (
-    criterions,
-    data,
-    distributed_utils,
-    models,
-    optim,
-    options,
-    progress_bar,
-    tasks,
-    utils,
-)
-from fairseq.data.noising import UnsupervisedMTNoising
+from fairseq import data, distributed_utils, options, progress_bar, tasks, utils
 from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
 from pytorch_translate import char_source_hybrid  # noqa
 from pytorch_translate import hybrid_transformer_rnn  # noqa
 from pytorch_translate import sequence_criterions  # noqa
 from pytorch_translate import transformer  # noqa
+from pytorch_translate import transformer_aan  # noqa
 from pytorch_translate import weighted_criterions  # noqa
 from pytorch_translate import (
     checkpoint,
@@ -41,7 +30,6 @@ from pytorch_translate import (
     multi_model,
     options as pytorch_translate_options,
     preprocess,
-    utils as pytorch_translate_utils,
 )
 from pytorch_translate.data import dictionary as pytorch_translate_dictionary
 from pytorch_translate.dual_learning import dual_learning_criterion  # noqa
