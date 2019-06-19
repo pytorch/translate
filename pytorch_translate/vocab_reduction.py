@@ -7,6 +7,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from pytorch_translate import constants
+
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,7 @@ def set_arg_defaults(args):
 
 def select_top_candidate_per_word(
     source_index,
+    target_dialect,
     target_indices_with_prob,
     counter_per_word,
     max_translation_candidates_per_word,
@@ -80,7 +83,10 @@ def select_top_candidate_per_word(
     translation_candidates_saved = 0
     target_indices_with_prob.sort(key=lambda x: x[1], reverse=True)
     for target_index_with_prob in target_indices_with_prob:
-        if counter_per_word[source_index] >= max_translation_candidates_per_word:
+        if (
+            counter_per_word[target_dialect][source_index]
+            >= max_translation_candidates_per_word
+        ):
             # don't save more than max_translation_candidates_per_word
             # translation candidates for any one source token
             break
@@ -88,14 +94,17 @@ def select_top_candidate_per_word(
         # update translation candidates matrix at [source index, running counter
         # per source token] to = target index
         translation_candidates[
-            source_index, counter_per_word[source_index]
+            target_dialect, source_index, counter_per_word[target_dialect][source_index]
         ] = target_index_with_prob[0]
-        translation_candidates_set.update((source_index, target_index_with_prob[0]))
-        counter_per_word[source_index] += 1
+        translation_candidates_set.update(
+            (target_dialect, source_index, target_index_with_prob[0])
+        )
+        counter_per_word[target_dialect][source_index] += 1
         translation_candidates_saved += 1
     return translation_candidates_saved
 
 
+# Dummy Change
 def get_translation_candidates(
     src_dict,
     dst_dict,
@@ -104,33 +113,37 @@ def get_translation_candidates(
     max_translation_candidates_per_word,
 ):
     """
-    Reads a lexical dictionary file, where each line is (source token, possible
-    translation of source token, probability). The file is generally grouped
-    by source tokens, but within the group, the probabilities are not
-    necessarily sorted.
+    Reads a lexical dictionary file, where each line is (target dialect ID, source
+    token, possible translation of source token, probability). The file is
+    generally grouped by target dialect and source tokens, but within the group,
+    the probabilities are not necessarily sorted.
 
-    A a 0.3
-    A c 0.1
-    A e 0.05
-    A f 0.01
-    B b 0.6
-    B b 0.2
-    A z 0.001
-    A y 0.002
+    0 A a 0.3
+    0 A c 0.1
+    0 A e 0.05
+    25 A f 0.01
+    25 B b 0.6
+    25 B b 0.2
+    25 A z 0.001
+    25 A y 0.002
     ...
 
     Returns: translation_candidates
-        Matrix of shape (src_dict, max_translation_candidates_per_word) where
-        each row corresponds to a source word in the vocab and contains token
-        indices of translation candidates for that source word
+        Matrix of shape (constants.MAX_LANGUAGES, src_dict,
+        max_translation_candidates_per_word) where each row corresponds to a
+        source word in the vocab and contains token indices of translation
+        candidates for that source word
     """
 
     translation_candidates = np.zeros(
-        [len(src_dict), max_translation_candidates_per_word], dtype=np.int32
+        [constants.MAX_LANGUAGES, len(src_dict), max_translation_candidates_per_word],
+        dtype=np.int32,
     )
 
-    # running count of translation candidates per source word
-    counter_per_word = np.zeros(len(src_dict), dtype=np.int32)
+    # running count of translation candidates per source word per target dialect
+    counter_per_word = np.zeros(
+        [constants.MAX_LANGUAGES, len(src_dict)], dtype=np.int32
+    )
 
     # tracks if we've already seen some (source token, target token) pair so we
     # ignore duplicate lines
@@ -142,13 +155,14 @@ def get_translation_candidates(
 
         with codecs.open(lexical_dictionary, "r", "utf-8") as lexical_dictionary_file:
             current_source_index = None
+            current_target_dialect = None
             current_target_indices = []
             for line in lexical_dictionary_file.readlines():
                 alignment_data = line.split()
-                if len(alignment_data) != 3:
+                if len(alignment_data) != 4:
                     logger.warning(f"Malformed line in lexical dictionary: {line}")
                     continue
-                source_word, target_word, prob = alignment_data
+                target_dialect, source_word, target_word, prob = alignment_data
                 prob = float(prob)
                 source_index = src_dict.index(source_word)
                 target_index = dst_dict.index(target_word)
@@ -159,24 +173,29 @@ def get_translation_candidates(
                     continue
 
                 if source_index is not None and target_index is not None:
-                    if source_index != current_source_index:
+                    if (
+                        source_index != current_source_index
+                        and target_dialect != current_target_dialect
+                    ):
                         # We've finished processing the possible translation
                         # candidates for this source token group, so save the
                         # extracted translation candidates
                         translation_candidates_saved += select_top_candidate_per_word(
                             current_source_index,
+                            current_target_dialect,
                             current_target_indices,
                             counter_per_word,
                             max_translation_candidates_per_word,
                             translation_candidates,
                             translation_candidates_set,
                         )
+                        current_target_dialect = target_dialect
                         current_source_index = source_index
                         current_target_indices = []
 
                     if (
                         target_index >= num_top_words
-                        and (source_index, target_index)
+                        and (target_dialect, source_index, target_index)
                         not in translation_candidates_set
                     ):
                         current_target_indices.append((target_index, prob))
@@ -184,6 +203,7 @@ def get_translation_candidates(
         # group
         translation_candidates_saved += select_top_candidate_per_word(
             current_source_index,
+            current_target_dialect,
             current_target_indices,
             counter_per_word,
             max_translation_candidates_per_word,
@@ -230,7 +250,13 @@ class VocabReduction(nn.Module):
             )
 
     # encoder_output is default None for backwards compatibility
-    def forward(self, src_tokens, encoder_output=None, decoder_input_tokens=None):
+    def forward(
+        self,
+        src_tokens,
+        encoder_output=None,
+        decoder_input_tokens=None,
+        target_dialect=0,
+    ):
         assert self.dst_dict.pad() == 0, (
             f"VocabReduction only works correctly when the padding ID is 0 "
             "(to ensure its position in possible_translation_tokens is also 0), "
@@ -243,7 +269,10 @@ class VocabReduction(nn.Module):
             vocab_list.append(flat_decoder_input_tokens)
 
         if self.translation_candidates is not None:
-            reduced_vocab = self.translation_candidates.index_select(
+            candidates_in_target_dialect = self.translation_candidates.index_select(
+                dim=0, index=target_dialect
+            )
+            reduced_vocab = candidates_in_target_dialect.index_select(
                 dim=0, index=src_tokens.view(-1)
             ).view(-1)
             vocab_list.append(reduced_vocab)
