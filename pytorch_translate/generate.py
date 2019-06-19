@@ -205,7 +205,9 @@ def _generate_score(models, args, task, dataset):
             maxlen_b=args.max_len_b,
             cuda=use_cuda,
             timer=gen_timer,
-            prefix_size=1 if pytorch_translate_data.is_multilingual_many_to_one(args) else 0,
+            prefix_size=1
+            if pytorch_translate_data.is_multilingual_many_to_one(args)
+            else 0,
         )
 
         for trans_info in _iter_translations(
@@ -432,7 +434,7 @@ def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
                     # Convert back to tokens for evaluation with unk replacement
                     # and/or without BPE
                     target_tokens = task.target_dictionary.encode_line(
-                        target_str, add_if_not_exist=True
+                        target_str, add_if_not_exist=False
                     )
                 # The probs score for the hypo_str; whether it's normalized by
                 # sequence length or not depends on normalize_scores, which is
