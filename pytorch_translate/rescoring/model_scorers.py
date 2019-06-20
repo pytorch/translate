@@ -221,10 +221,16 @@ class R2LModelScorer(SimpleModelScorer):
         return reversed_tgt_tokens
 
     def prepare_inputs(self, src_tokens, hypos):
-        src_lengths = (
-            torch.tensor([len(src_tokens)]).repeat(len(hypos)).type_as(src_tokens)
+        bsz, src_length = src_tokens.size()
+        beam_size = len(hypos) // bsz
+        src_lengths = torch.tensor([src_length]).repeat(len(hypos)).type_as(src_tokens)
+        src_tokens = (
+            src_tokens.unsqueeze(1)
+            .expand(-1, beam_size, -1)
+            .contiguous()
+            .view(-1, src_length)
         )
-        src_tokens = src_tokens.repeat(len(hypos), 1)
+
         encoder_inputs = (src_tokens, src_lengths)
         tgt_tokens = self.convert_hypos_to_tgt_tokens(hypos).type_as(src_tokens)
         tgt_tokens = self.reverse_tgt_tokens(tgt_tokens)

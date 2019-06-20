@@ -176,6 +176,30 @@ class TestModelScorers(unittest.TestCase):
                 ),
             ), "Target tokens are not as expected"
 
+    def test_r2l_scorer_prepare_inputs(self):
+        eos = self.task.tgt_dict.eos()
+        src_tokens = torch.tensor([[6, 7, 8], [1, 2, 3]], dtype=torch.int)
+        hypos = [
+            {"tokens": torch.tensor([12, 13, 14, eos], dtype=torch.int)},
+            {"tokens": torch.tensor([22, 23, eos], dtype=torch.int)},
+            {"tokens": torch.tensor([12, 13, 14, eos], dtype=torch.int)},
+            {"tokens": torch.tensor([22, 23, eos], dtype=torch.int)},
+        ]
+
+        with patch(
+            "pytorch_translate.utils.load_diverse_ensemble_for_inference",
+            return_value=([self.model], self.args, self.task),
+        ):
+            scorer = R2LModelScorer(self.args, "/tmp/model_path.txt", None, self.task)
+            (encoder_inputs, tgt_tokens) = scorer.prepare_inputs(src_tokens, hypos)
+            # Test encoder inputs
+            assert torch.equal(
+                encoder_inputs[0],
+                torch.tensor(
+                    [[6, 7, 8], [6, 7, 8], [1, 2, 3], [1, 2, 3]], dtype=torch.int
+                ),
+            ), "Encoder inputs are not as expected"
+
     def test_padding(self):
         """Same sentence should produce the same score with or without padding
         """
