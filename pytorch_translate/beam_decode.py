@@ -281,7 +281,7 @@ class SequenceGenerator(object):
         buffers = {}
 
         # init constraints
-        constraints = self._build_constraints(encoder_input["src_tokens"][0], beam_size)
+        constraints = self._build_constraints(src_tokens_tensor, beam_size)
 
         def buffer(name, type_of=tokens):  # noqa
             if name not in buffers:
