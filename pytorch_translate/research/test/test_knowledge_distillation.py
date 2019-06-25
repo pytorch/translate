@@ -2,11 +2,16 @@
 
 import unittest
 
+import numpy as np
 import torch
 import torch.nn.functional as F
+from fairseq.data import language_pair_dataset
 from pytorch_translate import char_source_model  # noqa
 from pytorch_translate import rnn  # noqa
+from pytorch_translate import vocab_constants
+from pytorch_translate.data import data as pytorch_translate_data
 from pytorch_translate.research.knowledge_distillation import (
+    collect_top_k_probs,
     dual_decoder_kd_loss,
     dual_decoder_kd_model,
     knowledge_distillation_loss,
@@ -171,3 +176,67 @@ class TestKnowledgeDistillation(unittest.TestCase):
             model.student_decoder.out_embed_dim
             == test_args.student_decoder_out_embed_dim
         )
+
+    def _create_dummy_binarized_dataset(
+        self, num_sentences=13, min_length=5, max_length=10, append_eos=False
+    ):
+        index_sequences = []
+        for _ in range(num_sentences):
+            sequence = [
+                np.random.randint(100, 103)
+                for _ in range(np.random.randint(min_length, max_length + 1))
+            ]
+            if append_eos:
+                sequence.append(vocab_constants.EOS_ID)
+            index_sequences.append(sequence)
+
+        dataset = pytorch_translate_data.InMemoryNumpyDataset()
+        dataset.load_from_sequences(index_sequences)
+        return dataset
+
+    def test_collect_top_k_probs(self):
+        test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
+        _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
+        self.task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
+        model = self.task.build_model(test_args)
+        model.eval()
+
+        binarized_source = self._create_dummy_binarized_dataset()
+        binarized_target = self._create_dummy_binarized_dataset(append_eos=True)
+        dataset = language_pair_dataset.LanguagePairDataset(
+            src=binarized_source,
+            src_sizes=binarized_source.sizes,
+            src_dict=self.task.src_dict,
+            tgt=binarized_target,
+            tgt_sizes=binarized_target.sizes,
+            tgt_dict=self.task.dst_dict,
+            left_pad_source=False,
+        )
+
+        top_k_scores, top_k_indices = collect_top_k_probs.compute_top_k(
+            task=self.task,
+            models=[model],
+            dataset=dataset,
+            k=3,
+            use_cuda=torch.cuda.is_available(),
+            max_tokens=None,
+            max_sentences=None,
+            progress_bar_args=None,
+        )
+
+        batch = language_pair_dataset.collate(
+            [dataset[0]],
+            pad_idx=self.task.src_dict.pad(),
+            eos_idx=self.task.src_dict.eos(),
+            left_pad_source=False,
+        )
+
+        with torch.no_grad():
+            net_output = model(**batch["net_input"])
+            probs = model.get_normalized_probs(net_output, log_probs=False)
+
+        top_probs, top_indices = torch.topk(probs[0, 0], k=3)
+
+        np.testing.assert_array_equal(top_k_indices[0], top_indices.numpy())
+        normalized_probs = (top_probs / top_probs.sum()).numpy()
+        np.testing.assert_almost_equal(top_k_scores[0], normalized_probs)
