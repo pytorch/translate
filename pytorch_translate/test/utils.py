@@ -12,7 +12,10 @@ from fairseq import data, options
 from fairseq.trainer import Trainer
 from pytorch_translate import rnn  # noqa
 from pytorch_translate import models, train, vocab_constants
-from pytorch_translate.data import dictionary as pytorch_translate_dictionary
+from pytorch_translate.data import (
+    data as pytorch_translate_data,
+    dictionary as pytorch_translate_dictionary,
+)
 from pytorch_translate.tasks import pytorch_translate_task as tasks
 
 
@@ -518,3 +521,21 @@ def train_translation_model(
     )
     train.validate_and_set_default_args(args)
     train.main(args)
+
+
+def create_dummy_binarized_dataset(
+    num_sentences=13, min_length=5, max_length=10, append_eos=False
+):
+    index_sequences = []
+    for _ in range(num_sentences):
+        sequence = [
+            np.random.randint(100, 103)
+            for _ in range(np.random.randint(min_length, max_length + 1))
+        ]
+        if append_eos:
+            sequence.append(vocab_constants.EOS_ID)
+        index_sequences.append(sequence)
+
+    dataset = pytorch_translate_data.InMemoryNumpyDataset()
+    dataset.load_from_sequences(index_sequences)
+    return dataset

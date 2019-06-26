@@ -16,6 +16,81 @@ from pytorch_translate.tasks.pytorch_translate_multi_task import (  # noqa
 )
 
 
+def compute_top_k(
+    task,
+    models,
+    dataset,
+    k,
+    use_cuda,
+    max_tokens=None,
+    max_sentences=None,
+    progress_bar_args=None,
+):
+    """
+    This function runs forward computation on an ensemble of trained models
+    using binarized parallel training data and returns the top-k probabilities
+    and their corresponding token indices for each output step.
+
+    Returns: (top_k_scores, top_k_indices)
+        Each a NumPy array of size (total_target_tokens, k)
+    """
+    top_k_scores_list = [None for _ in range(len(dataset))]
+    top_k_indices_list = [None for _ in range(len(dataset))]
+
+    itr = task.get_batch_iterator(
+        dataset=dataset, max_tokens=max_tokens, max_sentences=max_sentences
+    ).next_epoch_itr(shuffle=False)
+    if progress_bar_args is not None:
+        itr = progress_bar.build_progress_bar(
+            args=progress_bar_args,
+            iterator=itr,
+            prefix=f"top-k probs eval",
+            no_progress_bar="simple",
+        )
+
+    for sample in itr:
+        sentence_ids = sample["id"]
+        target_lengths = (
+            (sample["net_input"]["prev_output_tokens"] != dataset.tgt_dict.pad())
+            .sum(axis=1)
+            .numpy()
+        )
+        if use_cuda:
+            sample = utils.move_to_cuda(sample)
+        avg_probs = None
+        for model in models:
+            with torch.no_grad():
+                net_output = model(**sample["net_input"])
+                probs = model.get_normalized_probs(net_output, log_probs=False)
+            if avg_probs is None:
+                avg_probs = probs
+            else:
+                avg_probs.add_(probs)
+        avg_probs.div_(len(models))
+
+        top_k_avg_probs, indices = torch.topk(avg_probs, k=k)
+
+        top_k_probs_normalized = F.normalize(top_k_avg_probs, p=1, dim=2).cpu()
+        indices = indices.cpu()
+
+        for i, sentence_id in enumerate(sentence_ids):
+            length = target_lengths[i]
+            top_k_scores_list[sentence_id] = top_k_probs_normalized[i][:length].numpy()
+            top_k_indices_list[sentence_id] = indices[i][:length].numpy()
+
+    assert all(
+        top_k_scores is not None for top_k_scores in top_k_scores_list
+    ), "scores not calculated for all examples!"
+    assert all(
+        top_k_indices is not None for top_k_indices in top_k_indices_list
+    ), "indices not calculated for all examples!"
+
+    top_k_scores = np.concatenate(top_k_scores_list, axis=0)
+    top_k_indices = np.concatenate(top_k_indices_list, axis=0)
+
+    return top_k_scores, top_k_indices
+
+
 def save_top_k(args):
     """
     This function runs forward computation on an ensemble of trained models
@@ -60,52 +135,17 @@ def save_top_k(args):
 
     dataset = task.dataset(args.gen_subset)
 
-    top_k_scores_list = [None for _ in range(len(dataset))]
-    top_k_indices_list = [None for _ in range(len(dataset))]
-
-    itr = task.get_batch_iterator(
+    top_k_scores, top_k_indices = compute_top_k(
+        task=task,
+        models=models,
         dataset=dataset,
+        k=args.k_probs_to_collect,
+        use_cuda=use_cuda,
         max_tokens=args.max_tokens,
         max_sentences=args.max_sentences,
-        seed=args.seed,
-    ).next_epoch_itr(shuffle=False)
-    progress = progress_bar.build_progress_bar(
-        args=args, iterator=itr, prefix=f"top-k probs eval", no_progress_bar="simple"
+        progress_bar_args=args,
     )
 
-    for sample in progress:
-        sentence_ids = sample["id"]
-        if use_cuda:
-            sample = utils.move_to_cuda(sample)
-        avg_probs = None
-        for model in models:
-            with torch.no_grad():
-                net_output = model(**sample["net_input"])
-                probs = model.get_normalized_probs(net_output, log_probs=False)
-            if avg_probs is None:
-                avg_probs = probs
-            else:
-                avg_probs.add_(probs)
-        avg_probs.div_(len(models))
-
-        top_k_avg_probs, indices = torch.topk(avg_probs, k=args.k_probs_to_collect)
-
-        top_k_probs_normalized = F.normalize(top_k_avg_probs, p=1, dim=2).cpu()
-        indices = indices.cpu()
-
-        for i, sentence_id in enumerate(sentence_ids):
-            top_k_scores_list[sentence_id] = top_k_probs_normalized[i].numpy()
-            top_k_indices_list[sentence_id] = indices[i].numpy()
-
-    assert all(
-        top_k_scores is not None for top_k_scores in top_k_scores_list
-    ), "scores not calculated for all examples!"
-    assert all(
-        top_k_indices is not None for top_k_indices in top_k_indices_list
-    ), "indices not calculated for all examples!"
-
-    top_k_scores = np.concatenate(top_k_scores_list, axis=0)
-    top_k_indices = np.concatenate(top_k_indices_list, axis=0)
     np.savez(output_path, top_k_scores=top_k_scores, top_k_indices=top_k_indices)
     print(
         f"Saved top {top_k_scores.shape[1]} probs for a total of "
