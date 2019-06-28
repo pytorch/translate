@@ -51,7 +51,9 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
         assert indices.shape[0:1] == student_lprobs.shape[0:1]
 
         topk_mask = torch.zeros(student_lprobs.shape).type_as(student_lprobs)
-        topk_probs = topk_mask.scatter(2, indices, top_k_teacher_probs_normalized)
+        topk_probs = topk_mask.scatter(
+            2, indices, top_k_teacher_probs_normalized.float()
+        )
         topk_probs_flat = topk_probs.view(-1, topk_probs.size(-1))
         kd_loss = -torch.sum(topk_probs_flat * lprobs)
         return kd_loss, topk_probs
