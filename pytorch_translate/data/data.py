@@ -169,7 +169,10 @@ class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
         array_list = []
         offsets = [0]
         sizes = []
+        print(corpora)
         for corpus_config in corpora:
+            print(corpus_config)
+            print(corpus_config.data_file)
             prepend_inds = []
             append_inds = []
             if append_eos:
