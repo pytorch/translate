@@ -5,6 +5,7 @@ import unittest
 import numpy as np
 import torch
 import torch.nn.functional as F
+from fairseq import utils
 from fairseq.data import language_pair_dataset
 from pytorch_translate import char_source_model  # noqa
 from pytorch_translate import rnn  # noqa
@@ -180,6 +181,10 @@ class TestKnowledgeDistillation(unittest.TestCase):
         _, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
         self.task = tasks.DictionaryHolderTask(src_dict, tgt_dict)
         model = self.task.build_model(test_args)
+
+        use_cuda = torch.cuda.is_available()
+        if use_cuda:
+            model.cuda()
         model.eval()
 
         binarized_source = test_utils.create_dummy_binarized_dataset()
@@ -199,7 +204,7 @@ class TestKnowledgeDistillation(unittest.TestCase):
             models=[model],
             dataset=dataset,
             k=3,
-            use_cuda=torch.cuda.is_available(),
+            use_cuda=use_cuda,
             max_tokens=None,
             max_sentences=None,
             progress_bar_args=None,
@@ -212,11 +217,18 @@ class TestKnowledgeDistillation(unittest.TestCase):
             left_pad_source=False,
         )
 
+        sample = batch["net_input"]
+        if use_cuda:
+            sample = utils.move_to_cuda(sample)
+
         with torch.no_grad():
-            net_output = model(**batch["net_input"])
+            net_output = model(**sample)
             probs = model.get_normalized_probs(net_output, log_probs=False)
 
         top_probs, top_indices = torch.topk(probs[0, 0], k=3)
+        if use_cuda:
+            top_probs = top_probs.cpu()
+            top_indices = top_indices.cpu()
 
         np.testing.assert_array_equal(top_k_indices[0], top_indices.numpy())
         normalized_probs = (top_probs / top_probs.sum()).numpy()
