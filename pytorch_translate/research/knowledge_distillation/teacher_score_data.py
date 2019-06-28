@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import math
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
@@ -27,6 +27,7 @@ class TeacherDataset(data.language_pair_dataset.LanguagePairDataset):
         tgt=None,
         tgt_sizes=None,
         tgt_dict=None,
+        top_k_probs_binary_file: Optional[str] = None,
         teacher_models: List[Any] = None,
         top_k_teacher_scores: Dict[int, np.ndarray] = None,
         top_k_teacher_indices: Dict[int, np.ndarray] = None,
@@ -49,10 +50,26 @@ class TeacherDataset(data.language_pair_dataset.LanguagePairDataset):
         super().__init__(src, src_sizes, src_dict, tgt, tgt_sizes, tgt_dict, **kwargs)
         self.src_dict = src_dict
 
+        self.top_k_probs_binary_file = top_k_probs_binary_file
         self.teacher_models = teacher_models
         self.top_k_teacher_tokens = top_k_teacher_tokens
         self.top_k_teacher_scores = top_k_teacher_scores
         self.top_k_teacher_indices = top_k_teacher_indices
+
+        self.all_sen_ids_memoized = False
+
+        if self.top_k_probs_binary_file is not None:
+            npz = np.load(self.top_k_probs_binary_file)
+            flat_scores = npz["top_k_scores"]
+            flat_indices = npz["top_k_indices"]
+
+            offset = 0
+            for i, length in enumerate(tgt_sizes):
+                scores = flat_scores[offset : offset + length, :]
+                indices = flat_indices[offset : offset + length, :]
+                offset += length
+                self.top_k_teacher_scores[i] = torch.Tensor(scores)
+                self.top_k_teacher_indices[i] = torch.LongTensor(indices)
 
     def __len__(self):
         return super().__len__()
@@ -87,79 +104,83 @@ class TeacherDataset(data.language_pair_dataset.LanguagePairDataset):
         )
 
         sen_ids = batched_samples["id"].numpy()
-        all_sen_ids_memoized = all(id in top_k_teacher_scores for id in sen_ids)
 
-        if not all_sen_ids_memoized:
-            # Because there is a high chance that the batches do not fit into memory
-            # for big batches, we have to split them into smaller batches and
-            # memoize their values separately.
-            smaller_datasets = []
+        if teacher_models is not None:
+            all_sen_ids_memoized = all(id in top_k_teacher_scores for id in sen_ids)
 
-            chunk_size = max(1, math.ceil(len(dataset) / MEM_SPLIT_SIZE))
-            for i in range(MEM_SPLIT_SIZE):
-                small_data = dataset[
-                    chunk_size * i : min(len(dataset), (i + 1) * chunk_size)
-                ]
-                if len(small_data) > 0:
-                    smaller_datasets.append(small_data)
+            if not all_sen_ids_memoized:
+                # Because there is a high chance that the batches do not fit into memory
+                # for big batches, we have to split them into smaller batches and
+                # memoize their values separately.
+                smaller_datasets = []
 
-            for smaller_data in smaller_datasets:
-                smaller_batch = data.language_pair_dataset.collate(
-                    smaller_data, pad_idx, eos_idx, left_pad_source
-                )
+                chunk_size = max(1, math.ceil(len(dataset) / MEM_SPLIT_SIZE))
+                for i in range(MEM_SPLIT_SIZE):
+                    small_data = dataset[
+                        chunk_size * i : min(len(dataset), (i + 1) * chunk_size)
+                    ]
+                    if len(small_data) > 0:
+                        smaller_datasets.append(small_data)
 
-                sen_ids_this_batch = smaller_batch["id"].numpy()
-
-                # smaller_batch is natively on CPU. We want to make sure that
-                # the teacher models run on GPU.
-                net_input = {
-                    key: pytorch_translate_utils.maybe_cuda(
-                        smaller_batch["net_input"][key]
+                for smaller_data in smaller_datasets:
+                    smaller_batch = data.language_pair_dataset.collate(
+                        smaller_data, pad_idx, eos_idx, left_pad_source
                     )
-                    for key in smaller_batch["net_input"].keys()
-                }
 
-                teacher_output = teacher_models[0](**net_input)
-                avg_teacher_probs = teacher_models[0].get_normalized_probs(
-                    teacher_output, log_probs=False
-                )
+                    sen_ids_this_batch = smaller_batch["id"].numpy()
 
-                for i in range(1, len(teacher_models)):
-                    teacher_output = teacher_models[i](**net_input)
-                    probs = teacher_models[i].get_normalized_probs(
+                    # smaller_batch is natively on CPU. We want to make sure that
+                    # the teacher models run on GPU.
+                    net_input = {
+                        key: pytorch_translate_utils.maybe_cuda(
+                            smaller_batch["net_input"][key]
+                        )
+                        for key in smaller_batch["net_input"].keys()
+                    }
+
+                    teacher_output = teacher_models[0](**net_input)
+                    avg_teacher_probs = teacher_models[0].get_normalized_probs(
                         teacher_output, log_probs=False
                     )
-                    avg_teacher_probs.add_(probs)
 
-                avg_teacher_probs.div_(len(teacher_models))
-                avg_teacher_probs = avg_teacher_probs.detach()
+                    for i in range(1, len(teacher_models)):
+                        teacher_output = teacher_models[i](**net_input)
+                        probs = teacher_models[i].get_normalized_probs(
+                            teacher_output, log_probs=False
+                        )
+                        avg_teacher_probs.add_(probs)
 
-                # Getting the topk probabilities, masking others,
-                # normalizing the topk probabilities.
-                top_k_teacher_tokens_avg_probs, indices = torch.topk(
-                    avg_teacher_probs, k=top_k_teacher_tokens
-                )
-                top_k_teacher_probs_normalized = F.normalize(
-                    top_k_teacher_tokens_avg_probs, p=1, dim=2
-                ).cpu()
-                indices = indices.cpu()
+                    avg_teacher_probs.div_(len(teacher_models))
+                    avg_teacher_probs = avg_teacher_probs.detach()
 
-                # Memoization
-                for id_index, id in enumerate(sen_ids_this_batch):
-                    target_length = sum(
-                        (batched_samples["target"][id_index] != pad_idx).numpy()
+                    # Getting the topk probabilities, masking others,
+                    # normalizing the topk probabilities.
+                    top_k_teacher_tokens_avg_probs, indices = torch.topk(
+                        avg_teacher_probs, k=top_k_teacher_tokens
                     )
-                    if id not in top_k_teacher_scores:
-                        top_k_teacher_scores[id] = top_k_teacher_probs_normalized[
-                            id_index
-                        ][:target_length, :]
-                        top_k_teacher_indices[id] = indices[id_index][:target_length, :]
-        else:
-            # We assume that when there is a batch which is entirely memoized
-            # that means we do not need the teacher models anymore, and
-            # it is better to remove them from memory.
-            if len(teacher_models) > 0:
-                del teacher_models[:]
+                    top_k_teacher_probs_normalized = F.normalize(
+                        top_k_teacher_tokens_avg_probs, p=1, dim=2
+                    ).cpu()
+                    indices = indices.cpu()
+
+                    # Memoization
+                    for id_index, id in enumerate(sen_ids_this_batch):
+                        target_length = sum(
+                            (batched_samples["target"][id_index] != pad_idx).numpy()
+                        )
+                        if id not in top_k_teacher_scores:
+                            top_k_teacher_scores[id] = top_k_teacher_probs_normalized[
+                                id_index
+                            ][:target_length, :]
+                            top_k_teacher_indices[id] = indices[id_index][
+                                :target_length, :
+                            ]
+            else:
+                # We assume that when there is a batch which is entirely memoized
+                # that means we do not need the teacher models anymore, and
+                # it is better to remove them from memory.
+                if len(teacher_models) > 0:
+                    del teacher_models[:]
 
         # Now we assume that all values are already memoized.
         # Preparing all zero scores and gradually filling them in.
