@@ -26,15 +26,23 @@ class PytorchKnowledgeDistillationTask(PytorchTranslateTask):
             tgt_dict=tgt_dict,
             char_source_dict=char_source_dict,
         )
+        self.top_k_probs_binary_file = args.top_k_probs_binary_file
         self.top_k_teacher_tokens = args.top_k_teacher_tokens
 
-        # Load model ensemble from checkpoints
-        self.teacher_models, _, _ = pytorch_translate_utils.load_diverse_ensemble_for_inference(
-            args.teacher_path.split(":")
-        )
-        if torch.cuda.is_available():
-            for teacher_model in self.teacher_models:
-                teacher_model = pytorch_translate_utils.maybe_cuda(teacher_model)
+        if self.top_k_probs_binary_file is None:
+            # Load model ensemble from checkpoints
+            (
+                self.teacher_models,
+                _,
+                _,
+            ) = pytorch_translate_utils.load_diverse_ensemble_for_inference(
+                args.teacher_path.split(":")
+            )
+            if torch.cuda.is_available():
+                for teacher_model in self.teacher_models:
+                    teacher_model = pytorch_translate_utils.maybe_cuda(teacher_model)
+        else:
+            self.teacher_models = None
 
         # Memoized scores for teacher models. By having this and gradually memoizing
         # the values, we prevent the teacher model from keeping recalculating the
@@ -48,8 +56,18 @@ class PytorchKnowledgeDistillationTask(PytorchTranslateTask):
 
         """Add knowledge-distillation arguments to the parser."""
         parser.add_argument(
+            "--top-k-probs-binary-file",
+            metavar="PROBSFILE",
+            type=str,
+            default=None,
+            help="path to .npz file containing KD target probabilities for "
+            "each output token in training data.",
+        )
+        parser.add_argument(
             "--teacher-path",
             metavar="FILE",
+            type=str,
+            default=None,
             help="path(s) to teacher model file(s) colon separated",
         )
         parser.add_argument(
@@ -99,6 +117,7 @@ class PytorchKnowledgeDistillationTask(PytorchTranslateTask):
                 tgt=dst_dataset,
                 tgt_sizes=dst_dataset.sizes,
                 tgt_dict=self.tgt_dict,
+                top_k_probs_binary_file=self.top_k_probs_binary_file,
                 teacher_models=self.teacher_models,
                 top_k_teacher_tokens=self.top_k_teacher_tokens,
                 top_k_teacher_scores=self.top_k_teacher_scores,
