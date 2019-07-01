@@ -263,6 +263,16 @@ def add_preprocessing_args(parser):
         help="Path for the binary file containing target eval examples for "
         "calculating validation loss and BLEU scores.",
     )
+    group.add_argument(
+        "--train-mono-source-binary-path",
+        default="",
+        help="Path for the binary file containing source side monolingual data",
+    )
+    group.add_argument(
+        "--train-mono-target-binary-path",
+        default="",
+        help="Path for the binary file containing target side monolingual data",
+    )
 
     # TODO(T43045193): Move this to multilingual_task.py eventually
     group.add_argument(
