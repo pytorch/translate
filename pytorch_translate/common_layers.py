@@ -548,19 +548,10 @@ class TransformerEncoderGivenEmbeddings(nn.Module):
             ]
         )
 
-        self.output_fc = None
-        if args.encoder_embed_dim != args.decoder_embed_dim and proj_to_decoder:
-            self.output_fc = fairseq_transformer.Linear(
-                args.encoder_embed_dim, args.decoder_embed_dim
-            )
-
     def forward(self, x, positions, encoder_padding_mask):
         # encoder layers
         for layer in self.layers:
             x = layer(x, encoder_padding_mask)
-
-        if self.output_fc is not None:
-            x = self.output_fc(x)
 
         return x
 
@@ -593,10 +584,7 @@ class TransformerEmbedding(nn.Module):
         self.embed_tokens = embed_tokens
         self.embed_scale = math.sqrt(embed_dim)
         self.embed_positions = fairseq_transformer.PositionalEmbedding(
-            1024,
-            embed_dim,
-            self.padding_idx,
-            learned=args.encoder_learned_pos,
+            1024, embed_dim, self.padding_idx, learned=args.encoder_learned_pos
         )
 
     def forward(self, src_tokens, src_lengths):
