@@ -34,6 +34,9 @@ from pytorch_translate import (
 from pytorch_translate.data import dictionary as pytorch_translate_dictionary
 from pytorch_translate.dual_learning import dual_learning_criterion  # noqa
 from pytorch_translate.dual_learning import dual_learning_task  # noqa
+from pytorch_translate.research.deliberation_networks import (  # noqa
+    deliberation_networks,
+)
 from pytorch_translate.research.knowledge_distillation import (  # noqa
     dual_decoder_kd_loss,
     dual_decoder_kd_model,
