@@ -151,9 +151,10 @@ def _generate_score(models, args, task, dataset):
     # (None if no unknown word replacement, empty if no path to align dictionary)
     align_dict = utils.load_align_dict(args.replace_unk)
 
+    print("seed number is" + str(args.max_examples_to_evaluate_seed))
     if args.max_examples_to_evaluate > 0:
         pytorch_translate_data.subsample_pair_dataset(
-            dataset, args.max_examples_to_evaluate
+            dataset, args.max_examples_to_evaluate, args.max_examples_to_evaluate_seed
         )
 
     # Keep track of translations
@@ -205,7 +206,9 @@ def _generate_score(models, args, task, dataset):
             maxlen_b=args.max_len_b,
             cuda=use_cuda,
             timer=gen_timer,
-            prefix_size=1 if pytorch_translate_data.is_multilingual_many_to_one(args) else 0,
+            prefix_size=1
+            if pytorch_translate_data.is_multilingual_many_to_one(args)
+            else 0,
         )
 
         for trans_info in _iter_translations(

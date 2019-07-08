@@ -310,9 +310,11 @@ class IndexedRawTextDatasetWithLangId(data.IndexedRawTextDataset):
         self.tokens_list = [add_lang_id(t) for t in self.tokens_list]
 
 
-def subsample_pair_dataset(dataset, num_samples):
+def subsample_pair_dataset(dataset, num_samples, seed_num=-1):
     if len(dataset) <= num_samples:
         return
+    if seed_num != -1:
+        np.random.seed(seed_num)
     indices = np.random.permutation(len(dataset))[:num_samples]
     dataset.src.subsample(indices)
     dataset.src_sizes = dataset.src.sizes
