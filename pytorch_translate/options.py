@@ -709,6 +709,17 @@ def expand_generation_args(group, train=False):
             "sample this many examples to evaluate"
         ),
     )
+
+    group.add_argument(
+        "--max-examples-to-evaluate-seed",
+        default=-1,
+        type=int,
+        help=(
+            "If not -1, set seed for random sample as the given seed value, "
+            "so we can replicate result on random sample."
+        ),
+    )
+
     group.add_argument(
         "--output-source-binary-path",
         default=None,
