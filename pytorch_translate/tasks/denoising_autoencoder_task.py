@@ -33,6 +33,7 @@ class PytorchTranslateDenoisingAutoencoder(PytorchTranslateSemiSupervised):
             )
 
         self.eval_lang_pairs = [f"{self.source_lang}-{self.target_lang}"]
+        self.model_lang_pairs = [f"{self.source_lang}-{self.target_lang}"]
         # This is explicitly set so that we can re-use code from
         # MultilingualTranslationTask
         self.args.lang_pairs = self.lang_pairs
