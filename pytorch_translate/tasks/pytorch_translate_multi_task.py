@@ -4,6 +4,7 @@ from fairseq import models
 from fairseq.data import FairseqDataset, data_utils
 from fairseq.models import FairseqMultiModel
 from fairseq.tasks.multilingual_translation import MultilingualTranslationTask
+from pytorch_translate import vocab_constants
 from pytorch_translate.data import iterators as ptt_iterators
 
 
@@ -67,3 +68,24 @@ class PyTorchTranslateMultiTask(MultilingualTranslationTask):
     def max_positions(self):
         """Return None to allow model to dictate max sentence length allowed"""
         return None
+
+    def get_encoder_langtok(self, src_lang, tgt_lang):
+        if self.args.encoder_langtok is not None:
+            if self.args.encoder_langtok == "src":
+                if src_lang in vocab_constants.DIALECT_CODES:
+                    return vocab_constants.DIALECT_CODES[src_lang]
+            else:
+                if tgt_lang in vocab_constants.DIALECT_CODES:
+                    return vocab_constants.DIALECT_CODES[tgt_lang]
+        # if encoder_langtok is not None or src_lang and tgt_lang are not in
+        # vocab_constants.DIALECT_CODES
+        return self.dicts[src_lang].eos()
+
+    def get_decoder_langtok(self, tgt_lang):
+        if (
+            not self.args.decoder_langtok
+            or tgt_lang not in vocab_constants.DIALECT_CODES
+        ):
+            return self.dicts[tgt_lang].eos()
+        else:
+            return vocab_constants.DIALECT_CODES[tgt_lang]
