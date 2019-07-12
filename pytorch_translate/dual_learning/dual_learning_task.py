@@ -67,22 +67,6 @@ class DualLearningTask(FairseqTask):
             "training examples.",
         )
         parser.add_argument(
-            "--forward-source-vocab-file",
-            default="",
-            metavar="FILE",
-            help="Path to text file representing the dictionary of tokens to use. "
-            "If the file does not exist, the dict is auto-generated from source "
-            "training data and saved as that file.",
-        )
-        parser.add_argument(
-            "--forward-target-vocab-file",
-            default="",
-            metavar="FILE",
-            help="Path to text file representing the dictionary of tokens to use. "
-            "If the file does not exist, the dict is auto-generated from source "
-            "training data and saved as that file.",
-        )
-        parser.add_argument(
             "--forward-train-source-binary-path",
             default="",
             metavar="FILE",
@@ -111,22 +95,6 @@ class DualLearningTask(FairseqTask):
             "examples for forward model.",
         )
         parser.add_argument(
-            "--backward-source-vocab-file",
-            default="",
-            metavar="FILE",
-            help="Path to text file representing the dictionary of tokens to use. "
-            "If the file does not exist, the dict is auto-generated from source "
-            "training data and saved as that file.",
-        )
-        parser.add_argument(
-            "--backward-target-vocab-file",
-            default="",
-            metavar="FILE",
-            help="Path to text file representing the dictionary of tokens to use. "
-            "If the file does not exist, the dict is auto-generated from source "
-            "training data and saved as that file.",
-        )
-        parser.add_argument(
             "--backward-train-source-binary-path",
             default="",
             metavar="FILE",
@@ -152,7 +120,7 @@ class DualLearningTask(FairseqTask):
             default="",
             metavar="FILE",
             help="Path for the binary file containing target training "
-            "examples for backwawrd model.",
+            "examples for backward model.",
         )
         parser.add_argument(
             "--remove-eos-at-src", action="store_true", help="If True, remove eos"
@@ -250,7 +218,7 @@ class DualLearningTask(FairseqTask):
                 src_bin_path=self.args.backward_eval_source_binary_path,
                 tgt_bin_path=self.args.backward_eval_target_binary_path,
                 source_dictionary=self.dual_src_dict,
-                target_dictionary=self.dual_src_dict,
+                target_dictionary=self.dual_tgt_dict,
                 split=split,
                 remove_eos_from_source=not self.args.append_eos_to_source,
                 append_eos_to_target=True,
@@ -308,7 +276,7 @@ class DualLearningTask(FairseqTask):
                 src_bin_path=self.args.backward_train_source_binary_path,
                 tgt_bin_path=self.args.backward_train_target_binary_path,
                 source_dictionary=self.dual_src_dict,
-                target_dictionary=self.dual_src_dict,
+                target_dictionary=self.dual_tgt_dict,
                 split=split,
                 remove_eos_from_source=not self.args.append_eos_to_source,
                 append_eos_to_target=True,
