@@ -21,6 +21,7 @@ from caffe2.python.onnx import backend as caffe2_backend
 from caffe2.python.predictor import predictor_exporter
 from fairseq import tasks, utils
 from fairseq.models import ARCH_MODEL_REGISTRY
+from pytorch_translate.beam_decode import BeamDecode
 from pytorch_translate.char_source_model import CharSourceModel
 from pytorch_translate.data import dictionary
 from pytorch_translate.research.knowledge_distillation import (
@@ -1669,3 +1670,139 @@ class CharSourceEncoderEnsemble(nn.Module):
             output_names=self.output_names,
             num_workers=2 * len(self.models),
         )
+
+
+class BeamSearchAndDecode(torch.jit.ScriptModule):
+    """
+    Combines the functionality of BeamSearch and BeamDecode
+    """
+
+    def __init__(
+        self,
+        models,
+        tgt_dict,
+        src_tokens,
+        src_lengths,
+        eos_token_id,
+        length_penalty,
+        nbest,
+        beam_size,
+        stop_at_eos,
+        word_reward=0,
+        unk_reward=0,
+        quantize=False,
+    ):
+        super().__init__()
+
+        self.beam_search = BeamSearch(
+            models,
+            tgt_dict,
+            src_tokens,
+            src_lengths,
+            beam_size,
+            word_reward,
+            unk_reward,
+            quantize,
+        )
+
+        self.beam_decode = BeamDecode(
+            eos_token_id, length_penalty, nbest, beam_size, stop_at_eos
+        )
+
+        self.input_names = [
+            "src_tokens",
+            "src_lengths",
+            "prev_token",
+            "prev_scores",
+            "attn_weights",
+            "prev_hypos_indices",
+            "num_steps",
+        ]
+        self.output_names = [
+            "beam_output",
+            "hypothesis_score",
+            "token_level_scores",
+            "back_alignment_weights",
+        ]
+
+    @torch.jit.script_method
+    def forward(
+        self,
+        src_tokens,
+        src_lengths,
+        prev_token,
+        prev_scores,
+        attn_weights,
+        prev_hypos_indices,
+        num_steps,
+    ):
+
+        beam_search_out = self.beam_search(
+            src_tokens,
+            src_lengths,
+            prev_token,
+            prev_scores,
+            attn_weights,
+            prev_hypos_indices,
+            num_steps,
+        )
+        all_tokens, all_scores, all_weights, all_prev_indices = beam_search_out
+
+        outputs = self.beam_decode(
+            all_tokens, all_scores, all_weights, all_prev_indices, num_steps
+        )
+
+        return outputs
+
+    @classmethod
+    def build_from_checkpoints(
+        cls,
+        checkpoint_filenames,
+        src_dict_filename,
+        dst_dict_filename,
+        beam_size,
+        word_reward=0,
+        unk_reward=0,
+        lexical_dict_paths=None,
+    ):
+        # TODO: This method hasn't been tested for now.
+        length = 10
+        models, _, tgt_dict = load_models_from_checkpoints(
+            checkpoint_filenames,
+            src_dict_filename,
+            dst_dict_filename,
+            lexical_dict_paths,
+        )
+        src_tokens = torch.LongTensor(np.ones((length, 1), dtype="int64"))
+        src_lengths = torch.IntTensor(np.array([length], dtype="int32"))
+        eos_token_id = tgt_dict.eos()
+        length_penalty = 0.25
+        nbest = 3
+
+        return cls(
+            models,
+            tgt_dict,
+            src_tokens,
+            src_lengths,
+            eos_token_id,
+            length_penalty,
+            nbest,
+            beam_size=beam_size,
+            stop_at_eos=True,
+            word_reward=word_reward,
+            unk_reward=unk_reward,
+            quantize=True,
+        )
+
+    def save_to_pytorch(self, output_path):
+        def pack(s):
+            if hasattr(s, "_pack"):
+                s._pack()
+
+        def unpack(s):
+            if hasattr(s, "_unpack"):
+                s._unpack()
+
+        self.apply(pack)
+        torch.jit.save(self, output_path)
+        self.apply(unpack)
