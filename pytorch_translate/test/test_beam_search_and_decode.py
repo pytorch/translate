@@ -19,7 +19,7 @@ class TestBeamSearchAndDecode(unittest.TestCase):
         """
         test_args = test_utils.ModelParamsDict(arch="rnn")
         test_args.sequence_lstm = True
-        BEAM_SIZE = 2
+        BEAM_SIZE = 1
         WORD_REWARD = 1
         UNK_REWARD = -1
         LENGTH_PENALTY = 0

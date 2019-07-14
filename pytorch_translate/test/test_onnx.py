@@ -777,14 +777,3 @@ class TestBeamSearchAndDecodeExport(unittest.TestCase):
             "max_translation_candidates_per_word": 1,
         }
         self._test_full_beam_search_decoder(test_args, quantize=True)
-
-    def test_full_beam_search_decoder_quantization_hybrid_reduced_attention(self):
-        test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
-        test_args.decoder_reduced_attention_dim = 10
-        lexical_dictionaries = test_utils.create_lexical_dictionaries()
-        test_args.vocab_reduction_params = {
-            "lexical_dictionaries": lexical_dictionaries,
-            "num_top_words": 10,
-            "max_translation_candidates_per_word": 1,
-        }
-        self._test_full_beam_search_decoder(test_args, quantize=True)
