@@ -83,7 +83,7 @@ def load_monolingual_dataset(
         )
 
     if log_verbose:
-        print("Finished loading dataset", flush=True)
+        print(f"Finished loading dataset {bin_path}", flush=True)
 
     print(
         f"""| Loaded {len(dataset)} monolingual examples for """
