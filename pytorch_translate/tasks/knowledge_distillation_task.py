@@ -28,6 +28,7 @@ class PytorchKnowledgeDistillationTask(PytorchTranslateTask):
         )
         self.top_k_probs_binary_file = args.top_k_probs_binary_file
         self.top_k_teacher_tokens = args.top_k_teacher_tokens
+        self.teacher_mem_split_size = args.teacher_mem_split_size
 
         if self.top_k_probs_binary_file is None:
             # Load model ensemble from checkpoints
@@ -82,6 +83,15 @@ class PytorchKnowledgeDistillationTask(PytorchTranslateTask):
                 "enumerating all.",
             ),
         )
+        parser.add_argument(
+            "--teacher-mem-split-size",
+            type=int,
+            default=20,
+            help=(
+                "Splits minitbatch to several smaller minibatches for memory-efficient",
+                "teacher scoring in knowledge distillation.",
+            ),
+        )
 
     def load_dataset(
         self, split, src_bin_path, tgt_bin_path, weights_file=None, is_train=False
@@ -122,6 +132,7 @@ class PytorchKnowledgeDistillationTask(PytorchTranslateTask):
                 top_k_teacher_tokens=self.top_k_teacher_tokens,
                 top_k_teacher_scores=self.top_k_teacher_scores,
                 top_k_teacher_indices=self.top_k_teacher_indices,
+                mem_split_size=self.teacher_mem_split_size,
                 left_pad_source=False,
             )
         else:

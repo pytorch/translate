@@ -38,43 +38,47 @@ class TestTeacherScoreDataSet(unittest.TestCase):
         top_k_teacher_scores = {}
         top_k_teacher_indices = {}
         b1 = TeacherDataset.collate(
-            dataset1,
-            teacher_models,
-            3,
-            src_dict.pad(),
-            src_dict.eos(),
-            top_k_teacher_scores,
-            top_k_teacher_indices,
+            dataset=dataset1,
+            teacher_models=teacher_models,
+            top_k_teacher_tokens=3,
+            pad_idx=src_dict.pad(),
+            eos_idx=src_dict.eos(),
+            top_k_teacher_scores=top_k_teacher_scores,
+            top_k_teacher_indices=top_k_teacher_indices,
+            mem_split_size=3,
         )
         TeacherDataset.collate(
-            dataset2,
-            teacher_models,
-            3,
-            src_dict.pad(),
-            src_dict.eos(),
-            top_k_teacher_scores,
-            top_k_teacher_indices,
+            dataset=dataset2,
+            teacher_models=teacher_models,
+            top_k_teacher_tokens=3,
+            pad_idx=src_dict.pad(),
+            eos_idx=src_dict.eos(),
+            top_k_teacher_scores=top_k_teacher_scores,
+            top_k_teacher_indices=top_k_teacher_indices,
+            mem_split_size=3,
         )
         before_scores = [top_k_teacher_scores[i].cpu().numpy() for i in range(4)]
         before_indices = [top_k_teacher_indices[i].cpu().numpy() for i in range(4)]
 
         TeacherDataset.collate(
-            dataset3,
-            teacher_models,
-            3,
-            src_dict.pad(),
-            src_dict.eos(),
-            top_k_teacher_scores,
-            top_k_teacher_indices,
+            dataset=dataset3,
+            teacher_models=teacher_models,
+            top_k_teacher_tokens=3,
+            pad_idx=src_dict.pad(),
+            eos_idx=src_dict.eos(),
+            top_k_teacher_scores=top_k_teacher_scores,
+            top_k_teacher_indices=top_k_teacher_indices,
+            mem_split_size=3,
         )
         TeacherDataset.collate(
-            dataset4,
-            teacher_models,
-            3,
-            src_dict.pad(),
-            src_dict.eos(),
-            top_k_teacher_scores,
-            top_k_teacher_indices,
+            dataset=dataset4,
+            teacher_models=teacher_models,
+            top_k_teacher_tokens=3,
+            pad_idx=src_dict.pad(),
+            eos_idx=src_dict.eos(),
+            top_k_teacher_scores=top_k_teacher_scores,
+            top_k_teacher_indices=top_k_teacher_indices,
+            mem_split_size=3,
         )
         after_scores = [top_k_teacher_scores[i].cpu().numpy() for i in range(4)]
         after_indices = [top_k_teacher_indices[i].cpu().numpy() for i in range(4)]
@@ -84,13 +88,14 @@ class TestTeacherScoreDataSet(unittest.TestCase):
             np.array_equal(after_indices[i], before_indices[i])
 
         b5 = TeacherDataset.collate(
-            dataset1,
-            teacher_models,
-            3,
-            src_dict.pad(),
-            src_dict.eos(),
-            top_k_teacher_scores,
-            top_k_teacher_indices,
+            dataset=dataset1,
+            teacher_models=teacher_models,
+            top_k_teacher_tokens=3,
+            pad_idx=src_dict.pad(),
+            eos_idx=src_dict.eos(),
+            top_k_teacher_scores=top_k_teacher_scores,
+            top_k_teacher_indices=top_k_teacher_indices,
+            mem_split_size=3,
         )
 
         assert len(teacher_models) == 0

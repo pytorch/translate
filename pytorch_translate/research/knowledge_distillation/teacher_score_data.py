@@ -10,9 +10,6 @@ from fairseq import data, utils
 from pytorch_translate import utils as pytorch_translate_utils
 
 
-MEM_SPLIT_SIZE = 10
-
-
 class TeacherDataset(data.language_pair_dataset.LanguagePairDataset):
     """
     Extension of fairseq.data.LanguagePairDataset where each example
@@ -32,6 +29,7 @@ class TeacherDataset(data.language_pair_dataset.LanguagePairDataset):
         top_k_teacher_scores: Dict[int, np.ndarray] = None,
         top_k_teacher_indices: Dict[int, np.ndarray] = None,
         top_k_teacher_tokens=8,
+        mem_split_size=64,
         **kwargs,
     ):
         """
@@ -46,6 +44,8 @@ class TeacherDataset(data.language_pair_dataset.LanguagePairDataset):
             top_k_teacher_scores:  A  dictionary for memoization indices of scores;
                 similar to the previous argument, it is passed between the dataset
                 and PytorchKnowledgeDistillationTask.
+            mem_split_size: For breaking a big mini-batch to smaller ones (for
+                memory efficiency reasons).
         """
         super().__init__(src, src_sizes, src_dict, tgt, tgt_sizes, tgt_dict, **kwargs)
         self.src_dict = src_dict
@@ -55,6 +55,7 @@ class TeacherDataset(data.language_pair_dataset.LanguagePairDataset):
         self.top_k_teacher_tokens = top_k_teacher_tokens
         self.top_k_teacher_scores = top_k_teacher_scores
         self.top_k_teacher_indices = top_k_teacher_indices
+        self.mem_split_size = mem_split_size
 
         self.all_sen_ids_memoized = False
 
@@ -76,13 +77,14 @@ class TeacherDataset(data.language_pair_dataset.LanguagePairDataset):
 
     def collater(self, dataset_samples):
         return TeacherDataset.collate(
-            dataset_samples,
-            self.teacher_models,
-            self.top_k_teacher_tokens,
-            self.src_dict.pad(),
-            self.src_dict.eos(),
-            self.top_k_teacher_scores,
-            self.top_k_teacher_indices,
+            dataset=dataset_samples,
+            teacher_models=self.teacher_models,
+            top_k_teacher_tokens=self.top_k_teacher_tokens,
+            pad_idx=self.src_dict.pad(),
+            eos_idx=self.src_dict.eos(),
+            top_k_teacher_scores=self.top_k_teacher_scores,
+            top_k_teacher_indices=self.top_k_teacher_indices,
+            mem_split_size=self.mem_split_size,
         )
 
     @staticmethod
@@ -94,7 +96,8 @@ class TeacherDataset(data.language_pair_dataset.LanguagePairDataset):
         eos_idx,
         top_k_teacher_scores: Dict[int, np.ndarray],
         top_k_teacher_indices: Dict[int, np.ndarray],
-        left_pad_source=False,
+        mem_split_size: int = 64,
+        left_pad_source: bool = False,
     ):
         if len(dataset) == 0:
             return {}
@@ -114,8 +117,8 @@ class TeacherDataset(data.language_pair_dataset.LanguagePairDataset):
                 # memoize their values separately.
                 smaller_datasets = []
 
-                chunk_size = max(1, math.ceil(len(dataset) / MEM_SPLIT_SIZE))
-                for i in range(MEM_SPLIT_SIZE):
+                chunk_size = max(1, math.ceil(len(dataset) / mem_split_size))
+                for i in range(mem_split_size):
                     small_data = dataset[
                         chunk_size * i : min(len(dataset), (i + 1) * chunk_size)
                     ]
