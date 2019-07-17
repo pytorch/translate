@@ -74,6 +74,19 @@ class ModelParamsDict:
             self.student_decoder_lstm_units = 7
             self.student_decoder_out_embed_dim = 4
             self.student_decoder_reduced_attention_dim = 8
+        elif arch == "latent_var_transformer":
+            self.arch = "latent_var_transformer"
+            self.decoder_attention_heads = 8
+            self.decoder_embed_dim = 512
+            self.decoder_ffn_embed_dim = 2048
+            self.decoder_input_dim = 512
+            self.decoder_layers = 6
+            self.decoder_out_embed_dim = 512
+            self.decoder_output_dim = 512
+            self.encoder_attention_heads = 8
+            self.encoder_embed_dim = 512
+            self.encoder_ffn_embed_dim = 2048
+            self.encoder_layers = 6
         else:
             self.arch = "rnn"
             self.encoder_embed_dim = 10

@@ -34,6 +34,12 @@ from pytorch_translate.word_prediction import word_prediction_model
 from torch.onnx import ExportTypes, OperatorExportTypes
 
 
+try:
+    import latent_var_models  # noqa;
+except BaseException:
+    pass
+
+
 from pytorch_translate import (  # noqa; noqa
     char_source_hybrid,
     char_source_model,
@@ -42,6 +48,7 @@ from pytorch_translate import (  # noqa; noqa
     rnn,
     semi_supervised,
     transformer,
+    latent_var_models,
 )
 
 logger = logging.getLogger(__name__)
@@ -124,6 +131,11 @@ def load_models_from_checkpoints(
             task = tasks.setup_task(model_args)
 
             model = ARCH_MODEL_REGISTRY[model_args.arch].build_model(model_args, task)
+        elif architecture == "latent_var_transformer":
+            task = tasks.setup_task(checkpoint_data["args"])
+            model = latent_var_models.LatentVarModel.build_model(
+                checkpoint_data["args"], task
+            )
         else:
             raise RuntimeError("Architecture not supported: {architecture}")
 
@@ -650,6 +662,52 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 )
 
                 futures.append(fut)
+            elif isinstance(model, latent_var_models.LatentVarModel):
+                encoder_output = inputs[i]
+                # store cached states, use evaluation mode
+                model.decoder._is_incremental_eval = True
+                model.eval()
+                state_inputs = []
+                state_inputs.extend(inputs[next_state_input : next_state_input + 3])
+                next_state_input += 3
+                for _ in list(model.decoder.decoders.values())[0].layers:
+                    # (prev_key, prev_value) for self- and encoder-attention
+                    state_inputs.extend(inputs[next_state_input : next_state_input + 4])
+                    next_state_input += 4
+
+                encoder_out = encoder_output
+
+                # TODO(jcross)
+                reduced_output_weights = None
+                reduced_output_weights_per_model.append(reduced_output_weights)
+
+                def forked_section(
+                    input_tokens,
+                    encoder_out,
+                    state_inputs,
+                    possible_translation_tokens,
+                    timestep,
+                ):
+                    decoder_output = model.decoder(
+                        input_tokens, encoder_out, incremental_state=state_inputs
+                    )
+                    logits, attn_scores, _, _, attention_states = decoder_output
+
+                    log_probs = F.log_softmax(logits, dim=2)
+
+                    return log_probs, attn_scores, tuple(attention_states)
+
+                fut = torch.jit._fork(
+                    forked_section,
+                    input_tokens,
+                    encoder_out,
+                    state_inputs,
+                    possible_translation_tokens,
+                    timestep,
+                )
+
+                futures.append(fut)
+
             elif isinstance(
                 model, hybrid_transformer_rnn.HybridTransformerRNNModel
             ) or isinstance(model, char_source_hybrid.CharSourceHybridModel):
@@ -747,6 +805,13 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 log_probs_per_model.append(log_probs)
                 attn_weights_per_model.append(attn_scores)
 
+                state_outputs.extend(attention_states)
+                beam_axis_per_state.extend([0 for _ in attention_states])
+            elif isinstance(model, latent_var_models.LatentVarModel):
+                log_probs, attn_scores, attention_states = torch.jit._wait(fut)
+
+                log_probs_per_model.append(log_probs)
+                attn_weights_per_model.append(attn_scores)
                 state_outputs.extend(attention_states)
                 beam_axis_per_state.extend([0 for _ in attention_states])
             elif isinstance(

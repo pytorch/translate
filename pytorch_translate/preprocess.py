@@ -137,6 +137,8 @@ def binarize_text_file_multilingual(
 
 
 def preprocess_corpora(args, dictionary_cls=Dictionary):
+    if pytorch_translate_data.is_latent_variable(args):
+        return
     if (
         args.train_source_binary_path is not None
         and args.train_target_binary_path is not None
@@ -165,8 +167,6 @@ def preprocess_corpora(args, dictionary_cls=Dictionary):
         preprocess_corpora_multilingual(args)
     elif pytorch_translate_data.is_multilingual_many_to_one(args):
         preprocess_corpora_multilingual_many_to_one(args, dictionary_cls)
-    elif pytorch_translate_data.is_latent_variable(args):
-        preprocess_corpora_latent_variable(args)
     else:
 
         # Vocabs are built before preprocessing because we might need to use
