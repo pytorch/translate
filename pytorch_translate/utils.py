@@ -113,6 +113,8 @@ def load_diverse_ensemble_for_inference(
     # build ensemble
     ensemble = []
     if task is None:
+        if hasattr(checkpoints_data[0]["args"], "mode"):
+            checkpoints_data[0]["args"].mode = "eval"
         task = tasks.setup_task(checkpoints_data[0]["args"])
     for checkpoint_data in checkpoints_data:
         model = task.build_model(checkpoint_data["args"])
