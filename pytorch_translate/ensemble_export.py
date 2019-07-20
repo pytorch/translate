@@ -35,8 +35,8 @@ from torch.onnx import ExportTypes, OperatorExportTypes
 
 
 try:
-    import latent_var_models  # noqa;
-except BaseException:
+    from pytorch_translate import latent_var_models  # noqa;
+except ImportError:
     pass
 
 
@@ -48,7 +48,6 @@ from pytorch_translate import (  # noqa; noqa
     rnn,
     semi_supervised,
     transformer,
-    latent_var_models,
 )
 
 logger = logging.getLogger(__name__)
