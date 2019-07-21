@@ -19,9 +19,6 @@ from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
 from pytorch_translate import char_source_hybrid  # noqa
 from pytorch_translate import hybrid_transformer_rnn  # noqa
-from pytorch_translate import latent_var_criterion  # noqa
-from pytorch_translate import latent_var_models  # noqa
-from pytorch_translate import latent_var_task  # noqa
 from pytorch_translate import sequence_criterions  # noqa
 from pytorch_translate import transformer  # noqa
 from pytorch_translate import transformer_aan  # noqa
@@ -52,6 +49,14 @@ from pytorch_translate.research.rescore import (  # noqa
 )
 from pytorch_translate.word_prediction import word_prediction_criterion  # noqa
 from pytorch_translate.word_prediction import word_prediction_model  # noqa
+
+
+try:
+    from pytorch_translate import latent_var_criterion  # noqa
+    from pytorch_translate import latent_var_models  # noqa
+    from pytorch_translate import latent_var_task  # noqa
+except ImportError:
+    pass
 
 
 from pytorch_translate import rnn  # noqa; noqa
