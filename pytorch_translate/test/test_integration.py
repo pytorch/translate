@@ -700,7 +700,7 @@ class TestTranslation(unittest.TestCase):
                         "--num-segment",
                         "2",
                     ],
-                    criterion=["--criterion", "masked_lm_loss"],
+                    criterion=["--criterion", "legacy_masked_lm_loss"],
                 )
 
 
