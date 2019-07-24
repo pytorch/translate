@@ -731,14 +731,13 @@ class SequenceGenerator(object):
                     # to use get_normalized_probs in adaptive softmax decoder
                     # the sample object is needed. During inference, the target
                     # should be set to None
-                    probs = model.get_normalized_probs(
-                        decoder_out, log_probs=False, sample={"target": None}
+                    log_probs = model.get_normalized_probs(
+                        decoder_out, log_probs=True, sample={"target": None}
                     )
-                    probs = probs[:, -1, :]
-                    log_probs = model_weight * probs.log()
+                    log_probs = model_weight * log_probs[:, -1, :]
                 else:
-                    probs = model.get_normalized_probs(decoder_out, log_probs=False)
-                    log_probs = model_weight * probs.log()
+                    log_probs = model.get_normalized_probs(decoder_out, log_probs=True)
+                    log_probs = model_weight * log_probs
                 all_translation_tokens.append(possible_translation_tokens)
                 all_log_probs.append(log_probs)
 
