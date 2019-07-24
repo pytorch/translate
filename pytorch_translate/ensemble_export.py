@@ -5,7 +5,7 @@ import logging
 import os
 import tempfile
 from collections import defaultdict
-from typing import Optional
+from typing import List, Optional, Tuple
 
 import numpy as np
 import onnx
@@ -31,6 +31,7 @@ from pytorch_translate.research.knowledge_distillation import (
 from pytorch_translate.tasks.pytorch_translate_task import DictionaryHolderTask
 from pytorch_translate.transformer import TransformerEncoder
 from pytorch_translate.word_prediction import word_prediction_model
+from torch import Tensor
 from torch.onnx import ExportTypes, OperatorExportTypes
 
 
@@ -1787,19 +1788,20 @@ class BeamSearchAndDecode(torch.jit.ScriptModule):
             "hypothesis_score",
             "token_level_scores",
             "back_alignment_weights",
+            "best_indices",
         ]
 
     @torch.jit.script_method
     def forward(
         self,
-        src_tokens,
-        src_lengths,
-        prev_token,
-        prev_scores,
-        attn_weights,
-        prev_hypos_indices,
-        num_steps,
-    ):
+        src_tokens: torch.Tensor,
+        src_lengths: torch.Tensor,
+        prev_token: torch.Tensor,
+        prev_scores: torch.Tensor,
+        attn_weights: torch.Tensor,
+        prev_hypos_indices: torch.Tensor,
+        num_steps: int,
+    ) -> List[Tuple[Tensor, float, List[float], Tensor, Tensor]]:
 
         beam_search_out = self.beam_search(
             src_tokens,
@@ -1812,6 +1814,9 @@ class BeamSearchAndDecode(torch.jit.ScriptModule):
         )
         all_tokens, all_scores, all_weights, all_prev_indices = beam_search_out
 
+        outputs = torch.jit.annotate(
+            List[Tuple[Tensor, float, List[float], Tensor, Tensor]], []
+        )
         outputs = self.beam_decode(
             all_tokens, all_scores, all_weights, all_prev_indices, num_steps
         )
@@ -1825,11 +1830,12 @@ class BeamSearchAndDecode(torch.jit.ScriptModule):
         src_dict_filename,
         dst_dict_filename,
         beam_size,
+        length_penalty,
+        nbest,
         word_reward=0,
         unk_reward=0,
         lexical_dict_paths=None,
     ):
-        # TODO: This method hasn't been tested for now.
         length = 10
         models, _, tgt_dict = load_models_from_checkpoints(
             checkpoint_filenames,
@@ -1840,8 +1846,6 @@ class BeamSearchAndDecode(torch.jit.ScriptModule):
         src_tokens = torch.LongTensor(np.ones((length, 1), dtype="int64"))
         src_lengths = torch.IntTensor(np.array([length], dtype="int32"))
         eos_token_id = tgt_dict.eos()
-        length_penalty = 0.25
-        nbest = 3
 
         return cls(
             models,
@@ -1849,8 +1853,8 @@ class BeamSearchAndDecode(torch.jit.ScriptModule):
             src_tokens,
             src_lengths,
             eos_token_id,
-            length_penalty,
-            nbest,
+            length_penalty=length_penalty,
+            nbest=nbest,
             beam_size=beam_size,
             stop_at_eos=True,
             word_reward=word_reward,

@@ -68,13 +68,13 @@ class TestExportBeamDecode(unittest.TestCase):
             beam_indices = beam_decode._get_output_steps_to_beam_indices(
                 end_state, beam_prev_indices
             )
-            weights_from_output = torch.stack(output[state_idx][3]).numpy()
+            weights_from_output = output[state_idx][3].numpy()
             weights_from_input = []
             for pos, beam_index in enumerate(beam_indices):
                 if pos == 0:
                     continue
                 weights_from_input.append(token_weights[pos][beam_index])
-            weights_from_input = torch.stack(weights_from_input).numpy()
+            weights_from_input = torch.stack(weights_from_input, dim=1).numpy()
 
             np.testing.assert_array_equal(weights_from_output, weights_from_input)
 
@@ -201,9 +201,7 @@ class TestExportBeamDecode(unittest.TestCase):
                 top_seq_gen_hypothesis[hyp_index]["attention"].numpy()[
                     :, 0:MAX_SEQ_LEN
                 ],
-                torch.stack(top_beam_decode_hypothesis[3])
-                .transpose(0, 1)
-                .numpy()[:, 0:MAX_SEQ_LEN],
+                top_beam_decode_hypothesis[3].numpy()[:, 0:MAX_SEQ_LEN],
                 decimal=1,
             )
             ## Not testing the hypothesis score as sequence generator is adding EOS
