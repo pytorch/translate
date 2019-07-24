@@ -125,9 +125,7 @@ class TestBeamSearchAndDecode(unittest.TestCase):
                 top_seq_gen_hypothesis[hyp_index]["attention"].numpy()[
                     :, 0:MAX_SEQ_LEN
                 ],
-                torch.stack(beam_search_and_decode_hypothesis[3])
-                .transpose(0, 1)
-                .numpy()[:, 0:MAX_SEQ_LEN],
+                beam_search_and_decode_hypothesis[3].numpy()[:, 0:MAX_SEQ_LEN],
                 decimal=1,
             )
             # Not testing the hypothesis score as sequence generator is adding EOS

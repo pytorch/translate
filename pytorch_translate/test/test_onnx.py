@@ -723,9 +723,7 @@ class TestBeamSearchAndDecodeExport(unittest.TestCase):
                 hypo[2], hypo_deserialized[2], decimal=1
             )
             np.testing.assert_array_almost_equal(
-                torch.stack(hypo[3]).transpose(0, 1).numpy(),
-                torch.stack(hypo_deserialized[3]).transpose(0, 1).numpy(),
-                decimal=1,
+                hypo[3].numpy(), hypo_deserialized[3].numpy(), decimal=1
             )
 
     def test_full_beam_search_decoder(self):

@@ -801,7 +801,7 @@ class BeamDecode(torch.jit.ScriptModule):
         token_weights: Tensor,
         beam_prev_indices: Tensor,
         num_steps: int,
-    ) -> List[Tuple[Tensor, float, List[float], List[Tensor]]]:
+    ) -> List[Tuple[Tensor, float, List[float], Tensor, Tensor]]:
 
         self._check_dimensions(
             beam_tokens, beam_scores, token_weights, beam_prev_indices, num_steps
@@ -811,10 +811,10 @@ class BeamDecode(torch.jit.ScriptModule):
             beam_tokens, beam_scores, beam_prev_indices, num_steps
         )
 
-        # outputs is
-        # Tuple[Hypothesis, Hypothesis score, Token level scores, Attention Weights]
+        # outputs is list of the following for each hypothesis:
+        # Tuple[Hypothesis, Hypothesis score, Token level scores, Attention Weights, Best indices]
         outputs = torch.jit.annotate(
-            List[Tuple[Tensor, float, List[float], List[Tensor]]], []
+            List[Tuple[Tensor, float, List[float], Tensor, Tensor]], []
         )
 
         for state_idx in range(len(end_states)):
@@ -826,6 +826,11 @@ class BeamDecode(torch.jit.ScriptModule):
             beam_output = torch.jit.annotate(List[Tensor], [])
             token_level_scores = torch.jit.annotate(List[float], [])
             position = int(state[1])
+            hyp_index = int(state[2])
+
+            # best_indices represents the ending position of one hypothesis,
+            # the first index corresponds num_step, the second corresponds beam_index
+            best_indices = torch.tensor([position, hyp_index])
             back_alignment_weights = []
 
             assert position + 1 == len(beam_indices)
@@ -850,7 +855,8 @@ class BeamDecode(torch.jit.ScriptModule):
                     torch.stack(beam_output),
                     hypothesis_score,
                     token_level_scores,
-                    back_alignment_weights,
+                    torch.stack(back_alignment_weights, dim=1),
+                    best_indices,
                 )
             )
 
