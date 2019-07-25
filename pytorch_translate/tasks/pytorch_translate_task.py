@@ -234,10 +234,19 @@ class PytorchTranslateTask(FairseqTask):
         datasets = OrderedDict()
         for key in corpora_map.src_files:
             src, tgt = corpora_map.src_files[key], corpora_map.tgt_files[key]
-            src_dataset, tgt_dataset = (
-                pytorch_translate_data.InMemoryNumpyDataset.create_from_file(src),
-                pytorch_translate_data.InMemoryNumpyDataset.create_from_file(tgt),
+            tgt_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
+                tgt
             )
+
+            if self.char_source_dict is not None:
+                src_dataset = char_data.InMemoryNumpyWordCharDataset.create_from_file(
+                    src
+                )
+
+            else:
+                src_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
+                    src
+                )
             src_sizes = src_dataset.sizes
             if noiser is not None and key in noiser:
                 src_dataset = NoisingDataset(
@@ -246,15 +255,25 @@ class PytorchTranslateTask(FairseqTask):
                     seed=seed,
                     noiser=noiser[key],
                 )
-            datasets[key] = LanguagePairDataset(
-                src=src_dataset,
-                src_sizes=src_sizes,
-                src_dict=self.source_dictionary,
-                tgt=tgt_dataset,
-                tgt_sizes=tgt_dataset.sizes,
-                tgt_dict=self.target_dictionary,
-                left_pad_source=False,
-            )
+            if self.char_source_dict is not None:
+                datasets[key] = char_data.LanguagePairSourceCharDataset(
+                    src=src_dataset,
+                    src_sizes=src_sizes,
+                    src_dict=self.source_dictionary,
+                    tgt=tgt_dataset,
+                    tgt_sizes=tgt_dataset.sizes,
+                    tgt_dict=self.target_dictionary,
+                )
+            else:
+                datasets[key] = LanguagePairDataset(
+                    src=src_dataset,
+                    src_sizes=src_sizes,
+                    src_dict=self.source_dictionary,
+                    tgt=tgt_dataset,
+                    tgt_sizes=tgt_dataset.sizes,
+                    tgt_dict=self.target_dictionary,
+                    left_pad_source=False,
+                )
         total_line_count = sum(len(datasets[key]) for key in datasets)
         if dataset_relative_ratio:
             ds, ratio = dataset_relative_ratio
