@@ -881,23 +881,29 @@ class BeamDecode(torch.jit.ScriptModule):
 
     @torch.jit.script_method
     def _add_to_end_states(
-        self, end_states: List[Tensor], min_score: float, state: Tensor
-    ) -> Tuple[List[Tensor], float]:
+        self, end_states: List[Tensor], min_score: float, state: Tensor, min_index: int
+    ) -> Tuple[List[Tensor], float, int]:
         """
         Maintains a list of atmost `nbest` highest end states
         """
         if len(end_states) < self.nbest:
             end_states.append(state)
+            # keep min_score and min_index updated
+            if float(state[0]) <= min_score:
+                min_score = float(state[0])
+                min_index = len(end_states) - 1
         elif bool(state[0] > min_score):
+            # replace worst hypo with the new one
+            end_states[min_index] = state
+            # find new worst hypo, keep min_score and min_index updated
             min_index = -1
             min_score = float("inf")
             for idx in range(len(end_states)):
                 s = end_states[idx]
-                if bool(float(s[0]) < min_score):
+                if bool(float(s[0]) <= min_score):
                     min_index = idx
                     min_score = float(s[0])
-            end_states[min_index] = state
-        return end_states, min_score
+        return end_states, min_score, min_index
 
     @torch.jit.script_method
     def _get_all_end_states(
@@ -910,7 +916,8 @@ class BeamDecode(torch.jit.ScriptModule):
         """
         Return all end states and hypothesis scores for those end states.
         """
-        min_score = -float("inf")
+        min_score = float("inf")
+        min_index = -1
         end_states = torch.jit.annotate(List[Tensor], [])
         prev_hypo_is_finished = torch.zeros(self.beam_size).byte()
 
@@ -940,12 +947,13 @@ class BeamDecode(torch.jit.ScriptModule):
                                 self.length_penalty
                             )
 
-                        end_states, min_score = self._add_to_end_states(
+                        end_states, min_score, min_index = self._add_to_end_states(
                             end_states,
                             min_score,
                             torch.tensor(
                                 [hypo_score, float(position), float(hyp_index)]
                             ),
+                            min_index,
                         )
 
             prev_hypo_is_finished = hypo_is_finished
