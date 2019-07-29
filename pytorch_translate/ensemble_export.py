@@ -834,12 +834,22 @@ class DecoderBatchedStepEnsemble(nn.Module):
             torch.cat(log_probs_per_model, dim=1), dim=1, keepdim=True
         )
 
+        if possible_translation_tokens is None:
+            word_rewards = self.word_rewards
+        else:
+            word_rewards = self.word_rewards.index_select(
+                0, possible_translation_tokens
+            )
+        word_rewards = word_rewards.unsqueeze(dim=0).unsqueeze(dim=0)
+
+        average_log_probs_with_rewards = average_log_probs + word_rewards
+
         average_attn_weights = torch.mean(
             torch.cat(attn_weights_per_model, dim=1), dim=1, keepdim=True
         )
 
         best_scores_k_by_k, best_tokens_k_by_k = torch.topk(
-            average_log_probs.squeeze(1), k=self.beam_size
+            average_log_probs_with_rewards.squeeze(1), k=self.beam_size
         )
 
         prev_scores_k_by_k = prev_scores.view(-1, 1).expand(-1, self.beam_size)
@@ -862,9 +872,6 @@ class DecoderBatchedStepEnsemble(nn.Module):
             best_tokens = possible_translation_tokens.index_select(
                 dim=0, index=best_tokens
             )
-
-        word_rewards_for_best_tokens = self.word_rewards.index_select(0, best_tokens)
-        best_scores += word_rewards_for_best_tokens
 
         self.input_names = ["prev_tokens", "prev_scores", "timestep"]
         for i in range(len(self.models)):
