@@ -302,9 +302,21 @@ def get_source_tokens_tensor(src_tokens):
         return src_tokens
 
 
+# TODO: Remove when gluster is deprecated (T48002528)
+def maybe_remove_gluster_path_prefix(path: str) -> str:
+    if "gluster:///" in path:
+        return path[10:]
+    else:
+        return path
+
+
 def maybe_parse_collection_argument(path: str) -> Union[str, Dict]:
     try:
         path_dict = ast.literal_eval(path)
-    except Exception:
-        return path
+        path_dict = {
+            key: maybe_remove_gluster_path_prefix(value)
+            for key, value in path_dict.items()
+        }
+    except (ValueError, SyntaxError):
+        return maybe_remove_gluster_path_prefix(path)
     return path_dict
