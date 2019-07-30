@@ -102,7 +102,7 @@ def save_top_k(args):
     is of particular importance to prevent memory errors.
     """
     pytorch_translate_options.print_args(args)
-    use_cuda = torch.cuda.is_available() and not args.cpu
+    use_cuda = torch.cuda.is_available() and not hasattr(args, "cpu")
 
     (
         models,
@@ -141,7 +141,7 @@ def save_top_k(args):
         dataset=dataset,
         k=args.k_probs_to_collect,
         use_cuda=use_cuda,
-        max_tokens=args.max_tokens,
+        max_tokens=args.teacher_max_tokens,
         max_sentences=args.max_sentences,
         progress_bar_args=args,
     )
@@ -184,6 +184,12 @@ def get_parser_with_args():
         type=str,
         default="",
         help="File into which to save top-K probabilities for each token.",
+    )
+    generation_group.add_argument(
+        "--teacher-max-tokens",
+        type=int,
+        default=1000,
+        help="Maximum number of words in minibatch for teacher to score.",
     )
     return parser
 
