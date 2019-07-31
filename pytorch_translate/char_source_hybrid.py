@@ -134,6 +134,31 @@ class CharSourceHybridModel(hybrid_transformer_rnn.HybridTransformerRNNModel):
 
         args.embed_bytes = getattr(args, "embed_bytes", False)
 
+        # In case use_pretrained_weights is true, verify the model params
+        # are correctly set
+        if args.embed_bytes and getattr(args, "use_pretrained_weights", False):
+            char_source_model.verify_pretrain_params(args)
+
+        encoder = CharSourceHybridModel.build_encoder(args=args, src_dict=src_dict)
+        decoder = CharSourceHybridModel.build_decoder(
+            args=args, src_dict=src_dict, dst_dict=dst_dict
+        )
+
+        return cls(task, encoder, decoder)
+
+    def forward(
+        self, src_tokens, src_lengths, char_inds, word_lengths, prev_output_tokens
+    ):
+        """
+        Overriding FairseqEncoderDecoderModel.forward() due to different encoder
+        inputs.
+        """
+        encoder_out = self.encoder(src_tokens, src_lengths, char_inds, word_lengths)
+        decoder_out = self.decoder(prev_output_tokens, encoder_out)
+        return decoder_out
+
+    @classmethod
+    def build_encoder(cls, args, src_dict):
         # If we embed bytes then the number of indices is fixed and does not
         # depend on the dictionary
         if args.embed_bytes:
@@ -141,18 +166,13 @@ class CharSourceHybridModel(hybrid_transformer_rnn.HybridTransformerRNNModel):
         else:
             num_chars = args.char_source_dict_size
 
-        # In case use_pretrained_weights is true, verify the model params
-        # are correctly set
-        if args.embed_bytes and getattr(args, "use_pretrained_weights", False):
-            char_source_model.verify_pretrain_params(args)
-
         encoder_embed_tokens = pytorch_translate_transformer.build_embedding(
             dictionary=src_dict,
             embed_dim=args.encoder_embed_dim,
             path=args.encoder_pretrained_embed,
             freeze=args.encoder_freeze_embed,
         )
-        encoder = CharCNNEncoder(
+        return CharCNNEncoder(
             args,
             src_dict,
             encoder_embed_tokens,
@@ -170,28 +190,17 @@ class CharSourceHybridModel(hybrid_transformer_rnn.HybridTransformerRNNModel):
             weights_file=getattr(args, "pretrained_weights_file", ""),
         )
 
+    @classmethod
+    def build_decoder(cls, args, src_dict, dst_dict):
         decoder_embed_tokens = pytorch_translate_transformer.build_embedding(
             dictionary=dst_dict,
             embed_dim=args.decoder_embed_dim,
             path=args.decoder_pretrained_embed,
             freeze=args.decoder_freeze_embed,
         )
-        decoder = hybrid_transformer_rnn.HybridRNNDecoder(
+        return hybrid_transformer_rnn.HybridRNNDecoder(
             args, src_dict, dst_dict, decoder_embed_tokens
         )
-
-        return cls(task, encoder, decoder)
-
-    def forward(
-        self, src_tokens, src_lengths, char_inds, word_lengths, prev_output_tokens
-    ):
-        """
-        Overriding FairseqEncoderDecoderModel.forward() due to different encoder
-        inputs.
-        """
-        encoder_out = self.encoder(src_tokens, src_lengths, char_inds, word_lengths)
-        decoder_out = self.decoder(prev_output_tokens, encoder_out)
-        return decoder_out
 
 
 class CharCNNEncoder(FairseqEncoder):
