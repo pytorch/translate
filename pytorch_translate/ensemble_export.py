@@ -460,13 +460,110 @@ class DecoderBatchedStepEnsemble(nn.Module):
         len(self.models) elements of inputs) must be tiled k (beam size)
         times on the batch dimension (axis 1).
         """
+        # from flat to (batch x 1)
+        input_tokens = input_tokens.unsqueeze(1)
+
+        (
+            log_probs_per_model,
+            attn_weights_per_model,
+            state_outputs,
+            beam_axis_per_state,
+            possible_translation_tokens,
+        ) = self._get_decoder_outputs(
+            input_tokens, prev_scores, timestep, *inputs, src_tuple=src_tuple
+        )
+
+        average_log_probs = torch.mean(
+            torch.cat(log_probs_per_model, dim=1), dim=1, keepdim=True
+        )
+
+        if possible_translation_tokens is None:
+            word_rewards = self.word_rewards
+        else:
+            word_rewards = self.word_rewards.index_select(
+                0, possible_translation_tokens
+            )
+        word_rewards = word_rewards.unsqueeze(dim=0).unsqueeze(dim=0)
+
+        average_log_probs_with_rewards = average_log_probs + word_rewards
+
+        average_attn_weights = torch.mean(
+            torch.cat(attn_weights_per_model, dim=1), dim=1, keepdim=True
+        )
+
+        best_scores_k_by_k, best_tokens_k_by_k = torch.topk(
+            average_log_probs_with_rewards.squeeze(1), k=self.beam_size
+        )
+
+        prev_scores_k_by_k = prev_scores.view(-1, 1).expand(-1, self.beam_size)
+        total_scores_k_by_k = best_scores_k_by_k + prev_scores_k_by_k
+
+        # flatten to take top k over all (beam x beam) hypos
+        total_scores_flat = total_scores_k_by_k.view(-1)
+        best_tokens_flat = best_tokens_k_by_k.view(-1)
+
+        best_scores, best_indices = torch.topk(total_scores_flat, k=self.beam_size)
+
+        best_tokens = best_tokens_flat.index_select(dim=0, index=best_indices).view(-1)
+
+        # integer division to determine which input produced each successor
+        prev_hypos = best_indices / self.beam_size
+
+        attention_weights = average_attn_weights.index_select(dim=0, index=prev_hypos)
+
+        if possible_translation_tokens is not None:
+            best_tokens = possible_translation_tokens.index_select(
+                dim=0, index=best_tokens
+            )
+
+        self.input_names = ["prev_tokens", "prev_scores", "timestep"]
+        for i in range(len(self.models)):
+            self.input_names.append(f"fixed_input_{i}")
+
+        if possible_translation_tokens is not None:
+            self.input_names.append("possible_translation_tokens")
+
+        # 'attention_weights_average' output shape: (src_length x beam_size)
+        attention_weights = attention_weights.squeeze(1)
+
+        outputs = [best_tokens, best_scores, prev_hypos, attention_weights]
+        self.output_names = [
+            "best_tokens_indices",
+            "best_scores",
+            "prev_hypos_indices",
+            "attention_weights_average",
+        ]
+        for i in range(len(self.models)):
+            self.output_names.append(f"fixed_input_{i}")
+            if self.tile_internal:
+                outputs.append(inputs[i].repeat(1, self.beam_size, 1))
+            else:
+                outputs.append(inputs[i])
+
+        if possible_translation_tokens is not None:
+            self.output_names.append("possible_translation_tokens")
+            outputs.append(possible_translation_tokens)
+
+        for i, state in enumerate(state_outputs):
+            beam_axis = beam_axis_per_state[i]
+            if beam_axis is None:
+                next_state = state
+            else:
+                next_state = state.index_select(dim=beam_axis, index=prev_hypos)
+            outputs.append(next_state)
+            self.output_names.append(f"state_output_{i}")
+            self.input_names.append(f"state_input_{i}")
+
+        return tuple(outputs)
+
+    def _get_decoder_outputs(
+        self, input_tokens, prev_scores, timestep, *inputs, src_tuple=None
+    ):
         log_probs_per_model = []
         attn_weights_per_model = []
         state_outputs = []
         beam_axis_per_state = []
         reduced_output_weights_per_model = []
-        # from flat to (batch x 1)
-        input_tokens = input_tokens.unsqueeze(1)
 
         next_state_input = len(self.models)
 
@@ -830,88 +927,13 @@ class DecoderBatchedStepEnsemble(nn.Module):
             else:
                 raise RuntimeError(f"Not a supported model: {type(model)}")
 
-        average_log_probs = torch.mean(
-            torch.cat(log_probs_per_model, dim=1), dim=1, keepdim=True
+        return (
+            log_probs_per_model,
+            attn_weights_per_model,
+            state_outputs,
+            beam_axis_per_state,
+            possible_translation_tokens,
         )
-
-        if possible_translation_tokens is None:
-            word_rewards = self.word_rewards
-        else:
-            word_rewards = self.word_rewards.index_select(
-                0, possible_translation_tokens
-            )
-        word_rewards = word_rewards.unsqueeze(dim=0).unsqueeze(dim=0)
-
-        average_log_probs_with_rewards = average_log_probs + word_rewards
-
-        average_attn_weights = torch.mean(
-            torch.cat(attn_weights_per_model, dim=1), dim=1, keepdim=True
-        )
-
-        best_scores_k_by_k, best_tokens_k_by_k = torch.topk(
-            average_log_probs_with_rewards.squeeze(1), k=self.beam_size
-        )
-
-        prev_scores_k_by_k = prev_scores.view(-1, 1).expand(-1, self.beam_size)
-        total_scores_k_by_k = best_scores_k_by_k + prev_scores_k_by_k
-
-        # flatten to take top k over all (beam x beam) hypos
-        total_scores_flat = total_scores_k_by_k.view(-1)
-        best_tokens_flat = best_tokens_k_by_k.view(-1)
-
-        best_scores, best_indices = torch.topk(total_scores_flat, k=self.beam_size)
-
-        best_tokens = best_tokens_flat.index_select(dim=0, index=best_indices).view(-1)
-
-        # integer division to determine which input produced each successor
-        prev_hypos = best_indices / self.beam_size
-
-        attention_weights = average_attn_weights.index_select(dim=0, index=prev_hypos)
-
-        if possible_translation_tokens is not None:
-            best_tokens = possible_translation_tokens.index_select(
-                dim=0, index=best_tokens
-            )
-
-        self.input_names = ["prev_tokens", "prev_scores", "timestep"]
-        for i in range(len(self.models)):
-            self.input_names.append(f"fixed_input_{i}")
-
-        if possible_translation_tokens is not None:
-            self.input_names.append("possible_translation_tokens")
-
-        # 'attention_weights_average' output shape: (src_length x beam_size)
-        attention_weights = attention_weights.squeeze(1)
-
-        outputs = [best_tokens, best_scores, prev_hypos, attention_weights]
-        self.output_names = [
-            "best_tokens_indices",
-            "best_scores",
-            "prev_hypos_indices",
-            "attention_weights_average",
-        ]
-        for i in range(len(self.models)):
-            self.output_names.append(f"fixed_input_{i}")
-            if self.tile_internal:
-                outputs.append(inputs[i].repeat(1, self.beam_size, 1))
-            else:
-                outputs.append(inputs[i])
-
-        if possible_translation_tokens is not None:
-            self.output_names.append("possible_translation_tokens")
-            outputs.append(possible_translation_tokens)
-
-        for i, state in enumerate(state_outputs):
-            beam_axis = beam_axis_per_state[i]
-            if beam_axis is None:
-                next_state = state
-            else:
-                next_state = state.index_select(dim=beam_axis, index=prev_hypos)
-            outputs.append(next_state)
-            self.output_names.append(f"state_output_{i}")
-            self.input_names.append(f"state_input_{i}")
-
-        return tuple(outputs)
 
     def onnx_export(self, output_path, encoder_ensemble_outputs):
         # single EOS (as flat array)
