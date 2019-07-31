@@ -102,7 +102,7 @@ def save_top_k(args):
     is of particular importance to prevent memory errors.
     """
     pytorch_translate_options.print_args(args)
-    use_cuda = torch.cuda.is_available() and not hasattr(args, "cpu")
+    use_cuda = torch.cuda.is_available() and not getattr(args, "cpu", False)
 
     (
         models,
