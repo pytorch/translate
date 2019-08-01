@@ -215,7 +215,7 @@ class R2LModelScorer(SimpleModelScorer):
 
         pad = self.task.tgt_dict.pad()
         for i, row in enumerate(tgt_tokens):
-            pad_count = sum(row == pad)
+            pad_count = torch.sum(row == pad)
             reversed_tgt_tokens[i] = reversed(roll(row, int(pad_count)))
 
         return reversed_tgt_tokens

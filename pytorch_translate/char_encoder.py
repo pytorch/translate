@@ -368,7 +368,7 @@ class CharCNNModel(nn.Module):
     def forward(self, char_inds_flat):
         x = self.embed_chars(char_inds_flat)
         encoder_padding_mask = char_inds_flat.eq(self.padding_idx)
-        char_lengths = torch.sum(1 - encoder_padding_mask, dim=0)
+        char_lengths = torch.sum(~encoder_padding_mask, dim=0)
         if not encoder_padding_mask.any():
             encoder_padding_mask = None
 
