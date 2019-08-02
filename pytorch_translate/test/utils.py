@@ -142,6 +142,8 @@ class ModelParamsDict:
         self.append_eos_to_source = False
         self.word_reward = 0.0
         self.length_penalty = 0.0
+        self.use_bmuf = False
+        self.no_save_optimizer_state = False
         # Rescoring params
         self.enable_rescoring = False
         self.l2r_model_path = None
