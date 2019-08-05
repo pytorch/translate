@@ -30,9 +30,9 @@ class TestKnowledgeDistillation(unittest.TestCase):
         sample = self._dummy_sample()
         model = self.task.build_model(test_args)
         net_output = model(**sample["net_input"])
-        student_probs = model.get_normalized_probs(net_output, log_probs=True)
+        student_lprobs = model.get_normalized_probs(net_output, log_probs=True)
         # [bsz, seqlen, vocab] -> [bsz*seqlen, vocab]
-        lprobs = student_probs.view(-1, student_probs.size(-1))
+        lprobs = student_lprobs.view(-1, student_lprobs.size(-1))
 
         teacher_model = self.task.build_model(test_args)
         teacher_probs = teacher_model.get_normalized_probs(net_output, log_probs=False)
@@ -46,22 +46,15 @@ class TestKnowledgeDistillation(unittest.TestCase):
         kd_criterion = knowledge_distillation_loss.KnowledgeDistillationCriterion(
             test_args, self.task
         )
-        kd_loss, topk_probs = kd_criterion.get_kd_loss(sample, student_probs, lprobs)
+        kd_loss = kd_criterion.get_kd_loss(sample, student_lprobs, lprobs)
 
-        # asserting that the values are correctly inserted into teacher_probs.
-        for row in range(indices.shape[0]):
-            for col in range(indices.shape[1]):
-                # testing if values are normalized.
-                assert round(float(torch.sum(topk_probs[row][col][:])), 0) == 1.0
-                for i, val in enumerate(indices[row][col]):
-                    # testing if scattering is done correctly.
-                    assert (
-                        topk_probs[row][col][val]
-                        == top_k_teacher_probs_normalized[row][col][i]
-                    )
-
+        # Calculate kd_loss using full matrix and compare
+        topk_mask = torch.zeros(student_lprobs.shape).type_as(student_lprobs)
+        topk_probs = topk_mask.scatter(
+                2, indices, top_k_teacher_probs_normalized.float())
         topk_probs_flat = topk_probs.view(-1, topk_probs.size(-1))
-        kd_loss = -torch.sum(topk_probs_flat * lprobs)
+        kd_loss_2 = -torch.sum(topk_probs_flat * lprobs)
+        np.testing.assert_almost_equal(kd_loss.item(), kd_loss_2.item(), decimal=4)
         assert kd_loss >= 0
 
     def test_dual_decoder_kd_loss(self):
