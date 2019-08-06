@@ -50,13 +50,11 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
 
         assert indices.shape[0:1] == student_lprobs.shape[0:1]
 
-        topk_mask = torch.zeros(student_lprobs.shape).type_as(student_lprobs)
-        topk_probs = topk_mask.scatter(
-            2, indices, top_k_teacher_probs_normalized.float()
+        kd_loss = -torch.sum(
+            torch.gather(student_lprobs, 2, indices)
+            * top_k_teacher_probs_normalized.float()
         )
-        topk_probs_flat = topk_probs.view(-1, topk_probs.size(-1))
-        kd_loss = -torch.sum(topk_probs_flat * lprobs)
-        return kd_loss, topk_probs
+        return kd_loss
 
     def forward(self, model, sample, reduce=True):
         """Compute the loss for the given sample.
@@ -77,7 +75,7 @@ class KnowledgeDistillationCriterion(FairseqCriterion):
         kd_loss = None
         if "top_k_scores" in sample:
             # top_k_scores is not present in the validation data.
-            kd_loss, _ = self.get_kd_loss(sample, student_lprobs, lprobs)
+            kd_loss = self.get_kd_loss(sample, student_lprobs, lprobs)
 
         # 3. Compute NLL loss with respect to the ground truth
         target = model.get_targets(sample, net_output).view(-1)
