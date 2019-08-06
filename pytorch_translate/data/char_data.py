@@ -129,6 +129,10 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
                     char_inds = self._word_to_char_ids(word, char_dict, embed_bytes)
                     char_array_list.append(np.array(char_inds, dtype=np.int32))
                     char_offsets.append(char_offsets[-1] + len(char_inds))
+                if append_eos:
+                    char_inds = [char_dict.eos_index]
+                    char_array_list.append(np.array(char_inds, dtype=np.int32))
+                    char_offsets.append(char_offsets[-1] + len(char_inds))
 
         self.word_buffer = np.concatenate(word_array_list)
         self.word_offsets = np.array(word_offsets, dtype=np.int64)
@@ -182,6 +186,10 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
                             char_dict=corpus_config.char_dict,
                             embed_bytes=embed_bytes,
                         )
+                        char_array_list.append(np.array(char_inds, dtype=np.int32))
+                        char_offsets.append(char_offsets[-1] + len(char_inds))
+                    if append_eos:
+                        char_inds = [corpus_config.char_dict.eos_index]
                         char_array_list.append(np.array(char_inds, dtype=np.int32))
                         char_offsets.append(char_offsets[-1] + len(char_inds))
 
