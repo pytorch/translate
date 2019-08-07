@@ -11,6 +11,9 @@ from pytorch_translate.data import (
     utils as data_utils,
     weighted_data,
 )
+from pytorch_translate.research.knowledge_distillation import (
+    knowledge_distillation_loss,
+)
 from pytorch_translate.research.knowledge_distillation.teacher_score_data import (
     TeacherDataset,
 )
@@ -140,3 +143,13 @@ class PytorchKnowledgeDistillationTask(PytorchTranslateTask):
             print("Finished loading dataset", flush=True)
 
         print(f"| {split} {len(self.datasets[split])} examples")
+
+    def train_step(self, sample, model, criterion, optimizer, ignore_grad=False):
+        # Always use the knowledge distillaiton loss as criterion.
+        return super().train_step(
+            sample=sample,
+            model=model,
+            criterion=knowledge_distillation_loss.KnowledgeDistillationCriterion,
+            optimizer=optimizer,
+            ignore_grad=ignore_grad,
+        )
