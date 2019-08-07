@@ -10,7 +10,7 @@ from fairseq.data import ConcatDataset, LanguagePairDataset, NoisingDataset
 from fairseq.data.multi_corpus_sampled_dataset import MultiCorpusSampledDataset
 from fairseq.data.noising import UnsupervisedMTNoising
 from fairseq.tasks import FairseqTask, register_task
-from pytorch_translate import utils as pytorch_translate_utils
+from pytorch_translate import constants, utils as pytorch_translate_utils
 from pytorch_translate.data import (
     char_data,
     data as pytorch_translate_data,
@@ -133,11 +133,8 @@ class PytorchTranslateTask(FairseqTask):
         print(f"| [{source_lang}] dictionary: {len(source_dict)} types")
         print(f"| [{target_lang}] dictionary: {len(target_dict)} types")
 
-        use_char_source = (
-            (args.char_source_vocab_file != "")
-            or (getattr(args, "arch", "") == "char_source")
-            or (getattr(args, "arch", "") == "char_source_transformer")
-            or getattr(args, "arch", "") == "char_source_hybrid"
+        use_char_source = (args.char_source_vocab_file != "") or (
+            getattr(args, "arch", "") in constants.ARCHS_FOR_CHAR_SOURCE
         )
         if use_char_source:
             char_source_dict = pytorch_translate_dictionary.Dictionary.load(

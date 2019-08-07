@@ -8,6 +8,7 @@
 
 from fairseq import options, tokenizer
 from fairseq.tasks import register_task
+from pytorch_translate import constants
 from pytorch_translate.data.masked_lm_dictionary import MaskedLMDictionary
 from pytorch_translate.tasks.pytorch_translate_task import PytorchTranslateTask
 
@@ -79,11 +80,8 @@ class PytorchTranslateTranslationFromPretrainedXLMTask(PytorchTranslateTask):
         print(f"| [{source_lang}] dictionary: {len(source_dict)} types")
         print(f"| [{target_lang}] dictionary: {len(target_dict)} types")
 
-        use_char_source = (
-            (args.char_source_vocab_file != "")
-            or (getattr(args, "arch", "") == "char_source")
-            or (getattr(args, "arch", "") == "char_source_transformer")
-            or getattr(args, "arch", "") == "char_source_hybrid"
+        use_char_source = (args.char_source_vocab_file != "") or (
+            getattr(args, "arch", "") in constants.ARCHS_FOR_CHAR_SOURCE
         )
         if use_char_source:
             char_source_dict = MaskedLMDictionary.load(args.char_source_vocab_file)

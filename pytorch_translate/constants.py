@@ -10,3 +10,5 @@ KNOWLEDGE_DISTILLATION_TASK = "pytorch_translate_knowledge_distillation"
 DENOISING_AUTOENCODER_TASK = "pytorch_translate_denoising_autoencoder"
 MULTILINGUAL_TRANSLATION_TASK = "pytorch_translate_multilingual_task"
 LATENT_VARIABLE_TASK = "translation_vae"
+
+ARCHS_FOR_CHAR_SOURCE = {"char_source", "char_source_hybrid", "char_source_transformer"}

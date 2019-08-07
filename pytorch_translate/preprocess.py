@@ -267,9 +267,11 @@ def build_vocabs(args: argparse.Namespace, dictionary_cls=Dictionary):
         max_vocab_size=args.source_max_vocab_size,
         tokens_with_penalty=None,
     )
-    use_char_source = (args.char_source_vocab_file != "") or (
-        getattr(args, "arch", "") == "char_source"
-    )
+
+    use_char_source = (args.char_source_vocab_file != "") or getattr(
+        args, "arch", ""
+    ) in constants.ARCHS_FOR_CHAR_SOURCE
+
     char_source_dict = None
     if use_char_source:
         embed_bytes = getattr(args, "embed_bytes", False)
