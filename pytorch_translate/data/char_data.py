@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from typing import Any, Dict
+
 import numpy as np
 import torch
 from fairseq import data, tokenizer
@@ -276,14 +278,12 @@ class LanguagePairSourceCharDataset(data.LanguagePairDataset):
         self.eos_idx = src_dict.eos()
         self.weights = weights
 
-    def __getitem__(self, i):
+    def get_src_maybe_with_weights(self, i):
         example = {
             "id": i,
             "source_tokens": self.src.get_tokens(i).long(),
             "source_chars_list": self.src.get_chars_list(i),
         }
-        if self.tgt:
-            example["target"] = self.tgt[i].long()
         if self.weights:
             """
             If weight for example is missing, use last seen weight. Sometimes we
@@ -301,14 +301,17 @@ class LanguagePairSourceCharDataset(data.LanguagePairDataset):
 
         return example
 
+    def __getitem__(self, i):
+        example = self.get_src_maybe_with_weights(i)
+        if self.tgt:
+            example["target"] = self.tgt[i].long()
+        return example
+
     def __len__(self):
         """Length in words"""
         return len(self.src)
 
-    def collater(self, samples):
-        if len(samples) == 0:
-            return {}
-
+    def collate_source(self, samples) -> Dict[str, Any]:
         # sort in order of descending number of words
         samples.sort(key=lambda s: len(s["source_tokens"]), reverse=True)
         max_words = len(samples[0]["source_tokens"])
@@ -343,36 +346,141 @@ class LanguagePairSourceCharDataset(data.LanguagePairDataset):
             chars_list = s["source_chars_list"]
             for j, chars in enumerate(chars_list):
                 char_inds[i, j, : word_lengths[i, j]] = chars
-
-        target = None
-        prev_output_tokens = None
-        ntokens = None
-        if self.tgt:
-
-            def merge(move_eos_to_beginning=False):
-                return data.data_utils.collate_tokens(
-                    [s["target"] for s in samples],
-                    self.pad_idx,
-                    self.eos_idx,
-                    left_pad=False,
-                    move_eos_to_beginning=move_eos_to_beginning,
-                )
-
-            target = merge(move_eos_to_beginning=False)
-            prev_output_tokens = merge(move_eos_to_beginning=True)
-
-            ntokens = sum(len(s["target"]) for s in samples)
-
         return {
             "id": id,
+            "src_tokens": src_tokens,
+            "src_lengths": src_lengths,
+            "char_inds": char_inds,
+            "word_lengths": word_lengths,
+            "weights": weights,
+        }
+
+    def collate_targets(self, samples):
+        def merge(move_eos_to_beginning=False):
+            return data.data_utils.collate_tokens(
+                [s["target"] for s in samples],
+                self.pad_idx,
+                self.eos_idx,
+                left_pad=False,
+                move_eos_to_beginning=move_eos_to_beginning,
+            )
+
+        target = merge(move_eos_to_beginning=False)
+        prev_output_tokens = merge(move_eos_to_beginning=True)
+
+        ntokens = sum(len(s["target"]) for s in samples)
+
+        return target, prev_output_tokens, ntokens
+
+    def collater(self, samples):
+        if len(samples) == 0:
+            return {}
+        source_data = self.collate_source(samples)
+        target, prev_output_tokens, ntokens = None, None, None
+        if self.tgt:
+            target, prev_output_tokens, ntokens = self.collate_targets(samples)
+
+        return {
+            "id": source_data["id"],
             "ntokens": ntokens,
             "net_input": {
-                "src_tokens": src_tokens,
-                "src_lengths": src_lengths,
-                "char_inds": char_inds,
-                "word_lengths": word_lengths,
+                "src_tokens": source_data["src_tokens"],
+                "src_lengths": source_data["src_lengths"],
+                "char_inds": source_data["char_inds"],
+                "word_lengths": source_data["word_lengths"],
                 "prev_output_tokens": prev_output_tokens,
             },
             "target": target,
-            "weights": weights,
+            "weights": source_data["weights"],
+        }
+
+
+class LanguagePairCharDataset(LanguagePairSourceCharDataset):
+    """
+    Version of fairseq.data.LanguagePairDataset which represents source
+    and target sentences as sequences of words, each represented as a
+    sequence of characters (with numberized indices for both words and
+    characters).
+    Right-padded only.
+    """
+
+    def __init__(
+        self,
+        src: InMemoryNumpyWordCharDataset,
+        src_sizes,
+        src_dict,
+        tgt: InMemoryNumpyWordCharDataset = None,
+        tgt_sizes=None,
+        tgt_dict=None,
+        weights=None,
+    ):
+        super().__init__(src, src_sizes, src_dict, tgt, tgt_sizes, tgt_dict)
+
+    def __getitem__(self, i):
+        example = self.get_src_maybe_with_weights(i)
+        if self.tgt:
+            example["target"] = self.tgt.get_tokens(i).long()
+            example["target_chars_list"] = self.tgt.get_chars_list(i)
+
+        return example
+
+    def collate_tgt_chars(self, samples) -> Dict[str, Any]:
+        max_tgt_words = max(len(s["target"]) for s in samples)
+        tgt_word_lengths = torch.LongTensor(len(samples), max_tgt_words).fill_(0)
+        for i, s in enumerate(samples):
+            word_lengths_array = np.array([len(w) for w in s["target_chars_list"]])
+            tgt_word_lengths[i, : word_lengths_array.size] = torch.LongTensor(
+                word_lengths_array
+            )
+        max_tgt_word_length = int(tgt_word_lengths.max())
+
+        tgt_char_inds = (
+            samples[0]["target_chars_list"][0]
+            .new(len(samples), max_tgt_words, max_tgt_word_length)
+            .long()
+            .fill_(self.pad_idx)
+        )
+        prev_tgt_char_inds = (
+            samples[0]["target_chars_list"][0]
+            .new(len(samples), max_tgt_words + 1, max_tgt_word_length)
+            .long()
+            .fill_(self.pad_idx)
+        )
+        eos_tensor = torch.tensor([self.eos_idx])
+        for i, s in enumerate(samples):
+            chars_list = s["target_chars_list"]
+            prev_tgt_char_inds[i, 0, :1] = eos_tensor
+            for j, chars in enumerate(chars_list):
+                tgt_char_inds[i, j, : tgt_word_lengths[i, j]] = chars
+                prev_tgt_char_inds[i, j + 1, : tgt_word_lengths[i, j]] = chars
+
+        return {
+            "prev_tgt_char_inds": prev_tgt_char_inds,
+            "tgt_char_inds": tgt_char_inds,
+            "tgt_word_lengths": tgt_word_lengths,
+        }
+
+    def collater(self, samples):
+        if len(samples) == 0:
+            return {}
+        source_data = self.collate_source(samples)
+        target_toks, prev_output_tokens, ntokens = None, None, None
+        if self.tgt:
+            target_toks, prev_output_tokens, ntokens = self.collate_targets(samples)
+            tgt_char_data = self.collate_tgt_chars(samples)
+        return {
+            "id": source_data["id"],
+            "ntokens": ntokens,
+            "net_input": {
+                "src_tokens": source_data["src_tokens"],
+                "src_lengths": source_data["src_lengths"],
+                "char_inds": source_data["char_inds"],
+                "word_lengths": source_data["word_lengths"],
+                "prev_output_tokens": prev_output_tokens,
+                "prev_output_chars": tgt_char_data["prev_tgt_char_inds"],
+            },
+            "target": target_toks,
+            "target_char_inds": tgt_char_data["tgt_char_inds"],
+            "tgt_word_lengths": tgt_char_data["tgt_word_lengths"],
+            "weights": source_data["weights"],
         }
