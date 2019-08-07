@@ -204,11 +204,7 @@ def set_default_args(args):
             save_dir=args.save_dir, dialect=args.target_lang
         )
 
-    if (
-        args.arch == "char_source"
-        or args.arch == "char_source_transformer"
-        or args.arch == "char_source_hybrid"
-    ) and not args.char_source_vocab_file:
+    if args.arch in constants.ARCHS_FOR_CHAR_SOURCE and not args.char_source_vocab_file:
         args.char_source_vocab_file = pytorch_translate_dictionary.default_char_dictionary_path(
             save_dir=args.save_dir, dialect=args.source_lang
         )
