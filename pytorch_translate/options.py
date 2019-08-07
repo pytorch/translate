@@ -159,6 +159,12 @@ def add_preprocessing_args(parser):
         help="Same as --source-vocab-file except using characters.",
     )
     group.add_argument(
+        "--char-target-vocab-file",
+        default="",
+        metavar="FILE",
+        help="Same as --target-vocab-file except using characters.",
+    )
+    group.add_argument(
         "--embed-bytes",
         type=utils.bool_flag,
         nargs="?",
@@ -173,6 +179,13 @@ def add_preprocessing_args(parser):
         type=int,
         metavar="N",
         help="Same as --source-max-vocab-size except using characters.",
+    )
+    group.add_argument(
+        "--char-target-max-vocab-size",
+        default=-1,
+        type=int,
+        metavar="N",
+        help="Same as --target-max-vocab-size except using characters.",
     )
     group.add_argument(
         "--target-vocab-file",
