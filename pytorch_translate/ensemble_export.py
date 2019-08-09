@@ -137,7 +137,7 @@ def load_models_from_checkpoints(
                 checkpoint_data["args"], task
             )
         else:
-            raise RuntimeError("Architecture not supported: {architecture}")
+            raise RuntimeError(f"Architecture not supported: {architecture}")
 
         model.load_state_dict(checkpoint_data["model"])
         if hasattr(model, "get_student_model"):
