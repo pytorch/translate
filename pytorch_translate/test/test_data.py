@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 import numpy as np
+import torch
 from fairseq.data import LanguagePairDataset, NoisingDataset
 from fairseq.data.concat_dataset import ConcatDataset
 from fairseq.data.noising import UnsupervisedMTNoising
@@ -296,3 +297,56 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
             assert len(sampled_chars_list) == len(orig_chars_list)
             for sampled_chars, orig_chars in zip(sampled_chars_list, orig_chars_list):
                 assert all(sampled_chars.numpy() == orig_chars.numpy())
+
+    def test_collate_char_dataset(self):
+        src_dataset = char_data.InMemoryNumpyWordCharDataset()
+        src_dataset.parse(
+            self.src_txt, self.d, self.char_dict, reverse_order=True, append_eos=True
+        )
+        tgt_dataset = char_data.InMemoryNumpyWordCharDataset()
+        tgt_dataset.parse(
+            self.trg_txt, self.d, self.char_dict, reverse_order=True, append_eos=True
+        )
+        char_dataset = char_data.LanguagePairCharDataset(
+            src=src_dataset,
+            src_sizes=src_dataset.sizes,
+            src_dict=self.d,
+            tgt=tgt_dataset,
+            tgt_sizes=tgt_dataset.sizes,
+            tgt_dict=self.d,
+        )
+        samples = [char_dataset[i] for i in range(len(char_dataset))]
+        collate_data = char_dataset.collater(samples)
+        ids = collate_data["id"]
+        ntokens = collate_data["ntokens"]
+        assert len(ids) == 4
+        assert ntokens == 32
+        net_input = collate_data["net_input"]
+        assert net_input["char_inds"].size() == torch.Size([4, 11, 4])
+        assert net_input["prev_output_chars"].size() == torch.Size([4, 12, 4])
+        assert collate_data["target_char_inds"].size() == torch.Size([4, 11, 4])
+        assert net_input["prev_output_word_lengths"].size() == torch.Size([4, 12])
+        for i in range(net_input["prev_output_chars"].size()[0]):
+            assert net_input["prev_output_chars"][i, 0, 0] == self.d.eos_index
+            # Asseting that the generated word before the first was is only eos.
+            assert net_input["prev_output_word_lengths"][i][0] == 1
+
+    def test_collate_char_dataset_no_tgt(self):
+        src_dataset = char_data.InMemoryNumpyWordCharDataset()
+        src_dataset.parse(
+            self.src_txt, self.d, self.char_dict, reverse_order=True, append_eos=True
+        )
+        char_dataset = char_data.LanguagePairCharDataset(
+            src=src_dataset, src_sizes=src_dataset.sizes, src_dict=self.d
+        )
+        samples = [char_dataset[i] for i in range(len(char_dataset))]
+        collate_data = char_dataset.collater(samples)
+        ids = collate_data["id"]
+        ntokens = collate_data["ntokens"]
+        assert len(ids) == 4
+        assert ntokens is None
+        net_input = collate_data["net_input"]
+        assert net_input["char_inds"].size() == torch.Size([4, 11, 4])
+        assert net_input["prev_output_chars"] is None
+        assert collate_data["target_char_inds"] is None
+        assert net_input["prev_output_word_lengths"] is None
