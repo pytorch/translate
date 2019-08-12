@@ -11,6 +11,7 @@ from fairseq.models import (
     register_model_architecture,
     transformer as fairseq_transformer,
 )
+from fairseq.modules import MultiheadAttention
 from pytorch_translate import (
     multilingual_model,
     transformer as pytorch_translate_transformer,
@@ -240,7 +241,7 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
                 self.lstm_units, self.attention_dim
             )
 
-        self.attention = fairseq_transformer.MultiheadAttention(
+        self.attention = MultiheadAttention(
             self.attention_dim,
             self.num_attention_heads,
             dropout=args.attention_dropout,
