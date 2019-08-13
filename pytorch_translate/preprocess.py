@@ -39,13 +39,12 @@ def binarize_text_file(
     output_path: str,
     append_eos: bool,
     reverse_order: bool,
-    use_char_data: bool = False,
     embed_bytes: bool = False,
     char_dictionary: Optional[Dictionary] = None,
     already_numberized: bool = False,
 ) -> str:
     output_path = maybe_generate_temp_file_path(output_path)
-    if use_char_data:
+    if char_dictionary is not None:
         dataset = char_data.InMemoryNumpyWordCharDataset()
         dataset.parse(
             path=text_file,
@@ -219,7 +218,6 @@ def preprocess_monolingual_corpora(
     Preprocess source and target monolingual datasets
     Prerequisite: Vocabs are already built (see build_vocabs)
     """
-    use_char_source = char_source_dict is not None
     if getattr(args, "train_mono_source_text_file", None):
         args.train_mono_source_binary_path = binarize_text_file(
             text_file=args.train_mono_source_text_file,
@@ -227,7 +225,6 @@ def preprocess_monolingual_corpora(
             output_path=args.train_mono_source_binary_path,
             append_eos=args.append_eos_to_source,
             reverse_order=args.reverse_source,
-            use_char_data=use_char_source,
             char_dictionary=char_source_dict,
         )
 
@@ -332,7 +329,6 @@ def preprocess_bilingual_corpora(
     Preprocess source and target parallel datasets
     Prerequisite: Vocabs are already built (see build_vocabs)
     """
-    use_char_source = args.char_source_vocab_file != ""
     embed_bytes = getattr(args, "embed_bytes", False)
     if args.train_source_text_file:
         args.train_source_binary_path = binarize_text_file(
@@ -341,7 +337,6 @@ def preprocess_bilingual_corpora(
             output_path=args.train_source_binary_path,
             append_eos=args.append_eos_to_source,
             reverse_order=args.reverse_source,
-            use_char_data=use_char_source,
             embed_bytes=embed_bytes,
             char_dictionary=char_source_dict,
         )
@@ -352,7 +347,6 @@ def preprocess_bilingual_corpora(
             output_path=args.eval_source_binary_path,
             append_eos=args.append_eos_to_source,
             reverse_order=args.reverse_source,
-            use_char_data=use_char_source,
             embed_bytes=embed_bytes,
             char_dictionary=char_source_dict,
         )
