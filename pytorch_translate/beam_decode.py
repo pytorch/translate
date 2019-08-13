@@ -717,8 +717,6 @@ class SequenceGenerator(object):
                 if self.temperature != 1.0:
                     decoder_out[0].div_(self.temperature)
                 attn = decoder_out[1]
-                if isinstance(model.decoder, TransformerAANDecoder):
-                    attn = attn["attn"]
                 if len(decoder_out) == 3:
                     possible_translation_tokens = decoder_out[2]
                 else:

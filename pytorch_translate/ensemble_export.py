@@ -49,6 +49,7 @@ from pytorch_translate import (  # noqa; noqa
     rnn,
     semi_supervised,
     transformer,
+    transformer_aan,
 )
 
 logger = logging.getLogger(__name__)
@@ -709,8 +710,12 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 )
 
                 futures.append(fut)
-            elif isinstance(model, transformer.TransformerModel) or isinstance(
-                model, char_source_transformer_model.CharSourceTransformerModel
+            elif (
+                isinstance(model, transformer.TransformerModel)
+                or isinstance(
+                    model, char_source_transformer_model.CharSourceTransformerModel
+                )
+                or isinstance(model, transformer_aan.TransformerAANModel)
             ):
                 encoder_output = inputs[i]
                 # store cached states, use evaluation mode
@@ -894,8 +899,12 @@ class DecoderBatchedStepEnsemble(nn.Module):
                         [None for _ in reduced_output_weights_per_model[i]]
                     )
 
-            elif isinstance(model, transformer.TransformerModel) or isinstance(
-                model, char_source_transformer_model.CharSourceTransformerModel
+            elif (
+                isinstance(model, transformer.TransformerModel)
+                or isinstance(
+                    model, char_source_transformer_model.CharSourceTransformerModel
+                )
+                or isinstance(model, transformer_aan.TransformerAANModel)
             ):
                 log_probs, attn_scores, attention_states = torch.jit._wait(fut)
 

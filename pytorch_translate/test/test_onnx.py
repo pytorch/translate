@@ -524,6 +524,16 @@ class TestONNX(unittest.TestCase):
         }
         self._test_batched_beam_decoder_step(test_args)
 
+    def test_batched_beam_decoder_aan_vocab_reduction(self):
+        test_args = test_utils.ModelParamsDict(arch="transformer_aan")
+        lexical_dictionaries = test_utils.create_lexical_dictionaries()
+        test_args.vocab_reduction_params = {
+            "lexical_dictionaries": lexical_dictionaries,
+            "num_top_words": 5,
+            "max_translation_candidates_per_word": 1,
+        }
+        self._test_batched_beam_decoder_step(test_args)
+
     def _test_beam_component_equivalence(self, test_args):
         beam_size = 5
         samples, src_dict, tgt_dict = test_utils.prepare_inputs(test_args)
