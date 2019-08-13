@@ -32,6 +32,19 @@ class ModelParamsDict:
             self.decoder_ffn_embed_dim = 16
             self.decoder_layers = 2
             self.decoder_attention_heads = 2
+        elif arch == "transformer_aan":
+            self.arch = "transformer_aan"
+            self.encoder_embed_dim = 10
+            self.encoder_ffn_embed_dim = 16
+            self.encoder_layers = 2
+            self.encoder_attention_heads = 2
+            self.decoder_embed_dim = 10
+            self.decoder_ffn_embed_dim = 16
+            self.decoder_layers = 2
+            self.decoder_attention_heads = 2
+            self.decoder_attn_window_size = 0
+            self.no_decoder_aan_ffn = False
+            self.no_decoder_aan_gating = False
         elif arch == "hybrid_transformer_rnn":
             self.arch = "hybrid_transformer_rnn"
             self.encoder_embed_dim = 6

@@ -12,12 +12,15 @@ from fairseq.models import (
     register_model,
     register_model_architecture,
 )
-from fairseq.models.transformer import TransformerEncoder
 from fairseq.modules import (
     AdaptiveSoftmax,
     LearnedPositionalEmbedding,
     MultiheadAttention,
     SinusoidalPositionalEmbedding,
+)
+from pytorch_translate import (
+    transformer as pytorch_translate_transformer,
+    vocab_reduction,
 )
 from pytorch_translate.average_attention import AverageAttention, AverageWindowAttention
 
@@ -27,14 +30,6 @@ class TransformerAANModel(FairseqEncoderDecoderModel):
     """
     Transformer model from `"Attention Is All You Need" (Vaswani, et al, 2017)
     <https://arxiv.org/abs/1706.03762>`_.
-    Args:
-        encoder (TransformerEncoder): the encoder
-        decoder (TransformerDecoder): the decoder
-    The Transformer model provides the following named architectures and
-    command-line arguments:
-    .. argparse::
-        :ref: fairseq.models.transformer_parser
-        :prog:
     """
 
     def __init__(self, encoder, decoder):
@@ -188,6 +183,9 @@ class TransformerAANModel(FairseqEncoderDecoderModel):
             [residual/after_avg/after_aan] separated by commas""",
         )
 
+        # Args for vocab reduction
+        vocab_reduction.add_args(parser)
+
     @classmethod
     def build_model(cls, args, task):
         """Build a new model instance."""
@@ -241,8 +239,10 @@ class TransformerAANModel(FairseqEncoderDecoderModel):
                 tgt_dict, args.decoder_embed_dim, args.decoder_embed_path
             )
 
-        encoder = TransformerEncoder(args, src_dict, encoder_embed_tokens)
-        decoder = TransformerAANDecoder(args, tgt_dict, decoder_embed_tokens)
+        encoder = pytorch_translate_transformer.TransformerEncoder(
+            args, src_dict, encoder_embed_tokens
+        )
+        decoder = TransformerAANDecoder(args, src_dict, tgt_dict, decoder_embed_tokens)
         return TransformerAANModel(encoder, decoder)
 
 
@@ -250,26 +250,19 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
     """
     Transformer decoder consisting of *args.decoder_layers* layers. Each layer
     is a :class:`TransformerAANDecoderLayer`.
-    Args:
-        args (argparse.Namespace): parsed command-line arguments
-        dictionary (~fairseq.data.Dictionary): decoding dictionary
-        embed_tokens (torch.nn.Embedding): output embedding
-        no_encoder_attn (bool, optional): whether to attend to encoder outputs.
-            Default: ``False``
-        left_pad (bool, optional): whether the input is left-padded. Default:
-            ``False``
     """
 
     def __init__(
         self,
         args,
-        dictionary,
+        src_dict,
+        dst_dict,
         embed_tokens,
         no_encoder_attn=False,
         left_pad=False,
         final_norm=True,
     ):
-        super().__init__(dictionary)
+        super().__init__(dst_dict)
         self.dropout = args.dropout
         self.share_input_output_embed = args.share_decoder_input_output_embed
 
@@ -319,7 +312,7 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
 
         if args.adaptive_softmax_cutoff is not None:
             self.adaptive_softmax = AdaptiveSoftmax(
-                len(dictionary),
+                len(dst_dict),
                 output_embed_dim,
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int),
                 dropout=args.adaptive_softmax_dropout,
@@ -328,31 +321,37 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
                 tie_proj=args.tie_adaptive_proj,
             )
         elif not self.share_input_output_embed:
-            self.embed_out = nn.Parameter(
-                torch.Tensor(len(dictionary), output_embed_dim)
-            )
+            self.embed_out = nn.Parameter(torch.Tensor(len(dst_dict), output_embed_dim))
             nn.init.normal_(self.embed_out, mean=0, std=output_embed_dim ** -0.5)
         self.register_buffer("version", torch.Tensor([2]))
         self.normalize = args.decoder_normalize_before and final_norm
         if self.normalize:
             self.layer_norm = LayerNorm(embed_dim)
 
-    def forward(self, prev_output_tokens, encoder_out=None, incremental_state=None):
-        """
-        Args:
-            prev_output_tokens (LongTensor): previous decoder outputs of shape
-                `(batch, tgt_len)`, for input feeding/teacher forcing
-            encoder_out (Tensor, optional): output from the encoder, used for
-                encoder-side attention
-            incremental_state (dict): dictionary used for storing state during
-                :ref:`Incremental decoding`
-        Returns:
-            tuple:
-                - the last decoder layer's output of shape `(batch, tgt_len,
-                  vocab)`
-                - the last decoder layer's attention weights of shape `(batch,
-                  tgt_len, src_len)`
-        """
+        self.vocab_reduction_module = None
+        if args.vocab_reduction_params:
+            assert (
+                self.adaptive_softmax is None
+            ), "vocabulary reduction not compatible with adaptive softmax!"
+            self.vocab_reduction_module = vocab_reduction.VocabReduction(
+                src_dict, dst_dict, args.vocab_reduction_params, fp16=args.fp16
+            )
+
+        self.onnx_trace = False
+
+    def prepare_for_onnx_export_(self):
+        self.onnx_trace = True
+
+    def forward(
+        self,
+        prev_output_tokens,
+        encoder_out=None,
+        incremental_state=None,
+        possible_translation_tokens=None,
+        timestep=None,
+    ):
+        (encoder_x, src_tokens, encoder_padding_mask) = encoder_out
+
         # embed positions
         positions = (
             self.embed_positions(
@@ -366,6 +365,48 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
             prev_output_tokens = prev_output_tokens[:, -1:]
             if positions is not None:
                 positions = positions[:, -1:]
+
+            if self.onnx_trace:
+                assert type(incremental_state) is list
+                assert timestep is not None
+
+                state_list = incremental_state
+                incremental_state = {}
+                state_index = 0
+
+                for layer in self.layers:
+                    utils.set_incremental_state(
+                        layer.avg_attn,
+                        incremental_state,
+                        "prev_vec",
+                        state_list[state_index],
+                    )
+                    utils.set_incremental_state(
+                        layer.avg_attn,
+                        incremental_state,
+                        "prev_sum",
+                        state_list[state_index + 1],
+                    )
+                    state_index += 2
+                    utils.set_incremental_state(
+                        layer.avg_attn, incremental_state, "prev_pos", timestep.float()
+                    )
+
+                    if layer.encoder_attn is not None:
+
+                        utils.set_incremental_state(
+                            layer.encoder_attn,
+                            incremental_state,
+                            "prev_key",
+                            state_list[state_index],
+                        )
+                        utils.set_incremental_state(
+                            layer.encoder_attn,
+                            incremental_state,
+                            "prev_value",
+                            state_list[state_index + 1],
+                        )
+                        state_index += 2
 
         # embed tokens and positions
         x = self.embed_scale * self.embed_tokens(prev_output_tokens)
@@ -387,10 +428,8 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
         for layer in self.layers:
             x, attn = layer(
                 x,
-                encoder_out["encoder_out"] if encoder_out is not None else None,
-                encoder_out["encoder_padding_mask"]
-                if encoder_out is not None
-                else None,
+                encoder_x,
+                encoder_padding_mask,
                 incremental_state,
                 self_attn_mask=self.buffered_future_mask(x)
                 if incremental_state is None
@@ -407,14 +446,56 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
         if self.project_out_dim is not None:
             x = self.project_out_dim(x)
 
+        # project back to size of vocabulary
+        if self.share_input_output_embed:
+            output_weights = self.embed_tokens.weight
+        else:
+            output_weights = self.embed_out
+
+        if (
+            self.vocab_reduction_module is not None
+            and possible_translation_tokens is None
+        ):
+            decoder_input_tokens = prev_output_tokens.contiguous()
+            possible_translation_tokens = self.vocab_reduction_module(
+                src_tokens, decoder_input_tokens=decoder_input_tokens
+            )
+        if possible_translation_tokens is not None:
+            output_weights = output_weights.index_select(
+                dim=0, index=possible_translation_tokens
+            )
+
         if self.adaptive_softmax is None:
-            # project back to size of vocabulary
-            if self.share_input_output_embed:
-                x = F.linear(x, self.embed_tokens.weight)
-            else:
-                x = F.linear(x, self.embed_out)
-        # return x, attn, inner_states
-        return x, {"attn": attn, "inner_states": inner_states}
+            logits = F.linear(x, output_weights)
+        else:
+            assert (
+                possible_translation_tokens is None
+            ), "vocabulary reduction and adaptive softmax are incompatible!"
+            logits = x
+
+        if self.onnx_trace:
+            state_outputs = []
+            for layer in self.layers:
+                prev_vec = utils.get_incremental_state(
+                    layer.avg_attn, incremental_state, "prev_vec"
+                )
+                prev_sum = utils.get_incremental_state(
+                    layer.avg_attn, incremental_state, "prev_sum"
+                )
+                state_outputs.extend([prev_vec, prev_sum])
+
+                if layer.encoder_attn is not None:
+                    prev_key = utils.get_incremental_state(
+                        layer.encoder_attn, incremental_state, "prev_key"
+                    )
+                    prev_value = utils.get_incremental_state(
+                        layer.encoder_attn, incremental_state, "prev_value"
+                    )
+                    state_outputs.extend([prev_key, prev_value])
+
+            return logits, attn, possible_translation_tokens, state_outputs
+
+        return logits, attn, possible_translation_tokens
 
     def max_positions(self):
         """Maximum output length supported by the decoder."""
@@ -467,6 +548,44 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
             state_dict["decoder.version"] = torch.Tensor([1])
 
         return state_dict
+
+    def _init_prev_states(self, encoder_out):
+        """
+        For average attention, prev_vec and prev_sum are initialized to zero.
+        For encoder-decoder attention, key and value are computed once from
+        the encoder outputs and stay the same throughout decoding.
+        """
+        encoder_x, src_tokens, encoder_padding_mask = encoder_out
+        states = []
+        for layer in self.layers:
+            prev_vec = torch.zeros([1, layer.avg_attn.embed_dim])
+            prev_sum = torch.zeros([1, layer.avg_attn.embed_dim])
+            states.extend([prev_vec, prev_sum])
+
+            # (key, value) for encoder-decoder attention computed from encoder
+            # output and remain the same throughout decoding
+            key = layer.encoder_attn.in_proj_k(encoder_x)
+            value = layer.encoder_attn.in_proj_v(encoder_x)
+
+            # (key, value) kept in shape (bsz, num_heads, seq_len, head_dim)
+            # to avoid repeated transpose operations
+            seq_len, batch_size_int, _ = encoder_x.shape
+            num_heads = layer.encoder_attn.num_heads
+            head_dim = layer.encoder_attn.head_dim
+            key = (
+                key.view(seq_len, batch_size_int * num_heads, head_dim)
+                .transpose(0, 1)
+                .view(batch_size_int, num_heads, seq_len, head_dim)
+            )
+            value = (
+                value.view(seq_len, batch_size_int * num_heads, head_dim)
+                .transpose(0, 1)
+                .view(batch_size_int, num_heads, seq_len, head_dim)
+            )
+
+            states.extend([key, value])
+
+        return states
 
 
 class TransformerAANDecoderLayer(nn.Module):
@@ -531,6 +650,8 @@ class TransformerAANDecoderLayer(nn.Module):
             self.encoder_attn = MultiheadAttention(
                 self.embed_dim,
                 args.decoder_attention_heads,
+                kdim=args.encoder_embed_dim,
+                vdim=args.encoder_embed_dim,
                 dropout=args.attention_dropout,
                 encoder_decoder_attention=True,
             )
@@ -640,10 +761,7 @@ class TransformerAANDecoderLayer(nn.Module):
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = residual + x
         x = self.maybe_layer_norm(self.final_layer_norm, x, after=True)
-        if self.onnx_trace:
-            saved_state = self.self_attn._get_input_buffer(incremental_state)
-            self_attn_state = saved_state["prev_key"], saved_state["prev_value"]
-            return x, attn, self_attn_state
+
         return x, attn
 
     def maybe_layer_norm(self, layer_norm, x, before=False, after=False):
@@ -690,11 +808,6 @@ def PositionalEmbeddingCreator(
         nn.init.normal_(m.weight, mean=0, std=embedding_dim ** -0.5)
         nn.init.constant_(m.weight[padding_idx], 0)
     else:
-        # sys.stderr.write(str(type(embedding_dim)) + ",")
-        # sys.stderr.write(str(type(padding_idx)) + ",")
-        # sys.stderr.write(str(type(left_pad)) + ",")
-        # sys.stderr.write(str(type(num_embeddings)))
-        # sys.stderr.write("\n")
         m = SinusoidalPositionalEmbedding(
             embedding_dim=embedding_dim,
             padding_idx=padding_idx,
@@ -779,3 +892,4 @@ def base_architecture(args):
     )
     args.decoder_aan_gating = getattr(args, "decoder_aan_gating", True)
     args.decoder_aan_more_dropouts = getattr(args, "decoder_aan_more_dropouts", "")
+    vocab_reduction.set_arg_defaults(args)
