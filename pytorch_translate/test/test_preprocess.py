@@ -48,7 +48,7 @@ class TestPreprocess(unittest.TestCase):
 
     def test_build_vocabs_char(self):
         args = self.get_common_data_args_namespace()
-        args.arch = "word_char_hybrid_decoder"
+        args.arch = "char_aware_hybrid"
         args.char_source_max_vocab_size = 30
         args.char_target_max_vocab_size = 30
         args.char_source_vocab_file = test_utils.make_temp_file()
@@ -92,6 +92,35 @@ class TestPreprocess(unittest.TestCase):
         args.task = constants.SEMI_SUPERVISED_TASK
         args.train_mono_source_text_file = self.source_text_file
         args.train_mono_target_text_file = self.target_text_file
+        preprocess.preprocess_corpora(args)
+        for file_type in (
+            "train_source_binary_path",
+            "train_target_binary_path",
+            "eval_source_binary_path",
+            "eval_target_binary_path",
+            "train_mono_source_binary_path",
+            "train_mono_target_binary_path",
+        ):
+            file_path = getattr(args, file_type)
+            assert file_path and os.path.isfile(file_path)
+            assert file_path.endswith(".npz")
+
+    def test_preprocess_with_monolingual_with_tgt_chars(self):
+        """
+        This is just a correctness test to make sure no errors are thrown when
+        all the required args are passed. Actual parsing code is tested by
+        test_data.py
+        """
+        args = self.get_common_data_args_namespace()
+        args.task = constants.SEMI_SUPERVISED_TASK
+        args.train_mono_source_text_file = self.source_text_file
+        args.train_mono_target_text_file = self.target_text_file
+        args.arch = "char_aware_hybrid"
+        args.char_source_max_vocab_size = 30
+        args.char_target_max_vocab_size = 30
+        args.char_source_vocab_file = test_utils.make_temp_file()
+        args.char_target_vocab_file = test_utils.make_temp_file()
+
         preprocess.preprocess_corpora(args)
         for file_type in (
             "train_source_binary_path",
