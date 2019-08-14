@@ -3,7 +3,7 @@
 import argparse
 import os
 import tempfile
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pytorch_translate import (
     constants,
@@ -172,9 +172,16 @@ def preprocess_corpora(args, dictionary_cls=Dictionary):
         # Vocabs are built before preprocessing because we might need to use
         # both monolingual and bilingual corpora sources to build the vocab
         # (in the case of semisupervised training)
-        source_dict, char_source_dict, target_dict = build_vocabs(
-            args=args, dictionary_cls=dictionary_cls
-        )
+        dictionaries = build_vocabs(args=args, dictionary_cls=dictionary_cls)
+        source_dict = dictionaries["source_dict"]
+        char_source_dict = dictionaries["char_source_dict"]
+        target_dict = dictionaries["target_dict"]
+        char_target_dict = dictionaries["char_target_dict"]
+
+        # todo T48524067: add char_target_dict to preprocess_bilingual_corpora
+        # and preprocess_monolingual_corpora
+        if char_target_dict is not None:
+            print("char_target_dict is not None --> should use it!")
 
         preprocess_bilingual_corpora(
             args=args,
@@ -244,7 +251,9 @@ def preprocess_monolingual_corpora(
         )
 
 
-def build_vocabs(args: argparse.Namespace, dictionary_cls=Dictionary):
+def build_vocabs(
+    args: argparse.Namespace, dictionary_cls=Dictionary
+) -> Dict[str, Dictionary]:
     """
     Builds vocabs or loads them from existing vocab files. If args.task
     is pytorch_translate_semi_supervised, we use the monolingual corpora in
@@ -272,9 +281,9 @@ def build_vocabs(args: argparse.Namespace, dictionary_cls=Dictionary):
         args, "arch", ""
     ) in constants.ARCHS_FOR_CHAR_SOURCE
 
+    embed_bytes = getattr(args, "embed_bytes", False)
     char_source_dict = None
     if use_char_source:
-        embed_bytes = getattr(args, "embed_bytes", False)
         char_source_dict = dictionary_cls.build_vocab_file_if_nonexistent(
             corpus_files=source_files,
             vocab_file=args.char_source_vocab_file,
@@ -290,7 +299,27 @@ def build_vocabs(args: argparse.Namespace, dictionary_cls=Dictionary):
         max_vocab_size=args.target_max_vocab_size,
         tokens_with_penalty=args.penalized_target_tokens_file,
     )
-    return source_dict, char_source_dict, target_dict
+
+    use_char_target = (args.char_target_vocab_file != "") or getattr(
+        args, "arch", ""
+    ) in constants.ARCHS_FOR_CHAR_TARGET
+
+    char_target_dict = None
+    if use_char_target:
+        char_target_dict = dictionary_cls.build_vocab_file_if_nonexistent(
+            corpus_files=target_files,
+            vocab_file=args.char_target_vocab_file,
+            max_vocab_size=args.char_target_max_vocab_size,
+            tokens_with_penalty=None,
+            is_char_vocab=True,
+            embed_bytes=embed_bytes,
+        )
+    return {
+        "source_dict": source_dict,
+        "char_source_dict": char_source_dict,
+        "target_dict": target_dict,
+        "char_target_dict": char_target_dict,
+    }
 
 
 def preprocess_bilingual_corpora(
