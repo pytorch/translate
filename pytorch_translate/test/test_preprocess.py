@@ -5,6 +5,7 @@ import os
 import unittest
 
 from pytorch_translate import constants, preprocess
+from pytorch_translate.data.dictionary import Dictionary
 from pytorch_translate.test import utils as test_utils
 
 
@@ -40,9 +41,28 @@ class TestPreprocess(unittest.TestCase):
         args.target_vocab_file = test_utils.make_temp_file()
         args.target_max_vocab_size = None
         args.char_source_vocab_file = ""
+        args.char_target_vocab_file = ""
 
         args.task = "pytorch_translate"
         return args
+
+    def test_build_vocabs_char(self):
+        args = self.get_common_data_args_namespace()
+        args.arch = "word_char_hybrid_decoder"
+        args.char_source_max_vocab_size = 30
+        args.char_target_max_vocab_size = 30
+        args.char_source_vocab_file = test_utils.make_temp_file()
+        args.char_target_vocab_file = test_utils.make_temp_file()
+        dictionaries = preprocess.build_vocabs(args, Dictionary)
+        assert len(dictionaries["char_source_dict"]) > 0
+        assert len(dictionaries["char_target_dict"]) > 0
+
+    def test_build_vocabs_no_char(self):
+        args = self.get_common_data_args_namespace()
+        args.arch = "rnn"
+        dictionaries = preprocess.build_vocabs(args, Dictionary)
+        dictionaries["char_source_dict"] is None
+        dictionaries["char_target_dict"] is None
 
     def test_preprocess(self):
         """
