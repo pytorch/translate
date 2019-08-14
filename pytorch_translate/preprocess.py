@@ -177,8 +177,6 @@ def preprocess_corpora(args, dictionary_cls=Dictionary):
         target_dict = dictionaries["target_dict"]
         char_target_dict = dictionaries["char_target_dict"]
 
-        # todo T48524067: add char_target_dict to preprocess_bilingual_corpora
-        # and preprocess_monolingual_corpora
         if char_target_dict is not None:
             print("char_target_dict is not None --> should use it!")
 
@@ -187,6 +185,7 @@ def preprocess_corpora(args, dictionary_cls=Dictionary):
             source_dict=source_dict,
             char_source_dict=char_source_dict,
             target_dict=target_dict,
+            char_target_dict=char_target_dict,
         )
         # Binarize additional monolingual corpora for the semisupervised translation
         # task
@@ -205,19 +204,22 @@ def preprocess_corpora(args, dictionary_cls=Dictionary):
                 source_dict=source_dict,
                 char_source_dict=char_source_dict,
                 target_dict=target_dict,
+                char_target_dict=char_target_dict,
             )
 
 
 def preprocess_monolingual_corpora(
     args: argparse.Namespace,
     source_dict: Dictionary,
-    char_source_dict: Dictionary,
+    char_source_dict: Optional[Dictionary],
     target_dict: Dictionary,
+    char_target_dict: Optional[Dictionary],
 ):
     """
     Preprocess source and target monolingual datasets
     Prerequisite: Vocabs are already built (see build_vocabs)
     """
+    embed_bytes = getattr(args, "embed_bytes", False)
     if getattr(args, "train_mono_source_text_file", None):
         args.train_mono_source_binary_path = binarize_text_file(
             text_file=args.train_mono_source_text_file,
@@ -225,6 +227,7 @@ def preprocess_monolingual_corpora(
             output_path=args.train_mono_source_binary_path,
             append_eos=args.append_eos_to_source,
             reverse_order=args.reverse_source,
+            embed_bytes=embed_bytes,
             char_dictionary=char_source_dict,
         )
 
@@ -245,6 +248,8 @@ def preprocess_monolingual_corpora(
             # even if the source sentence is fed to the model backwards,
             # we still want the model to start outputting from the first word.
             reverse_order=False,
+            embed_bytes=embed_bytes,
+            char_dictionary=char_target_dict,
         )
 
 
@@ -322,8 +327,9 @@ def build_vocabs(
 def preprocess_bilingual_corpora(
     args: argparse.Namespace,
     source_dict: Dictionary,
-    char_source_dict: Dictionary,
+    char_source_dict: Optional[Dictionary],
     target_dict: Dictionary,
+    char_target_dict: Optional[Dictionary],
 ):
     """
     Preprocess source and target parallel datasets
@@ -368,6 +374,8 @@ def preprocess_bilingual_corpora(
             # even if the source sentence is fed to the model backwards,
             # we still want the model to start outputting from the first word.
             reverse_order=False,
+            embed_bytes=embed_bytes,
+            char_dictionary=char_target_dict,
         )
     if args.eval_target_text_file:
         args.eval_target_binary_path = binarize_text_file(
@@ -376,6 +384,8 @@ def preprocess_bilingual_corpora(
             output_path=args.eval_target_binary_path,
             append_eos=True,
             reverse_order=False,
+            embed_bytes=embed_bytes,
+            char_dictionary=char_target_dict,
         )
 
 

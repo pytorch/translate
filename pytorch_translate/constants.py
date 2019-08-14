@@ -15,6 +15,6 @@ ARCHS_FOR_CHAR_SOURCE = {
     "char_source",
     "char_source_hybrid",
     "char_source_transformer",
-    "word_char_hybrid_decoder",
+    "char_aware_hybrid",
 }
-ARCHS_FOR_CHAR_TARGET = {"word_char_hybrid_decoder"}
+ARCHS_FOR_CHAR_TARGET = {"char_aware_hybrid"}
