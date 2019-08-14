@@ -299,6 +299,17 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
     def prepare_for_onnx_export_(self):
         self.onnx_trace = True
 
+    def _embed_prev_outputs(self, prev_output_tokens, incremental_state=None):
+        if incremental_state is not None:
+            prev_output_tokens = prev_output_tokens[:, -1:]
+        x = self.embed_tokens(prev_output_tokens)
+        x = F.dropout(x, p=self.dropout, training=self.training)
+
+        # B x T x C -> T x B x C
+        x = x.transpose(0, 1)
+
+        return x, prev_output_tokens
+
     def forward(
         self,
         prev_output_tokens,
@@ -307,19 +318,32 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         possible_translation_tokens=None,
         timestep=None,
     ):
+        x, prev_output_tokens = self._embed_prev_outputs(
+            prev_output_tokens=prev_output_tokens, incremental_state=incremental_state
+        )
+        return self._forward_given_embeddings(
+            embed_out=x,
+            prev_output_tokens=prev_output_tokens,
+            encoder_out=encoder_out,
+            incremental_state=incremental_state,
+            possible_translation_tokens=possible_translation_tokens,
+            timestep=timestep,
+        )
+
+    def _forward_given_embeddings(
+        self,
+        embed_out,
+        prev_output_tokens,
+        encoder_out,
+        incremental_state=None,
+        possible_translation_tokens=None,
+        timestep=None,
+    ):
+        x = embed_out
         (encoder_x, src_tokens, encoder_padding_mask) = self._unpack_encoder_out(
             encoder_out
         )
-
         bsz, seqlen = prev_output_tokens.size()
-        if incremental_state is not None:
-            prev_output_tokens = prev_output_tokens[:, -1:]
-
-        x = self.embed_tokens(prev_output_tokens)
-        x = F.dropout(x, p=self.dropout, training=self.training)
-
-        # B x T x C -> T x B x C
-        x = x.transpose(0, 1)
 
         state_outputs = []
         if incremental_state is not None:
