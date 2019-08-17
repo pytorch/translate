@@ -584,7 +584,8 @@ def train(
             )
 
             if (
-                args.save_interval_updates > 0
+                hasattr(args, "lr_shrink")
+                and args.save_interval_updates > 0
                 and extra_state["num_iterations"] % args.save_interval_updates == 0
                 and args.shrink_lr_no_best_bleu_eval > 0
                 and extra_state["tune_bleu"]["num_since_best"]
