@@ -140,6 +140,9 @@ class AverageAttention(AttentionAbstract):
             saved_state = self._get_input_buffer(incremental_state)
             if "prev_sum" in saved_state:
                 prev_sum = saved_state["prev_sum"]
+                if len(prev_sum) == 2:
+                    # for tracing, prev_sum does not have sequence axis
+                    prev_sum = prev_sum.unsqueeze(0)
                 pos = saved_state["prev_pos"] + 1
                 curr_sum = prev_sum + value
                 attn = curr_sum / pos
