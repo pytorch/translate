@@ -23,6 +23,7 @@ from pytorch_translate import (
     vocab_reduction,
 )
 from pytorch_translate.average_attention import AverageAttention, AverageWindowAttention
+from pytorch_translate.utils import torch_find
 
 
 @register_model("transformer_aan")
@@ -32,8 +33,9 @@ class TransformerAANModel(FairseqEncoderDecoderModel):
     <https://arxiv.org/abs/1706.03762>`_.
     """
 
-    def __init__(self, encoder, decoder):
+    def __init__(self, task, encoder, decoder):
         super().__init__(encoder, decoder)
+        self.task = task
 
     @staticmethod
     def add_args(parser):
@@ -243,7 +245,16 @@ class TransformerAANModel(FairseqEncoderDecoderModel):
             args, src_dict, encoder_embed_tokens
         )
         decoder = TransformerAANDecoder(args, src_dict, tgt_dict, decoder_embed_tokens)
-        return TransformerAANModel(encoder, decoder)
+        return TransformerAANModel(task, encoder, decoder)
+
+    def get_targets(self, sample, net_output):
+        targets = sample["target"].view(-1)
+        possible_translation_tokens = net_output[-1]
+        if possible_translation_tokens is not None:
+            targets = torch_find(
+                possible_translation_tokens, targets, len(self.task.target_dictionary)
+            )
+        return targets
 
 
 class TransformerAANDecoder(FairseqIncrementalDecoder):
@@ -375,25 +386,14 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
                 state_index = 0
 
                 for layer in self.layers:
-                    utils.set_incremental_state(
-                        layer.avg_attn,
-                        incremental_state,
-                        "prev_vec",
-                        state_list[state_index],
-                    )
-                    utils.set_incremental_state(
-                        layer.avg_attn,
-                        incremental_state,
-                        "prev_sum",
-                        state_list[state_index + 1],
-                    )
-                    state_index += 2
-                    utils.set_incremental_state(
-                        layer.avg_attn, incremental_state, "prev_pos", timestep.float()
+                    prev_sum = state_list[state_index]
+                    state_index += 1
+                    prev_pos = timestep.float()
+                    layer.avg_attn._set_input_buffer(
+                        incremental_state, {"prev_sum": prev_sum, "prev_pos": prev_pos}
                     )
 
                     if layer.encoder_attn is not None:
-
                         utils.set_incremental_state(
                             layer.encoder_attn,
                             incremental_state,
@@ -476,21 +476,18 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
         if self.onnx_trace:
             state_outputs = []
             for layer in self.layers:
-                prev_vec = utils.get_incremental_state(
-                    layer.avg_attn, incremental_state, "prev_vec"
-                )
-                prev_sum = utils.get_incremental_state(
-                    layer.avg_attn, incremental_state, "prev_sum"
-                )
-                state_outputs.extend([prev_vec, prev_sum])
+                saved_state = layer.avg_attn._get_input_buffer(incremental_state)
+                assert (
+                    "prev_sum" in saved_state
+                ), "No prev_sum found while tracing average attention layer!"
+                # remove sequence axis
+                prev_sum = saved_state["prev_sum"].squeeze(0)
+                state_outputs.append(prev_sum)
 
                 if layer.encoder_attn is not None:
-                    prev_key = utils.get_incremental_state(
-                        layer.encoder_attn, incremental_state, "prev_key"
-                    )
-                    prev_value = utils.get_incremental_state(
-                        layer.encoder_attn, incremental_state, "prev_value"
-                    )
+                    # prev_key and prev_value remain unchanged
+                    prev_key = state_list[len(state_outputs)]
+                    prev_value = state_list[len(state_outputs) + 1]
                     state_outputs.extend([prev_key, prev_value])
 
             return logits, attn, possible_translation_tokens, state_outputs
@@ -551,16 +548,16 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
 
     def _init_prev_states(self, encoder_out):
         """
-        For average attention, prev_vec and prev_sum are initialized to zero.
+        For average attention, prev_sum is initialized to zero.
         For encoder-decoder attention, key and value are computed once from
         the encoder outputs and stay the same throughout decoding.
         """
         encoder_x, src_tokens, encoder_padding_mask = encoder_out
         states = []
         for layer in self.layers:
-            prev_vec = torch.zeros([1, layer.avg_attn.embed_dim])
+            # (bsz, channel)
             prev_sum = torch.zeros([1, layer.avg_attn.embed_dim])
-            states.extend([prev_vec, prev_sum])
+            states.append(prev_sum)
 
             # (key, value) for encoder-decoder attention computed from encoder
             # output and remain the same throughout decoding
@@ -722,7 +719,6 @@ class TransformerAANDecoderLayer(nn.Module):
         if self.aan_gating_fc is not None:
             i, f = self.aan_gating_fc(torch.cat([residual, x], dim=-1)).chunk(2, dim=-1)
             x = torch.sigmoid(f) * residual + torch.sigmoid(i) * x
-            # x = F.sigmoid(f) * residual + F.sigmoid(i) * x
             if "after_gating" in self.more_dropouts:
                 x = F.dropout(x, p=self.dropout, training=self.training)
 

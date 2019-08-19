@@ -109,6 +109,10 @@ def load_models_from_checkpoints(
             model = transformer.TransformerModel.build_model(
                 checkpoint_data["args"], task
             )
+        elif architecture == "transformer_aan":
+            model = transformer_aan.TransformerAANModel.build_model(
+                checkpoint_data["args"], task
+            )
         elif architecture == "hybrid_transformer_rnn":
             model = hybrid_transformer_rnn.HybridTransformerRNNModel.build_model(
                 checkpoint_data["args"], task
@@ -722,11 +726,17 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 model.decoder._is_incremental_eval = True
                 model.eval()
 
+                states_per_layer = (
+                    3 if isinstance(model, transformer_aan.TransformerAANModel) else 4
+                )
+
                 state_inputs = []
                 for _ in model.decoder.layers:
                     # (prev_key, prev_value) for self- and encoder-attention
-                    state_inputs.extend(inputs[next_state_input : next_state_input + 4])
-                    next_state_input += 4
+                    state_inputs.extend(
+                        inputs[next_state_input : next_state_input + states_per_layer]
+                    )
+                    next_state_input += states_per_layer
 
                 encoder_out = (encoder_output, None, None)
 
