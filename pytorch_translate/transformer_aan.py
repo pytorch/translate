@@ -184,6 +184,14 @@ class TransformerAANModel(FairseqEncoderDecoderModel):
             help="""places to add more dropout in AAN, accepting multiple values in \
             [residual/after_avg/after_aan] separated by commas""",
         )
+        parser.add_argument(
+            "--decoder-out-embed-dim",
+            default=None,
+            type=int,
+            metavar="N",
+            help="decoder output embedding dimension (bottleneck layer before"
+            "output layer if specified.)",
+        )
 
         # Args for vocab reduction
         vocab_reduction.add_args(parser)
@@ -279,7 +287,6 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
 
         input_embed_dim = embed_tokens.embedding_dim
         embed_dim = args.decoder_embed_dim
-        output_embed_dim = args.decoder_output_dim
 
         padding_idx = embed_tokens.padding_idx
         self.max_target_positions = args.max_target_positions
@@ -315,16 +322,20 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
 
         self.adaptive_softmax = None
 
-        self.project_out_dim = (
-            Linear(embed_dim, output_embed_dim, bias=False)
-            if embed_dim != output_embed_dim and not args.tie_adaptive_weights
-            else None
-        )
+        self.bottleneck_layer = None
+        out_embed_dim = embed_dim
+        if args.decoder_out_embed_dim is not None:
+            assert (
+                not args.share_all_embeddings
+                and not args.share_decoder_input_output_embed
+            ), "--decoder-out-embed-dim is incompatible with sharing output embeddings!"
+            self.bottleneck_layer = Linear(embed_dim, args.decoder_out_embed_dim)
+            out_embed_dim = args.decoder_out_embed_dim
 
         if args.adaptive_softmax_cutoff is not None:
             self.adaptive_softmax = AdaptiveSoftmax(
                 len(dst_dict),
-                output_embed_dim,
+                out_embed_dim,
                 options.eval_str_list(args.adaptive_softmax_cutoff, type=int),
                 dropout=args.adaptive_softmax_dropout,
                 adaptive_inputs=embed_tokens if args.tie_adaptive_weights else None,
@@ -332,8 +343,8 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
                 tie_proj=args.tie_adaptive_proj,
             )
         elif not self.share_input_output_embed:
-            self.embed_out = nn.Parameter(torch.Tensor(len(dst_dict), output_embed_dim))
-            nn.init.normal_(self.embed_out, mean=0, std=output_embed_dim ** -0.5)
+            self.embed_out = nn.Parameter(torch.Tensor(len(dst_dict), out_embed_dim))
+            nn.init.normal_(self.embed_out, mean=0, std=out_embed_dim ** -0.5)
         self.register_buffer("version", torch.Tensor([2]))
         self.normalize = args.decoder_normalize_before and final_norm
         if self.normalize:
@@ -443,8 +454,8 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
         # T x B x C -> B x T x C
         x = x.transpose(0, 1)
 
-        if self.project_out_dim is not None:
-            x = self.project_out_dim(x)
+        if self.bottleneck_layer is not None:
+            x = self.bottleneck_layer(x)
 
         # project back to size of vocabulary
         if self.share_input_output_embed:
@@ -876,10 +887,7 @@ def base_architecture(args):
     args.no_token_positional_embeddings = getattr(
         args, "no_token_positional_embeddings", False
     )
-
-    args.decoder_output_dim = getattr(
-        args, "decoder_output_dim", args.decoder_embed_dim
-    )
+    args.decoder_out_embed_dim = getattr(args, "decoder_out_embed_dim", None)
     args.decoder_input_dim = getattr(args, "decoder_input_dim", args.decoder_embed_dim)
 
     args.decoder_aan_ffn = getattr(args, "decoder_aan_ffn", True)
