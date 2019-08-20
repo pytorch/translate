@@ -148,7 +148,12 @@ class PytorchTranslateTask(FairseqTask):
         return cls(args, source_dict, target_dict, char_source_dict)
 
     def _load_dataset_single_path(
-        self, split: str, src_bin_path: str, tgt_bin_path: str, weights_file=None
+        self,
+        split: str,
+        src_bin_path: str,
+        tgt_bin_path: str,
+        weights_file=None,
+        is_npz=True,
     ):
         corpus = pytorch_translate_data.ParallelCorpusConfig(
             source=pytorch_translate_data.CorpusConfig(
@@ -162,10 +167,10 @@ class PytorchTranslateTask(FairseqTask):
 
         if self.args.log_verbose:
             print("Starting to load binarized data files.", flush=True)
-        data_utils.validate_corpus_exists(corpus=corpus, split=split)
+        data_utils.validate_corpus_exists(corpus=corpus, split=split, is_npz=is_npz)
 
-        dst_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
-            corpus.target.data_file
+        dst_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
+            corpus.target.data_file, is_npz=is_npz
         )
         if getattr(self.args, "reverse_target", None):
             dst_dataset.reverse()
@@ -188,8 +193,8 @@ class PytorchTranslateTask(FairseqTask):
                 weights=weights_dataset,
             )
         else:
-            src_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
-                corpus.source.data_file
+            src_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
+                corpus.source.data_file, is_npz=is_npz
             )
             self.datasets[split] = LanguagePairDataset(
                 src=src_dataset,
@@ -224,6 +229,7 @@ class PytorchTranslateTask(FairseqTask):
         dataset_relative_ratio: Optional[Tuple[str, float]] = None,
         seed: Optional[int] = None,
         noiser: Optional[Dict[str, UnsupervisedMTNoising]] = None,
+        is_npz: bool = True,
     ):
         corpora_map = pytorch_translate_data.ParallelCorporaMapConfig(
             src_files=src_multiple_bin_paths, tgt_files=tgt_multiple_bin_paths
@@ -231,8 +237,8 @@ class PytorchTranslateTask(FairseqTask):
         datasets = OrderedDict()
         for key in corpora_map.src_files:
             src, tgt = corpora_map.src_files[key], corpora_map.tgt_files[key]
-            tgt_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
-                tgt
+            tgt_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
+                tgt, is_npz=is_npz
             )
 
             if self.char_source_dict is not None:
@@ -241,8 +247,8 @@ class PytorchTranslateTask(FairseqTask):
                 )
 
             else:
-                src_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
-                    src
+                src_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
+                    src, is_npz=is_npz
                 )
             src_sizes = src_dataset.sizes
             if noiser is not None and key in noiser:
@@ -293,7 +299,7 @@ class PytorchTranslateTask(FairseqTask):
         )
 
     def _load_dataset_multi_path(
-        self, split: str, src_bin_path: str, tgt_bin_path: str
+        self, split: str, src_bin_path: str, tgt_bin_path: str, is_npz: bool = True
     ):
         assert type(tgt_bin_path) is not str
         assert set(src_bin_path.keys()) == set(tgt_bin_path.keys())
@@ -352,6 +358,7 @@ class PytorchTranslateTask(FairseqTask):
                 dataset_relative_ratio=dataset_relative_ratio,
                 seed=self.args.seed,
                 noiser=noiser,
+                is_npz=is_npz,
             )
         elif dataset_upsampling is not None:
             for key in dataset_upsampling.keys():
@@ -363,6 +370,7 @@ class PytorchTranslateTask(FairseqTask):
                 dataset_upsampling=dataset_upsampling,
                 seed=self.args.seed,
                 noiser=noiser,
+                is_npz=is_npz,
             )
         else:
             self._load_dataset_multi_path_helper(
@@ -371,10 +379,16 @@ class PytorchTranslateTask(FairseqTask):
                 tgt_multiple_bin_paths=tgt_bin_path,
                 seed=self.args.seed,
                 noiser=noiser,
+                is_npz=is_npz,
             )
 
     def load_dataset(
-        self, split: str, src_bin_path: str, tgt_bin_path: str, weights_file=None
+        self,
+        split: str,
+        src_bin_path: str,
+        tgt_bin_path: str,
+        weights_file=None,
+        is_npz=True,
     ):
         src_bin_path = pytorch_translate_utils.maybe_parse_collection_argument(
             src_bin_path
@@ -391,9 +405,12 @@ class PytorchTranslateTask(FairseqTask):
                 src_bin_path=src_bin_path,
                 tgt_bin_path=tgt_bin_path,
                 weights_file=weights_file,
+                is_npz=is_npz,
             )
         else:
-            self._load_dataset_multi_path(split, src_bin_path, tgt_bin_path)
+            self._load_dataset_multi_path(
+                split, src_bin_path, tgt_bin_path, is_npz=is_npz
+            )
 
         if self.args.log_verbose:
             print("Finished loading dataset", flush=True)

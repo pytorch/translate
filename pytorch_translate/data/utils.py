@@ -3,6 +3,7 @@
 import os
 from typing import Optional
 
+from fairseq.data.indexed_dataset import IndexedDataset
 from pytorch_translate.data import (
     char_data,
     data as pytorch_translate_data,
@@ -37,7 +38,7 @@ def load_parallel_dataset(
         print("Starting to load binarized data files.", flush=True)
     validate_corpus_exists(corpus=corpus, split=split)
 
-    tgt_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
+    tgt_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
         corpus.target.data_file
     )
     if char_source_dict is not None:
@@ -45,7 +46,7 @@ def load_parallel_dataset(
             corpus.source.data_file
         )
     else:
-        src_dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
+        src_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
             corpus.source.data_file
         )
     parallel_dataset = weighted_data.WeightedLanguagePairDataset(
@@ -78,7 +79,7 @@ def load_monolingual_dataset(
         dataset = char_data.InMemoryNumpyWordCharDataset.create_from_file(path=bin_path)
 
     else:
-        dataset = pytorch_translate_data.InMemoryNumpyDataset.create_from_file(
+        dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
             path=bin_path, num_examples_limit=num_examples_limit
         )
 
@@ -93,13 +94,19 @@ def load_monolingual_dataset(
 
 
 def validate_corpus_exists(
-    corpus: pytorch_translate_data.ParallelCorpusConfig, split: str
+    corpus: pytorch_translate_data.ParallelCorpusConfig, split: str, is_npz: bool = True
 ):
     """
     Makes sure that the files in the `corpus` are valid files. `split` is used
     for logging.
     """
-    if not os.path.exists(corpus.source.data_file):
-        raise ValueError(f"{corpus.source.data_file} for {split} not found!")
-    if not os.path.exists(corpus.target.data_file):
-        raise ValueError(f"{corpus.target.data_file} for {split} not found!")
+    if is_npz:
+        if not os.path.exists(corpus.source.data_file):
+            raise ValueError(f"{corpus.source.data_file} for {split} not found!")
+        if not os.path.exists(corpus.target.data_file):
+            raise ValueError(f"{corpus.target.data_file} for {split} not found!")
+    else:
+        if not IndexedDataset.exists(corpus.source.data_file):
+            raise ValueError(f"{corpus.source.data_file} for {split} not found!")
+        if not IndexedDataset.exists(corpus.target.data_file):
+            raise ValueError(f"{corpus.target.data_file} for {split} not found!")

@@ -9,6 +9,11 @@ import torch
 from fairseq.data import LanguagePairDataset, NoisingDataset
 from fairseq.data.concat_dataset import ConcatDataset
 from fairseq.data.noising import UnsupervisedMTNoising
+from fairseq_cli.preprocess import (
+    binarize,
+    dataset_dest_prefix,
+    options as preprocess_options,
+)
 from pytorch_translate import preprocess
 from pytorch_translate.data import char_data, data, dictionary
 from pytorch_translate.tasks import pytorch_translate_task as tasks
@@ -16,6 +21,10 @@ from pytorch_translate.test import utils as test_utils
 
 
 class TestLoadData(unittest.TestCase):
+    """
+    This function tests loading from .npz data.
+    """
+
     def test_load_data_single_path(self):
         test_args = test_utils.ModelParamsDict()
         test_args.source_lang = "en"
@@ -42,6 +51,55 @@ class TestLoadData(unittest.TestCase):
         task.load_dataset(split, src_bin_path, tgt_bin_path)
         self.assertEqual(len(task.datasets[split]), 4)
         self.assertIsInstance(task.datasets[split], LanguagePairDataset)
+
+    """
+    This function tests loading from .idx + .bin data for fairseq compatibility.
+    """
+
+    def test_load_data_single_path_idx_bin(self):
+        test_args = test_utils.ModelParamsDict()
+        test_args.source_lang = "en"
+        test_args.target_lang = "fr"
+        test_args.log_verbose = False
+        src_dict, tgt_dict = test_utils.create_vocab_dictionaries()
+        src_text_file, tgt_text_file = test_utils.create_test_text_files()
+        task = tasks.PytorchTranslateTask(test_args, src_dict, tgt_dict)
+        with tempfile.TemporaryDirectory() as destdir:
+            preprocess_args = [
+                "--source-lang",
+                test_args.source_lang,
+                "--target-lang",
+                test_args.target_lang,
+                "--destdir",
+                destdir,
+            ]
+            preproc_parser = preprocess_options.get_preprocessing_parser()
+            preproc_args = preproc_parser.parse_args(preprocess_args)
+            preproc_args.dataset_impl = "regular"  # No MMP
+            split = "train"
+            binarize(
+                preproc_args,
+                src_text_file,
+                src_dict,
+                split,
+                test_args.source_lang,
+                offset=0,
+                end=-1,
+            )
+            binarize(
+                preproc_args,
+                tgt_text_file,
+                tgt_dict,
+                split,
+                test_args.target_lang,
+                offset=0,
+                end=-1,
+            )
+            src_path = dataset_dest_prefix(preproc_args, split, test_args.source_lang)
+            tgt_path = dataset_dest_prefix(preproc_args, split, test_args.target_lang)
+            task.load_dataset(split, src_path, tgt_path, is_npz=False)
+            self.assertEqual(len(task.datasets[split]), 4)
+            self.assertIsInstance(task.datasets[split], LanguagePairDataset)
 
     def _prepare_data_multi_path(self, num_paths):
         test_args = test_utils.ModelParamsDict()
@@ -94,7 +152,7 @@ class TestLoadData(unittest.TestCase):
         self.assertIsInstance(task.datasets[split].datasets[0].src, NoisingDataset)
 
 
-class TestInMemoryNumpyDataset(unittest.TestCase):
+class TestInMemoryIndexedDataset(unittest.TestCase):
     def setUp(self):
         self.src_txt, self.trg_txt = test_utils.create_test_text_files()
         self.vocab_file_path = test_utils.make_temp_file()
@@ -135,8 +193,8 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
         os.remove(self.vocab_file_path)
 
     def test_parse(self):
-        src_dataset = data.InMemoryNumpyDataset()
-        trg_dataset = data.InMemoryNumpyDataset()
+        src_dataset = data.InMemoryIndexedDataset()
+        trg_dataset = data.InMemoryIndexedDataset()
         for _ in range(2):
             src_dataset.parse(
                 self.src_txt, self.d, reverse_order=True, append_eos=False
@@ -153,8 +211,8 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
                 )
 
     def test_parse_numberize(self):
-        src_dataset = data.InMemoryNumpyDataset()
-        trg_dataset = data.InMemoryNumpyDataset()
+        src_dataset = data.InMemoryIndexedDataset()
+        trg_dataset = data.InMemoryIndexedDataset()
         for _ in range(2):
             src_dataset.parse(
                 self.src_txt_numberized,
@@ -179,7 +237,7 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
                 )
 
     def test_parse_oversampling(self):
-        dataset = data.InMemoryNumpyDataset()
+        dataset = data.InMemoryIndexedDataset()
         factors = [(1, 0), (3, 2), (4, 4)]
         for o1, o2 in factors:
             corpora = [
@@ -200,8 +258,8 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
             self.assertEqual((o1 + o2) * self.num_sentences, len(dataset))
 
     def test_parse_multiling(self):
-        prepend_dataset = data.InMemoryNumpyDataset()
-        append_dataset = data.InMemoryNumpyDataset()
+        prepend_dataset = data.InMemoryIndexedDataset()
+        append_dataset = data.InMemoryIndexedDataset()
         corpora = [
             data.MultilingualCorpusConfig(
                 dialect_id=10, data_file=self.trg_txt, dict=self.d, oversampling=1
@@ -233,8 +291,8 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
             )
 
     def test_subsample_pair_dataset(self):
-        src_dataset = data.InMemoryNumpyDataset()
-        trg_dataset = data.InMemoryNumpyDataset()
+        src_dataset = data.InMemoryIndexedDataset()
+        trg_dataset = data.InMemoryIndexedDataset()
         for _ in range(5):
             src_dataset.parse(
                 self.src_txt, self.d, reverse_order=True, append_eos=False
@@ -261,11 +319,11 @@ class TestInMemoryNumpyDataset(unittest.TestCase):
 
     def test_subsample_dataset(self):
         """
-        Test the InMemoryNumpyDataset.subsample() method, ensuring that the
+        Test the InMemoryIndexedDataset.subsample() method, ensuring that the
         examples produced by the dataset are correctly permuted according to
         the indices argument.
         """
-        trg_dataset = data.InMemoryNumpyDataset()
+        trg_dataset = data.InMemoryIndexedDataset()
 
         trg_dataset.parse(self.trg_txt, self.d, reverse_order=False, append_eos=True)
 

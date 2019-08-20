@@ -261,7 +261,7 @@ class LanguagePairSourceCharDataset(data.LanguagePairDataset):
     ):
         """
         src : InMemoryNumpyWordCharDataset
-        tgt : InMemoryNumpyDataset
+        tgt : InMemoryIndexedDataset
         weights: Optional[IndexedInMemoryDataset]
         """
         super().__init__(

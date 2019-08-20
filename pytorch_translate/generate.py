@@ -263,7 +263,7 @@ def _generate_score(models, args, task, dataset):
 
     # If applicable, save collected hypothesis tokens to binary output file
     if collect_output_hypos:
-        output_dataset = pytorch_translate_data.InMemoryNumpyDataset()
+        output_dataset = pytorch_translate_data.InMemoryIndexedDataset()
         output_dataset.load_from_sequences(output_hypos_token_arrays)
         output_dataset.save(args.output_hypos_binary_path)
     if args.output_source_binary_path:
