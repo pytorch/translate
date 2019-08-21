@@ -230,6 +230,17 @@ def validate_and_set_default_args(args):
     validate_args(args)
 
 
+def create_task_and_model(args):
+    task = tasks.setup_task(args)
+    model = task.build_model(args)
+    return task, model
+
+
+def get_num_model_params(model):
+    """Get the total number of parameters in a model"""
+    return sum(p.numel() for p in model.parameters())
+
+
 def setup_training_model(args):
     """Parse args, load dataset, and build model with criterion."""
     if not torch.cuda.is_available():
