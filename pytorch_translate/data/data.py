@@ -43,27 +43,48 @@ class ParallelCorporaMapConfig(NamedTuple):
     tgt_files: Dict[str, str]
 
 
-class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
-    """analogous to fairseq.data.indexed_dataset.IndexedCachedDataset"""
+class InMemoryIndexedDataset(data.indexed_dataset.IndexedDataset):
+    """analogous to fairseq.data.indexed_dataset.IndexedCachedDataset.
+       Support loading .idx + .bin as fairseq does and also .npz. In self
+       initializer if
+       (1) path is passed in: call the initializer of parent class and loads
+       idx + bin from the path.
+       (2) path is None: Initialize an empty class. Call load(path) to load
+       .npz data.
+       When self.is_npz=True, use the implementation in this class which overrides
+       parent methods. Otherwise use parent functions in fairseq."""
 
-    def __init__(self):
-        """Initialize empty dataset"""
-        self.buffer = None
-        self.offsets = None
-        self.sizes = None
+    def __init__(self, path=None, fix_lua_indexing=False, read_data=True):
+        if path is None:
+            self.buffer = None
+            self.offsets = None
+            self.sizes = None
+            self.is_npz = True
+        else:
+            self.is_npz = False
+            super().__init__(path, fix_lua_indexing)
 
     def __getitem__(self, i):
-        assert i < self.__len__(), f"index {i} out of range!"
-        a = self.buffer[self.offsets[i] : self.offsets[i + 1]]
-        return torch.from_numpy(a).long()
+        if self.is_npz:
+            assert i < self.__len__(), f"index {i} out of range!"
+            a = self.buffer[self.offsets[i] : self.offsets[i + 1]]
+            return torch.from_numpy(a).long()
+        else:
+            return super().__getitem__(i)
 
     def __len__(self):
-        # offsets includes 0 and end indices for each example
-        return self.offsets.size - 1
+        if self.is_npz:
+            # offsets includes 0 and end indices for each example
+            return self.offsets.size - 1
+        else:
+            return super().__len__()
 
     def __del__(self):
-        if isinstance(self.buffer, np.memmap):
-            os.remove(self.buffer.filename)
+        if self.is_npz:
+            if isinstance(self.buffer, np.memmap):
+                os.remove(self.buffer.filename)
+        else:
+            super().__del__()
 
     def save(self, path):
         assert self.buffer is not None
@@ -228,10 +249,15 @@ class InMemoryNumpyDataset(data.indexed_dataset.IndexedDataset):
         del sizes
 
     @staticmethod
-    def create_from_file(path, num_examples_limit: Optional[int] = None):
-        result = InMemoryNumpyDataset()
-        result.load(path, num_examples_limit=num_examples_limit)
-        return result
+    def create_from_file(path, is_npz=True, num_examples_limit: Optional[int] = None):
+        if is_npz:
+            # npz format
+            result = InMemoryIndexedDataset()
+            result.load(path, num_examples_limit=num_examples_limit)
+            return result
+        else:
+            # idx, bin format
+            return InMemoryIndexedDataset(path)
 
     def subsample(self, indices):
         """

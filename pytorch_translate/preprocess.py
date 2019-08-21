@@ -55,7 +55,7 @@ def binarize_text_file(
             append_eos=append_eos,
         )
     else:
-        dataset = pytorch_translate_data.InMemoryNumpyDataset()
+        dataset = pytorch_translate_data.InMemoryIndexedDataset()
         dataset.parse(
             path=text_file,
             dictionary=dictionary,
@@ -123,7 +123,7 @@ def binarize_text_file_multilingual(
             already_numberized=already_numberized,
         )
     else:
-        dataset = pytorch_translate_data.InMemoryNumpyDataset()
+        dataset = pytorch_translate_data.InMemoryIndexedDataset()
         dataset.parse_multilingual(
             corpus_configs,
             append_eos=append_eos,

@@ -578,6 +578,6 @@ def create_dummy_binarized_dataset(
             sequence.append(vocab_constants.EOS_ID)
         index_sequences.append(sequence)
 
-    dataset = pytorch_translate_data.InMemoryNumpyDataset()
+    dataset = pytorch_translate_data.InMemoryIndexedDataset()
     dataset.load_from_sequences(index_sequences)
     return dataset

@@ -173,16 +173,16 @@ class PytorchTranslateSemiSupervised(PyTorchTranslateMultiTask):
             print("Starting to load binarized data files.", flush=True)
         ptt_data_utils.validate_corpus_exists(corpus=corpus, split=split)
 
-        forward_tgt_dataset = ptt_data.InMemoryNumpyDataset.create_from_file(
+        forward_tgt_dataset = ptt_data.InMemoryIndexedDataset.create_from_file(
             corpus.target.data_file
         )
-        backward_tgt_dataset = ptt_data.InMemoryNumpyDataset.create_from_file(
+        backward_tgt_dataset = ptt_data.InMemoryIndexedDataset.create_from_file(
             corpus.source.data_file
         )
-        forward_src_dataset = ptt_data.InMemoryNumpyDataset.create_from_file(
+        forward_src_dataset = ptt_data.InMemoryIndexedDataset.create_from_file(
             corpus.source.data_file
         )
-        backward_src_dataset = ptt_data.InMemoryNumpyDataset.create_from_file(
+        backward_src_dataset = ptt_data.InMemoryIndexedDataset.create_from_file(
             corpus.target.data_file
         )
         forward_parallel_dataset = weighted_data.WeightedLanguagePairDataset(
