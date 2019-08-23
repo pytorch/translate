@@ -12,12 +12,18 @@ from pytorch_translate.data.dictionary import TAGS
 class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
     """analogous to fairseq.data.IndexedCachedDataset"""
 
-    def __init__(self):
-        """Initialize empty dataset"""
+    def __init__(self, ignore_chars_for_unks=False):
+        """
+        Initialize empty dataset
+        Args:
+        ignore_chars_for_unks: If true, ignore character sequences of
+        unknown words.
+        """
         self.word_buffer = None
         self.word_offsets = None
         self.char_buffer = None
         self.char_offsets = None
+        self.ignore_chars_for_unks = ignore_chars_for_unks
         self.sizes = None
 
     def get_tokens(self, i):
@@ -79,7 +85,7 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
         word_inds = prepend_inds + word_inds + append_inds
         return words, word_inds
 
-    def _word_to_char_ids(self, word, char_dict, embed_bytes):
+    def _word_to_char_ids(self, word, word_dict, char_dict, embed_bytes):
         """
         Extract the char/byte ids for char/bytes associated with the input word.
         """
@@ -92,8 +98,11 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
                 else [byte_id + 1 for byte_id in word.encode("utf8", "ignore")]
             )
         else:
-            chars = [word] if word in TAGS else list(word)
-            char_inds = [char_dict.index(c) for c in chars]
+            if word in word_dict or not self.ignore_chars_for_unks:
+                chars = [word] if word in TAGS else list(word)
+                char_inds = [char_dict.index(c) for c in chars]
+            else:
+                char_inds = [char_dict.eos_index]
         return char_inds
 
     def parse(
@@ -109,6 +118,7 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
         word_offsets = [0]
         char_array_list = []
         char_offsets = [0]
+
         sizes = []
         prepend_inds = []
         append_inds = []
@@ -128,7 +138,9 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
                 sizes.append(len(word_inds))
 
                 for word in words:
-                    char_inds = self._word_to_char_ids(word, char_dict, embed_bytes)
+                    char_inds = self._word_to_char_ids(
+                        word, word_dict, char_dict, embed_bytes
+                    )
                     char_array_list.append(np.array(char_inds, dtype=np.int32))
                     char_offsets.append(char_offsets[-1] + len(char_inds))
                 if append_eos:
@@ -185,6 +197,7 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
                     for word in words:
                         char_inds = self._word_to_char_ids(
                             word=word,
+                            word_dict=corpus_config.word_dict,
                             char_dict=corpus_config.char_dict,
                             embed_bytes=embed_bytes,
                         )
