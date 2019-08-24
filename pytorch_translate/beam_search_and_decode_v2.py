@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
-from typing import Tuple
+from typing import List, Tuple
 
 import torch
 import torch.jit
 import torch.jit.quantized
+from pytorch_translate.beam_decode import BeamDecode
 from pytorch_translate.ensemble_export import DecoderBatchedStepEnsemble
 from torch import Tensor
 
@@ -213,3 +214,96 @@ class DecoderBatchedStepEnsemble2BeamWithEOS(DecoderBatchedStepEnsemble):
             self.input_names.append(f"state_input_{i}")
 
         return tuple(active_outputs)
+
+
+class BeamDecodeWithEOS(BeamDecode):
+    """
+    Run beam decoding based on the beam search output from
+    DecoderBatchedStepEnsemble2BeamWithEOS. The differences compared with BeamDecode is:
+    1.there's no need to check prev_hypos finished or not when trying to get all end
+    states since we don't expand at eos token in DecoderBatchedStepEnsemble2BeamWithEOS.
+    2. add extra step for eos token at the end.
+    """
+
+    # TODO: (lizguo) This class will be merged with upstream later.
+    @torch.jit.script_method
+    def _get_all_end_states(
+        self,
+        beam_tokens: Tensor,
+        beam_scores: Tensor,
+        beam_prev_indices: Tensor,
+        num_steps: int,
+    ) -> Tensor:
+        min_score = float("inf")
+        min_index = -1
+        end_states = torch.jit.annotate(List[Tensor], [])
+
+        position = 1
+        while bool(position <= num_steps + 1):
+            for hyp_index in range(self.beam_size):
+                if bool(beam_tokens[position][hyp_index] == self.eos_token_id) or bool(
+                    position == num_steps + 1
+                ):
+                    hypo_score = float(beam_scores[position][hyp_index])
+                    if bool(self.length_penalty != 0):
+                        hypo_score = hypo_score / float(position) ** float(
+                            self.length_penalty
+                        )
+                    end_states, min_score, min_index = self._add_to_end_states(
+                        end_states,
+                        min_score,
+                        torch.tensor([hypo_score, float(position), float(hyp_index)]),
+                        min_index,
+                    )
+            position = position + 1
+
+        end_states = torch.stack(end_states)
+
+        _, sorted_end_state_indices = end_states[:, 0].sort(dim=0, descending=True)
+        end_states = end_states[sorted_end_state_indices, :]
+        return end_states
+
+    @torch.jit.script_method
+    def _check_dimensions(
+        self,
+        beam_tokens: Tensor,
+        beam_scores: Tensor,
+        token_weights: Tensor,
+        beam_prev_indices: Tensor,
+        num_steps: int,
+    ) -> None:
+
+        assert (
+            beam_tokens.size(1) == 2 * self.beam_size
+        ), "Dimension of beam_tokens : {} and beam size : {} are not consistent".format(
+            beam_tokens.size(), self.beam_size
+        )
+        assert beam_scores.size(1) == 2 * self.beam_size, (
+            "Dimension of beam_scores : {} and beam size : {} "
+            "are not consistent".format(beam_scores.size(), self.beam_size)
+        )
+        assert token_weights.size(1) == 2 * self.beam_size, (
+            "Dimension of token_weights : {} and beam size : {} "
+            "are not consistent".format(token_weights.size(), self.beam_size)
+        )
+        assert (
+            beam_prev_indices.size(1) == 2 * self.beam_size
+        ), "Dimension of beam_prev_indices : {} and beam size : {} "
+        "are not consistent".format(beam_prev_indices.size(), self.beam_size)
+
+        assert beam_tokens.size(0) <= num_steps + 2, (
+            "Dimension of beam_tokens : {} and num_steps : {} "
+            "are not consistent".format(beam_tokens.size(), num_steps)
+        )
+        assert beam_scores.size(0) <= num_steps + 2, (
+            "Dimension of beam_scores : {} and num_steps : {} "
+            "are not consistent".format(beam_scores.size(), num_steps)
+        )
+        assert token_weights.size(0) <= num_steps + 2, (
+            "Dimension of token_weights : {} and num_steps : {} "
+            "are not consistent".format(token_weights.size(), num_steps)
+        )
+        assert beam_prev_indices.size(0) <= num_steps + 2, (
+            "Dimension of beam_prev_indices : {} and num_steps : {} "
+            "are not consistent".format(beam_prev_indices.size(), num_steps)
+        )
