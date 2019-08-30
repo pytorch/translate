@@ -25,7 +25,6 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
         char_embed_dim=32,
         char_cnn_params="[(128, 3), (128, 5)]",
         char_cnn_nonlinear_fn="tanh",
-        char_cnn_pool_type="max",
         char_cnn_num_highway_layers=0,
         use_pretrained_weights=False,
         finetune_pretrained_weights=False,
@@ -38,7 +37,6 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
             char_embed_dim=char_embed_dim,
             convolutions_params=convolutions_params,
             nonlinear_fn_type=char_cnn_nonlinear_fn,
-            pool_type=char_cnn_pool_type,
             num_highway_layers=char_cnn_num_highway_layers,
             # char_cnn_output_dim should match the word embedding dimension.
             char_cnn_output_dim=embed_tokens.embedding_dim,
