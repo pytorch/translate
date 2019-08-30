@@ -146,7 +146,7 @@ class CharCNNModel(nn.Module):
         dictionary,
         num_chars=50,
         char_embed_dim=32,
-        convolutions_params="((128, 3), (128, 5))",
+        convolutions_params=((128, 3), (128, 5)),
         nonlinear_fn_type="tanh",
         num_highway_layers=0,
         # A value of -1 for char_cnn_output_dim implies no projection layer
@@ -187,6 +187,12 @@ class CharCNNModel(nn.Module):
                 padding_idx=self.padding_idx,
                 freeze_embed=False,
             )
+            """
+            Since our pooling type is max-pooling: we need at least to
+            the number of kernel_size to the left and right of the sequence
+            to make sure that: first, the same sequence gets the same value
+            in different minibatches; second, edges are considered here.
+            """
             self.convolutions = nn.ModuleList(
                 [
                     nn.Sequential(
@@ -194,7 +200,7 @@ class CharCNNModel(nn.Module):
                             char_embed_dim,
                             num_filters,
                             kernel_size,
-                            padding=kernel_size,
+                            padding=2 * kernel_size,
                         ),
                         nonlinear_fn(),
                     )
