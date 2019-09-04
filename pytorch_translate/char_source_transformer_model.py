@@ -55,16 +55,6 @@ class CharSourceTransformerModel(transformer.TransformerModel):
             help=("Nonlinearity applied to char conv outputs. Values: relu, tanh."),
         )
         parser.add_argument(
-            "--char-cnn-pool-type",
-            type=str,
-            default="max",
-            metavar="EXPR",
-            help=(
-                "Pooling function of input sequence outputs. "
-                "Values: logsumexp, max, mean, meanmax."
-            ),
-        )
-        parser.add_argument(
             "--char-cnn-num-highway-layers",
             type=int,
             default=0,
@@ -176,7 +166,6 @@ class CharSourceTransformerModel(transformer.TransformerModel):
             embed_dim=args.char_embed_dim,
             char_cnn_params=args.char_cnn_params,
             char_cnn_nonlinear_fn=args.char_cnn_nonlinear_fn,
-            char_cnn_pool_type=args.char_cnn_pool_type,
             char_cnn_num_highway_layers=args.char_cnn_num_highway_layers,
             char_cnn_output_dim=getattr(args, "char_cnn_output_dim", -1),
             use_pretrained_weights=getattr(args, "use_pretrained_weights", False),
@@ -220,7 +209,6 @@ class CharCNNEncoder(FairseqEncoder):
         embed_dim=32,
         char_cnn_params="[(128, 3), (128, 5)]",
         char_cnn_nonlinear_fn="tanh",
-        char_cnn_pool_type="max",
         char_cnn_num_highway_layers=0,
         char_cnn_output_dim=-1,
         use_pretrained_weights=False,
@@ -236,7 +224,6 @@ class CharCNNEncoder(FairseqEncoder):
             embed_dim,
             convolutions_params,
             char_cnn_nonlinear_fn,
-            char_cnn_pool_type,
             char_cnn_num_highway_layers,
             char_cnn_output_dim,
             use_pretrained_weights,

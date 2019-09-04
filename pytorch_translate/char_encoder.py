@@ -46,16 +46,6 @@ def add_args(parser):
         help=("Nonlinearity applied to char conv outputs. Values: relu, tanh."),
     )
     parser.add_argument(
-        "--char-cnn-pool-type",
-        type=str,
-        default="max",
-        metavar="EXPR",
-        help=(
-            "Pooling function of input sequence outputs. "
-            "Values: logsumexp, max, mean, meanmax."
-        ),
-    )
-    parser.add_argument(
         "--char-cnn-num-highway-layers",
         type=int,
         default=0,
@@ -158,7 +148,6 @@ class CharCNNModel(nn.Module):
         char_embed_dim=32,
         convolutions_params="((128, 3), (128, 5))",
         nonlinear_fn_type="tanh",
-        pool_type="max",
         num_highway_layers=0,
         # A value of -1 for char_cnn_output_dim implies no projection layer
         # layer at the output of the highway network
@@ -172,8 +161,6 @@ class CharCNNModel(nn.Module):
         self.padding_idx = dictionary.pad()
         self.use_pretrained_weights = use_pretrained_weights
 
-        # model parameters
-        self.pool_type = pool_type
         self.convolutions_params = convolutions_params
         self.num_highway_layers = num_highway_layers
         self.char_embed_dim = char_embed_dim
@@ -395,18 +382,7 @@ class CharCNNModel(nn.Module):
         return encoder_output
 
     def pooling(self, inputs, char_lengths, dim):
-        if self.pool_type == "max":
-            return torch.max(inputs, dim=dim)[0]
-
-        elif self.pool_type == "mean":
-            return torch.mean(inputs, dim=dim)
-
-        elif self.pool_type == "logsumexp":
-            logsumexp = inputs.exp().mean(dim=dim, keepdim=True).log()
-            return logsumexp.squeeze(dim)
-
-        else:
-            raise Exception("Invalid pool type: {}".format(self.pool_type))
+        return torch.max(inputs, dim=dim)[0]
 
 
 class CharRNNModel(nn.Module):
