@@ -196,7 +196,7 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
                     for word in words:
                         char_inds = self._word_to_char_ids(
                             word=word,
-                            word_dict=corpus_config.word_dict,
+                            word_dict=corpus_config.dict,
                             char_dict=corpus_config.char_dict,
                             embed_bytes=embed_bytes,
                         )
