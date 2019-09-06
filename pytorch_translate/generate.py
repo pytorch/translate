@@ -435,7 +435,7 @@ def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
                     # Convert back to tokens for evaluation with unk replacement
                     # and/or without BPE
                     target_tokens = task.target_dictionary.encode_line(
-                        target_str, add_if_not_exist=True
+                        target_str, add_if_not_exist=False
                     )
                 # The probs score for the hypo_str; whether it's normalized by
                 # sequence length or not depends on normalize_scores, which is
