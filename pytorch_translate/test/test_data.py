@@ -381,7 +381,7 @@ class TestInMemoryIndexedDataset(unittest.TestCase):
         assert ntokens == 32
         net_input = collate_data["net_input"]
         assert net_input["char_inds"].size() == torch.Size([4, 11, 4])
-        assert net_input["prev_output_chars"].size() == torch.Size([4, 12, 4])
+        assert net_input["prev_output_chars"].size() == torch.Size([4, 11, 4])
         assert collate_data["target_char_inds"].size() == torch.Size([4, 11, 4])
         assert net_input["prev_output_word_lengths"].size() == torch.Size([4, 12])
         for i in range(net_input["prev_output_chars"].size()[0]):

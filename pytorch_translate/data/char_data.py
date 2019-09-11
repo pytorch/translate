@@ -454,7 +454,7 @@ class LanguagePairCharDataset(LanguagePairSourceCharDataset):
         )
         prev_tgt_char_inds = (
             samples[0]["target_chars_list"][0]
-            .new(len(samples), max_tgt_words + 1, max_tgt_word_length)
+            .new(len(samples), max_tgt_words, max_tgt_word_length)
             .long()
             .fill_(self.pad_idx)
         )
@@ -464,7 +464,9 @@ class LanguagePairCharDataset(LanguagePairSourceCharDataset):
             prev_tgt_char_inds[i, 0, :1] = eos_tensor
             for j, chars in enumerate(chars_list):
                 tgt_char_inds[i, j, : tgt_word_lengths[i, j]] = chars
-                prev_tgt_char_inds[i, j + 1, : tgt_word_lengths[i, j]] = chars
+                if j < prev_tgt_char_inds.size()[1] - 1:
+                    # We skip previous characters for the last word.
+                    prev_tgt_char_inds[i, j + 1, : tgt_word_lengths[i, j]] = chars
 
         prev_tgt_word_lengths = torch.cat(
             (torch.ones((len(samples), 1), dtype=torch.long), tgt_word_lengths), dim=1
