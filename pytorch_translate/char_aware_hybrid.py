@@ -7,9 +7,111 @@ from typing import List
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from pytorch_translate import char_encoder, hybrid_transformer_rnn, vocab_constants
+from fairseq.models import register_model, register_model_architecture
+from pytorch_translate import (
+    char_encoder,
+    char_source_hybrid,
+    char_source_model,
+    hybrid_transformer_rnn,
+    transformer as pytorch_translate_transformer,
+    vocab_constants,
+)
 from pytorch_translate.data.dictionary import TAGS
 from pytorch_translate.utils import maybe_cuda
+
+
+@register_model("char_aware_hybrid")
+class CharAwareHybridModel(char_source_hybrid.CharSourceHybridModel):
+    """
+    An architecture combining hybrid Transformer/RNN with character-based
+    inputs (token embeddings created via character-input CNN) and outputs.
+    This model is very similar to https://arxiv.org/pdf/1809.02223.pdf.
+    """
+
+    def __init__(self, task, encoder, decoder):
+        super().__init__(task, encoder, decoder)
+
+    @classmethod
+    def build_model(cls, args, task):
+        """Build a new model instance."""
+        src_dict, dst_dict = task.source_dictionary, task.target_dictionary
+        base_architecture(args)
+
+        assert hasattr(args, "char_source_dict_size"), (
+            "args.char_source_dict_size required. "
+            "should be set by load_binarized_dataset()"
+        )
+        assert hasattr(args, "char_target_dict_size"), (
+            "args.char_target_dict_size required. "
+            "should be set by load_binarized_dataset()"
+        )
+
+        assert hasattr(
+            args, "char_cnn_params"
+        ), "Only char CNN is supported for the char encoder hybrid model"
+
+        args.embed_bytes = getattr(args, "embed_bytes", False)
+
+        # In case use_pretrained_weights is true, verify the model params
+        # are correctly set
+        if args.embed_bytes and getattr(args, "use_pretrained_weights", False):
+            char_source_model.verify_pretrain_params(args)
+
+        encoder = char_source_hybrid.CharSourceHybridModel.build_encoder(
+            args=args, src_dict=src_dict
+        )
+        decoder = CharAwareHybridModel.build_decoder(
+            args=args, src_dict=src_dict, dst_dict=dst_dict
+        )
+
+        return cls(task, encoder, decoder)
+
+    def forward(
+        self,
+        src_tokens,
+        src_lengths,
+        char_inds,
+        word_lengths,
+        prev_output_tokens,
+        prev_output_chars,
+    ):
+        encoder_out = self.encoder(src_tokens, src_lengths, char_inds, word_lengths)
+        decoder_out = self.decoder(
+            prev_output_tokens=prev_output_tokens,
+            encoder_out=encoder_out,
+            prev_output_chars=prev_output_chars,
+        )
+        return decoder_out
+
+    @classmethod
+    def build_decoder(cls, args, src_dict, dst_dict):
+        # If we embed bytes then the number of indices is fixed and does not
+        # depend on the dictionary
+        if args.embed_bytes:
+            num_chars = vocab_constants.NUM_BYTE_INDICES + TAGS.__len__() + 1
+        else:
+            num_chars = args.char_target_dict_size
+
+        decoder_embed_tokens = pytorch_translate_transformer.build_embedding(
+            dictionary=dst_dict,
+            embed_dim=args.decoder_embed_dim,
+            path=args.decoder_pretrained_embed,
+            freeze=args.decoder_freeze_embed,
+        )
+        return CharAwareHybridRNNDecoder(
+            args,
+            src_dict=src_dict,
+            dst_dict=dst_dict,
+            embed_tokens=decoder_embed_tokens,
+            num_chars=num_chars,
+            char_embed_dim=args.char_embed_dim,
+            char_cnn_params=args.char_cnn_params,
+            char_cnn_nonlinear_fn=args.char_cnn_nonlinear_fn,
+            char_cnn_num_highway_layers=args.char_cnn_num_highway_layers,
+            char_cnn_output_dim=getattr(args, "char_cnn_output_dim", -1),
+            use_pretrained_weights=False,
+            finetune_pretrained_weights=False,
+        )
 
 
 class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
@@ -226,3 +328,12 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
                 chars = [word] if word in TAGS else list(word)
                 char_inds = [char_dict.index(c) for c in chars]
         return char_inds
+
+
+@register_model_architecture("char_aware_hybrid", "char_aware_hybrid")
+def base_architecture(args):
+    # default architecture
+    hybrid_transformer_rnn.base_architecture(args)
+    args.char_cnn_params = getattr(args, "char_cnn_params", "[(50, 1), (100,2)]")
+    args.char_cnn_nonlinear_fn = getattr(args, "chr_cnn_nonlinear_fn", "relu")
+    args.char_cnn_num_highway_layers = getattr(args, "char_cnn_num_highway_layers", "2")
