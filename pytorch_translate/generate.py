@@ -16,6 +16,7 @@ from pytorch_translate import rnn  # noqa
 from pytorch_translate import transformer  # noqa
 from pytorch_translate import (
     beam_decode,
+    char_aware_hybrid,
     char_source_hybrid,
     char_source_model,
     char_source_transformer_model,
@@ -511,7 +512,7 @@ def get_parser_with_args():
         metavar="FILE",
         help=(
             "Same as --source-vocab-file except using characters. "
-            "(For use with char_source models only.)"
+            "(For use with char_source and char_aware models only.)"
         ),
     )
     generation_group.add_argument(
@@ -519,6 +520,15 @@ def get_parser_with_args():
         default="",
         metavar="FILE",
         help="Path to text file representing the Dictionary to use.",
+    )
+    generation_group.add_argument(
+        "--char-target-vocab-file",
+        default="",
+        metavar="FILE",
+        help=(
+            "Same as --target-vocab-file except using characters. "
+            "(For use with char_aware models only.)"
+        ),
     )
     generation_group.add_argument(
         "--source-text-file",

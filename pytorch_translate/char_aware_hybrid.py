@@ -74,6 +74,7 @@ class CharAwareHybridModel(char_source_hybrid.CharSourceHybridModel):
         word_lengths,
         prev_output_tokens,
         prev_output_chars,
+        prev_output_word_lengths=None,
     ):
         encoder_out = self.encoder(src_tokens, src_lengths, char_inds, word_lengths)
         decoder_out = self.decoder(
@@ -108,7 +109,6 @@ class CharAwareHybridModel(char_source_hybrid.CharSourceHybridModel):
             char_cnn_params=args.char_cnn_params,
             char_cnn_nonlinear_fn=args.char_cnn_nonlinear_fn,
             char_cnn_num_highway_layers=args.char_cnn_num_highway_layers,
-            char_cnn_output_dim=getattr(args, "char_cnn_output_dim", -1),
             use_pretrained_weights=False,
             finetune_pretrained_weights=False,
         )
