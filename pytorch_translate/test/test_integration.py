@@ -419,6 +419,57 @@ class TestTranslation(unittest.TestCase):
                     ],
                 )
 
+    def test_char_aware_hybrid(self):
+        with contextlib.redirect_stdout(StringIO()):
+            with tempfile.TemporaryDirectory("test_char_aware") as data_dir:
+                create_dummy_data(data_dir)
+                train_translation_model(
+                    data_dir,
+                    [
+                        "--arch",
+                        "char_aware_hybrid",
+                        "--char-embed-dim",
+                        "4",
+                        "--char-cnn-params",
+                        "[(10, 1), (20,2)]",
+                        "--char-cnn-nonlinear-fn",
+                        "relu",
+                        "--char-cnn-num-highway-layers",
+                        "2",
+                        "--char-source-max-vocab-size",
+                        "26",
+                        "--char-target-max-vocab-size",
+                        "26",
+                        "--encoder-embed-dim",
+                        "8",
+                        "--encoder-ffn-embed-dim",
+                        "16",
+                        "--encoder-attention-heads",
+                        "4",
+                        "--encoder-layers",
+                        "3",
+                        "--decoder-embed-dim",
+                        "8",
+                        "--decoder-attention-heads",
+                        "4",
+                        "--decoder-layers",
+                        "2",
+                        "--decoder-lstm-units",
+                        "16",
+                        "--decoder-out-embed-dim",
+                        "8",
+                    ],
+                )
+                generate_main(
+                    data_dir,
+                    [
+                        "--char-source-vocab-file",
+                        os.path.join(data_dir, "char-src-dictionary-in.txt"),
+                        "--char-target-vocab-file",
+                        os.path.join(data_dir, "char-tgt-dictionary-in.txt"),
+                    ],
+                )
+
     def test_semi_supervised_rnn(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_rnn") as data_dir:

@@ -100,11 +100,14 @@ class PytorchTranslateTask(FairseqTask):
             "dataset_upsampling / dataset_relative_ratio could be specified.",
         )
 
-    def __init__(self, args, src_dict, tgt_dict, char_source_dict=None):
+    def __init__(
+        self, args, src_dict, tgt_dict, char_source_dict=None, char_target_dict=None
+    ):
         super().__init__(args)
         self.src_dict = src_dict
         self.tgt_dict = tgt_dict
         self.char_source_dict = char_source_dict
+        self.char_target_dict = char_target_dict
 
     def build_model(self, args):
         # set defaults for old model checkpoints
@@ -145,7 +148,24 @@ class PytorchTranslateTask(FairseqTask):
         else:
             char_source_dict = None
 
-        return cls(args, source_dict, target_dict, char_source_dict)
+        use_char_target = (args.char_target_vocab_file != "") or (
+            getattr(args, "arch", "") in constants.ARCHS_FOR_CHAR_TARGET
+        )
+        if use_char_target:
+            char_target_dict = pytorch_translate_dictionary.Dictionary.load(
+                args.char_target_vocab_file
+            )
+            args.char_target_dict_size = len(char_target_dict)
+        else:
+            char_target_dict = None
+
+        return cls(
+            args,
+            src_dict=source_dict,
+            tgt_dict=target_dict,
+            char_source_dict=char_source_dict,
+            char_target_dict=char_target_dict,
+        )
 
     def _load_dataset_single_path(
         self,
@@ -169,9 +189,15 @@ class PytorchTranslateTask(FairseqTask):
             print("Starting to load binarized data files.", flush=True)
         data_utils.validate_corpus_exists(corpus=corpus, split=split, is_npz=is_npz)
 
-        dst_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
-            corpus.target.data_file, is_npz=is_npz
-        )
+        if self.char_target_dict is not None:
+            dst_dataset = char_data.InMemoryNumpyWordCharDataset.create_from_file(
+                corpus.target.data_file
+            )
+        else:
+            dst_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
+                corpus.target.data_file, is_npz=is_npz
+            )
+
         if getattr(self.args, "reverse_target", None):
             dst_dataset.reverse()
         weights_dataset = None
@@ -183,7 +209,12 @@ class PytorchTranslateTask(FairseqTask):
             src_dataset = char_data.InMemoryNumpyWordCharDataset.create_from_file(
                 corpus.source.data_file
             )
-            self.datasets[split] = char_data.LanguagePairSourceCharDataset(
+            char_data_class = (
+                char_data.LanguagePairCharDataset
+                if self.char_target_dict is not None
+                else char_data.LanguagePairSourceCharDataset
+            )
+            self.datasets[split] = char_data_class(
                 src=src_dataset,
                 src_sizes=src_dataset.sizes,
                 src_dict=self.source_dictionary,
@@ -237,15 +268,19 @@ class PytorchTranslateTask(FairseqTask):
         datasets = OrderedDict()
         for key in corpora_map.src_files:
             src, tgt = corpora_map.src_files[key], corpora_map.tgt_files[key]
-            tgt_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
-                tgt, is_npz=is_npz
-            )
+            if self.char_source_dict is not None:
+                tgt_dataset = char_data.InMemoryNumpyWordCharDataset.create_from_file(
+                    tgt
+                )
+            else:
+                tgt_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
+                    tgt, is_npz=is_npz
+                )
 
             if self.char_source_dict is not None:
                 src_dataset = char_data.InMemoryNumpyWordCharDataset.create_from_file(
                     src
                 )
-
             else:
                 src_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
                     src, is_npz=is_npz
@@ -259,7 +294,12 @@ class PytorchTranslateTask(FairseqTask):
                     noiser=noiser[key],
                 )
             if self.char_source_dict is not None:
-                datasets[key] = char_data.LanguagePairSourceCharDataset(
+                char_data_class = (
+                    char_data.LanguagePairCharDataset
+                    if self.char_target_dict is not None
+                    else char_data.LanguagePairSourceCharDataset
+                )
+                datasets[key] = char_data_class(
                     src=src_dataset,
                     src_sizes=src_sizes,
                     src_dict=self.source_dictionary,
@@ -425,20 +465,30 @@ class PytorchTranslateTask(FairseqTask):
         append_eos: Optional[bool] = False,
         reverse_source: Optional[bool] = True,
     ):
-        dst_dataset = data.IndexedRawTextDataset(
-            path=target_text_file,
-            dictionary=self.target_dictionary,
-            # We always append EOS to the target sentence since we still want
-            # the model to output an indication the sentence has finished, even
-            # if we don't append the EOS symbol to the source sentence
-            # (to prevent the model from misaligning UNKs or other words
-            # to the frequently occurring EOS).
-            append_eos=True,
-            # We don't reverse the order of the target sentence, since
-            # even if the source sentence is fed to the model backwards,
-            # we still want the model to start outputting from the first word.
-            reverse_order=False,
-        )
+        if self.char_target_dict is not None:
+            dst_dataset = char_data.InMemoryNumpyWordCharDataset()
+            dst_dataset.parse(
+                path=target_text_file,
+                word_dict=self.target_dictionary,
+                char_dict=self.char_target_dict,
+                reverse_order=False,
+                append_eos=True,
+            )
+        else:
+            dst_dataset = data.IndexedRawTextDataset(
+                path=target_text_file,
+                dictionary=self.target_dictionary,
+                # We always append EOS to the target sentence since we still want
+                # the model to output an indication the sentence has finished, even
+                # if we don't append the EOS symbol to the source sentence
+                # (to prevent the model from misaligning UNKs or other words
+                # to the frequently occurring EOS).
+                append_eos=True,
+                # We don't reverse the order of the target sentence, since
+                # even if the source sentence is fed to the model backwards,
+                # we still want the model to start outputting from the first word.
+                reverse_order=False,
+            )
 
         if self.char_source_dict is not None:
             src_dataset = char_data.InMemoryNumpyWordCharDataset()
@@ -449,7 +499,12 @@ class PytorchTranslateTask(FairseqTask):
                 reverse_order=reverse_source,
                 append_eos=append_eos,
             )
-            self.datasets[split] = char_data.LanguagePairSourceCharDataset(
+            char_data_class = (
+                char_data.LanguagePairCharDataset
+                if self.char_target_dict is not None
+                else char_data.LanguagePairSourceCharDataset
+            )
+            self.datasets[split] = char_data_class(
                 src=src_dataset,
                 src_sizes=src_dataset.sizes,
                 src_dict=self.source_dictionary,

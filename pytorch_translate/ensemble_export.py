@@ -42,6 +42,7 @@ except ImportError:
 
 
 from pytorch_translate import (  # noqa; noqa
+    char_aware_hybrid,
     char_source_hybrid,
     char_source_model,
     char_source_transformer_model,
