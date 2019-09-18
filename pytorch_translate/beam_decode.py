@@ -386,6 +386,7 @@ class SequenceGenerator(object):
             return num_finished
 
         reorder_state = None
+        possible_translation_tokens = None
         for step in range(maxlen + 1):  # one extra step for EOS marker
             # reorder decoder internal states based on the prev choice of beams
             if reorder_state is not None:
@@ -396,7 +397,10 @@ class SequenceGenerator(object):
                         )
             # Run decoder for one step
             logprobs, avg_attn, possible_translation_tokens = self._decode(
-                tokens[:, : step + 1], encoder_outs, incremental_states
+                tokens[:, : step + 1],
+                encoder_outs,
+                incremental_states,
+                possible_translation_tokens,
             )
 
             logprobs[:, self.pad] = -math.inf  # never select pad
@@ -703,7 +707,9 @@ class SequenceGenerator(object):
                 avg_probs.add_(mapped_probs)
         return avg_probs, possible_translation_tokens
 
-    def _decode(self, tokens, encoder_outs, incremental_states):
+    def _decode(
+        self, tokens, encoder_outs, incremental_states, possible_translation_tokens=None
+    ):
         avg_attn = None
         all_translation_tokens = []
         all_log_probs = []
@@ -711,8 +717,20 @@ class SequenceGenerator(object):
             self.model_weights, self.models, encoder_outs
         ):
             with torch.no_grad():
+                if (
+                    possible_translation_tokens is not None
+                    and len(possible_translation_tokens.shape) > 1
+                ):
+                    # reverse beam replication
+                    possible_translation_tokens = possible_translation_tokens[0]
+
                 decoder_out = list(
-                    model.decoder(tokens, encoder_out, incremental_states[model])
+                    model.decoder(
+                        tokens,
+                        encoder_out,
+                        incremental_states[model],
+                        possible_translation_tokens=possible_translation_tokens,
+                    )
                 )
                 decoder_out[0] = decoder_out[0][:, -1, :]
                 if self.temperature != 1.0:
