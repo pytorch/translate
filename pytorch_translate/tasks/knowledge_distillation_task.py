@@ -19,12 +19,15 @@ from pytorch_translate.tasks.pytorch_translate_task import PytorchTranslateTask
 
 @register_task(constants.KNOWLEDGE_DISTILLATION_TASK)
 class PytorchKnowledgeDistillationTask(PytorchTranslateTask):
-    def __init__(self, args, src_dict, tgt_dict, char_source_dict=None):
+    def __init__(
+        self, args, src_dict, tgt_dict, char_source_dict=None, char_target_dict=None
+    ):
         super().__init__(
             args,
             src_dict=src_dict,
             tgt_dict=tgt_dict,
             char_source_dict=char_source_dict,
+            char_target_dict=char_target_dict,
         )
         self.top_k_probs_binary_file = args.top_k_probs_binary_file
         self.top_k_teacher_tokens = args.top_k_teacher_tokens
