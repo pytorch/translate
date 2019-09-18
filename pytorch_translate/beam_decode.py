@@ -424,7 +424,8 @@ class SequenceGenerator(object):
             logprobs += self.word_reward
             logprobs[:, self.eos] -= self.word_reward
             # Record attention scores
-            attn[:, :, step + 1].copy_(avg_attn)
+            if avg_attn is not None:
+                attn[:, :, step + 1].copy_(avg_attn)
 
             cand_scores = buffer("cand_scores", type_of=scores)
             cand_indices = buffer("cand_indices")
