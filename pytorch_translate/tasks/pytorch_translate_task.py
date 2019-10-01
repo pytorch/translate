@@ -268,7 +268,7 @@ class PytorchTranslateTask(FairseqTask):
         datasets = OrderedDict()
         for key in corpora_map.src_files:
             src, tgt = corpora_map.src_files[key], corpora_map.tgt_files[key]
-            if self.char_source_dict is not None:
+            if self.char_target_dict is not None:
                 tgt_dataset = char_data.InMemoryNumpyWordCharDataset.create_from_file(
                     tgt
                 )
