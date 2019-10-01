@@ -1284,6 +1284,17 @@ class BeamSearch(torch.jit.ScriptModule):
         )
         src_tokens = torch.LongTensor(np.ones((length, 1), dtype="int64"))
         src_lengths = torch.IntTensor(np.array([length], dtype="int32"))
+        if isinstance(models[0], CharSourceModel):
+            word_length = 3
+            char_inds = torch.LongTensor(
+                np.ones((1, length, word_length), dtype="int64")
+            )
+            word_lengths = torch.IntTensor(
+                np.array([word_length] * length, dtype="int32")
+            ).reshape((1, length))
+        else:
+            char_inds = None
+            word_lengths = None
         return cls(
             models,
             tgt_dict,
@@ -1293,6 +1304,8 @@ class BeamSearch(torch.jit.ScriptModule):
             word_reward=word_reward,
             unk_reward=unk_reward,
             quantize=True,
+            char_inds=char_inds,
+            word_lengths=word_lengths,
         )
 
     def save_to_db(self, output_path):
