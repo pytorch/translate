@@ -53,20 +53,6 @@ class DualLearningTask(FairseqTask):
             help="Number of updates before training with mono",
         )
         parser.add_argument(
-            "--train-mono-source-binary-path",
-            default="",
-            metavar="FILE",
-            help="Path for the binary file containing monolingual source "
-            "training examples.",
-        )
-        parser.add_argument(
-            "--train-mono-target-binary-path",
-            default="",
-            metavar="FILE",
-            help="Path for the binary file containing monolingual target "
-            "training examples.",
-        )
-        parser.add_argument(
             "--forward-train-source-binary-path",
             default="",
             metavar="FILE",
@@ -124,6 +110,21 @@ class DualLearningTask(FairseqTask):
         )
         parser.add_argument(
             "--remove-eos-at-src", action="store_true", help="If True, remove eos"
+        )
+        parser.add_argument(
+            "--pretrained-forward-checkpoint",
+            default="",
+            help="Load pretrained forward model",
+        )
+        parser.add_argument(
+            "--pretrained-backward-checkpoint",
+            default="",
+            help="Load pretrained backward model",
+        )
+        parser.add_argument(
+            "--reconstruction-bleu-order",
+            default=2,
+            help="BLEU score order to use as reward for reconstruction",
         )
 
     def __init__(

@@ -3,6 +3,7 @@
 import logging
 
 import torch.nn as nn
+from fairseq import checkpoint_utils
 from fairseq.models import BaseFairseqModel, register_model
 from pytorch_translate import rnn
 from pytorch_translate.rnn import (
@@ -146,6 +147,14 @@ class RNNDualLearningModel(DualLearningModel):
             args, task.primal_src_dict, task.primal_tgt_dict
         )
         primal_model = rnn.RNNModel(primal_task, primal_encoder, primal_decoder)
+        if args.pretrained_forward_checkpoint:
+            pretrained_forward_state = checkpoint_utils.load_checkpoint_to_cpu(
+                args.pretrained_forward_checkpoint
+            )
+            primal_model.load_state_dict(pretrained_forward_state["model"], strict=True)
+            print(
+                f"Loaded pretrained primal model from {args.pretrained_forward_checkpoint}"
+            )
 
         encoder_embed_tokens, decoder_embed_tokens = RNNModel.build_embed_tokens(
             args, task.dual_src_dict, task.dual_tgt_dict
@@ -181,6 +190,15 @@ class RNNDualLearningModel(DualLearningModel):
         )
         dual_task = PytorchTranslateTask(args, task.dual_src_dict, task.dual_tgt_dict)
         dual_model = rnn.RNNModel(dual_task, dual_encoder, dual_decoder)
+        if args.pretrained_backward_checkpoint:
+            pretrained_backward_state = checkpoint_utils.load_checkpoint_to_cpu(
+                args.pretrained_backward_checkpoint
+            )
+            dual_model.load_state_dict(pretrained_backward_state["model"], strict=True)
+            print(
+                f"Loaded pretrained dual model from {args.pretrained_backward_checkpoint}"
+            )
+
         # TODO (T36875783): instantiate a langauge model
         lm_model = None
         return RNNDualLearningModel(args, task, primal_model, dual_model, lm_model)
