@@ -1061,7 +1061,9 @@ class BeamSearch(torch.jit.ScriptModule):
         self.word_reward = word_reward
         self.unk_reward = unk_reward
 
-        if isinstance(self.models[0], CharSourceModel):
+        if isinstance(self.models[0], CharSourceModel) or isinstance(
+            self.models[0], char_source_transformer_model.CharSourceTransformerModel
+        ):
             encoder_ens = CharSourceEncoderEnsemble(self.models)
         else:
             encoder_ens = EncoderEnsemble(self.models)
@@ -1071,7 +1073,9 @@ class BeamSearch(torch.jit.ScriptModule):
             encoder_ens = torch.jit.quantized.quantize_linear_modules(encoder_ens)
             encoder_ens = torch.jit.quantized.quantize_rnn_cell_modules(encoder_ens)
 
-        if isinstance(self.models[0], CharSourceModel):
+        if isinstance(self.models[0], CharSourceModel) or isinstance(
+            self.models[0], char_source_transformer_model.CharSourceTransformerModel
+        ):
             self.is_char_source = True
             enc_inputs = (src_tokens, src_lengths, char_inds, word_lengths)
             example_encoder_outs = encoder_ens(*enc_inputs)
@@ -1284,7 +1288,9 @@ class BeamSearch(torch.jit.ScriptModule):
         )
         src_tokens = torch.LongTensor(np.ones((length, 1), dtype="int64"))
         src_lengths = torch.IntTensor(np.array([length], dtype="int32"))
-        if isinstance(models[0], CharSourceModel):
+        if isinstance(models[0], CharSourceModel) or isinstance(
+            models[0], char_source_transformer_model.CharSourceTransformerModel
+        ):
             word_length = 3
             char_inds = torch.LongTensor(
                 np.ones((1, length, word_length), dtype="int64")
