@@ -25,7 +25,7 @@ class UnsupervisedCriterion(FairseqCriterion):
         self.remove_eos_at_src = not args.append_eos_to_source
         self.task = task
 
-    def _generate_translation(self, model, tgt_dict, sample, **kwargs):
+    def _generate_translation(self, model, tgt_dict, sample, beam_size, **kwargs):
         translator_class = beam_decode.SequenceGenerator
         translator = translator_class(models=[model], tgt_dict=tgt_dict, **kwargs)
         translator.cuda()
@@ -47,13 +47,21 @@ class UnsupervisedCriterion(FairseqCriterion):
         with torch.no_grad():
             hypos = translator.generate(
                 encoder_input=encoder_input,
-                beam_size=self.args.beam,
+                beam_size=beam_size,
                 maxlen=int(self.args.max_len_a * srclen + self.args.max_len_b),
             )
             for i, id in enumerate(s["id"]):
                 # remove padding
                 src = utils.strip_pad(input["src_tokens"][i, :], tgt_dict.pad())
                 yield id, src, hypos[i]
+
+    def _maybe_reverse_source(self, src_tokens):
+        return torch.flip(src_tokens, (0,)) if self.args.reverse_source else src_tokens
+
+    def _maybe_add_eos(self, tgt_tokens, eos_index):
+        if tgt_tokens[-1] != eos_index:
+            return torch.cat([tgt_tokens.cpu(), torch.LongTensor([eos_index])])
+        return tgt_tokens
 
     def forward(
         self,
@@ -83,68 +91,95 @@ class UnsupervisedCriterion(FairseqCriterion):
         """
         # Generate translations
         nbest_translations = self._generate_translation(
-            forward_model, tgt_dict, sample, **generate_kwargs
+            forward_model, tgt_dict, sample, self.args.beam, **generate_kwargs
         )
 
         forward_samples = []
-        backward_samples = []
+        backward_samples = {}
         # TODO (T36875783): load pretrained lm to score
-        lm_score = 0.5
-        eos_index = tgt_dict.eos()
-        for id, src, hypos in nbest_translations:
+        lm_score = 0.0
+        for sample_id, src_processed, tgt_hypos in nbest_translations:
             # compute each model's reward
             forward_reward = lm_score
             # construct the sample; compute the ce loss
             # backward_samples need to handle EOS
-            original_src = src
-            bt_src = hypos[0]["tokens"]
-            # add EOS to the target, i.e. original source, since it'll be used
-            # as target
-            if original_src[-1] != eos_index:
-                original_src = torch.cat(
-                    [original_src.cpu(), torch.LongTensor([eos_index])]
-                )
-            # remove EOS in the src is optional
-            if self.remove_eos_at_src:
-                bt_src = bt_src[:-1]
-            backward_sample = {
-                "id": id,
-                "source": bt_src.cpu(),  # first hypo is best hypo
-                "target": original_src.cpu(),
-                "weight": 1.0 - self.alpha,
-            }
-            backward_samples.append(backward_sample)
+            src = self._maybe_reverse_source(src_processed)
+            src = self._maybe_add_eos(src, src_dict.eos())
+            assert len(tgt_hypos) == self.args.beam
+            for tgt_hypo_i, tgt_hypo_struct in enumerate(tgt_hypos):
+                dual_sample_id = sample_id.item() * self.args.beam + tgt_hypo_i
+                tgt_hypo = tgt_hypo_struct["tokens"]
+                # add EOS to the target, i.e. original source, since it'll be used
+                # as target
+                # remove EOS in the src is optional
+                if self.remove_eos_at_src:
+                    tgt_hypo = tgt_hypo[:-1]
+                tgt_hypo_processed = self._maybe_reverse_source(tgt_hypo)
+
+                backward_sample = {
+                    "id": dual_sample_id,
+                    "source": tgt_hypo_processed.cpu(),
+                    "target": src.cpu(),
+                    "weight": 1.0 - self.alpha,
+                }
+                assert dual_sample_id not in backward_samples
+                backward_samples[dual_sample_id] = backward_sample
+
+        bwd_model_input = utils.move_to_cuda(
+            WeightedLanguagePairDataset.collate(
+                samples=list(backward_samples.values()),
+                pad_idx=src_dict.pad(),
+                eos_idx=src_dict.eos(),
+            )
+        )
+        reconstructed_source = self._generate_translation(
+            backward_model, src_dict, bwd_model_input, 1, **generate_kwargs
+        )
+        for dual_sample_id, tgt_hypo_processed, src_hypos in reconstructed_source:
+            backward_sample = backward_samples[dual_sample_id.item()]
+            src = backward_sample["target"]
+            tgt_hypo = self._maybe_reverse_source(tgt_hypo_processed)
+
             # use bleu score as reward
-            bwd_model_input = utils.move_to_cuda(
-                WeightedLanguagePairDataset.collate(
-                    samples=[backward_sample],
-                    pad_idx=src_dict.pad(),
-                    eos_idx=src_dict.eos(),
-                )
-            )
-            reconstructed_source = self._generate_translation(
-                backward_model, src_dict, bwd_model_input, **generate_kwargs
-            )
             scorer = bleu.Scorer(src_dict.pad(), src_dict.eos(), src_dict.unk())
-            for _, _, x_hypos in reconstructed_source:
-                x_hat = x_hypos[0]["tokens"][:-1]
-                scorer.add(original_src.int().cpu(), x_hat.int().cpu())
-            backward_reward = scorer.score(order=4) / 100.0
+            assert len(src_hypos) == 1
+            src_hypo = src_hypos[0]["tokens"][:-1]
+            scorer.add(src.int().cpu(), src_hypo.int().cpu())
+            backward_reward = (
+                scorer.score(order=self.args.reconstruction_bleu_order) / 100.0
+            )
+
+            original_stc = " ".join(src_dict[tid] for tid in src.tolist())
+            translated_stc = " ".join(tgt_dict[tid] for tid in tgt_hypo)
+            recon_stc = " ".join(src_dict[tid] for tid in src_hypo.tolist())
+
+            if int(dual_sample_id / self.args.beam) % 100 == 0:
+                print("--------")
+                print(
+                    "original sentence:",
+                    original_stc.replace(self.args.source_bpe_end_marker, ""),
+                )
+                print(
+                    "translated sentence:",
+                    translated_stc.replace(self.args.source_bpe_end_marker, ""),
+                )
+                print(
+                    "reconstructed sentence:",
+                    recon_stc.replace(self.args.source_bpe_end_marker, ""),
+                )
+                print("reward:", backward_reward)
+                print("--------")
 
             total_reward = (
                 self.alpha * forward_reward + (1.0 - self.alpha) * backward_reward
             )
-
-            assert hypos[0]["tokens"][-1] == eos_index, (
-                f"Expected generated translation to have eos (id: "
-                f"{eos_index}) at end, but instead found token id "
-                f"{hypos[0]['tokens'][-1]} at end."
-            )
+            src_processed = self._maybe_reverse_source(src)
+            tgt_hypo = self._maybe_add_eos(tgt_hypo, tgt_dict.eos())
             forward_samples.append(
                 {
-                    "id": id,
-                    "source": src.cpu(),
-                    "target": hypos[0]["tokens"].cpu(),  # first hypo is best hypo
+                    "id": dual_sample_id,
+                    "source": src_processed.cpu(),
+                    "target": tgt_hypo.cpu(),  # first hypo is best hypo
                     "weight": total_reward,
                 }
             )
@@ -172,14 +207,7 @@ class UnsupervisedCriterion(FairseqCriterion):
 
         backward_model.train()
         backward_loss, sample_size, logging_output = self.task.criterion(
-            backward_model,
-            utils.move_to_cuda(
-                WeightedLanguagePairDataset.collate(
-                    samples=backward_samples,
-                    pad_idx=src_dict.pad(),
-                    eos_idx=src_dict.eos(),
-                )
-            ),
+            backward_model, bwd_model_input
         )
 
         agg_loss += backward_loss.data.item()
