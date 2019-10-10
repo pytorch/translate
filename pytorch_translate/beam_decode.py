@@ -7,7 +7,6 @@ import torch
 from fairseq import search, utils
 from fairseq.models import FairseqIncrementalDecoder
 from pytorch_translate import utils as pytorch_translate_utils
-from pytorch_translate.transformer_aan import TransformerAANDecoder
 from torch import Tensor
 
 
