@@ -55,6 +55,26 @@ class ModelParamsDict:
             self.decoder_lstm_units = 13
             self.decoder_layers = 2
             self.decoder_attention_heads = 2
+        elif arch == "char_source_transformer":
+            self.arch = "char_source_transformer"
+            self.encoder_embed_dim = 10
+            self.encoder_ffn_embed_dim = 16
+            self.encoder_layers = 2
+            self.encoder_attention_heads = 2
+            self.decoder_embed_dim = 10
+            self.decoder_ffn_embed_dim = 16
+            self.decoder_layers = 2
+            self.decoder_attention_heads = 2
+        elif arch == "char_source_hybrid":
+            self.arch = "char_source_hybrid"
+            self.encoder_embed_dim = 6
+            self.encoder_ffn_embed_dim = 16
+            self.encoder_layers = 2
+            self.encoder_attention_heads = 2
+            self.decoder_embed_dim = 10
+            self.decoder_lstm_units = 13
+            self.decoder_layers = 2
+            self.decoder_attention_heads = 2
         elif arch == "char_aware_hybrid":
             self.arch = "char_aware_hybrid"
             self.attention_dropout = 0

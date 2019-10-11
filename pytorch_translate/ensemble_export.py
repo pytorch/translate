@@ -8,7 +8,6 @@ from collections import defaultdict
 from typing import List, Optional, Tuple
 
 import numpy as np
-import onnx
 import torch
 import torch.jit
 import torch.jit.quantized
@@ -22,14 +21,12 @@ from caffe2.python.predictor import predictor_exporter
 from fairseq import tasks, utils
 from fairseq.models import ARCH_MODEL_REGISTRY
 from pytorch_translate.beam_decode import BeamDecode
-from pytorch_translate.char_source_model import CharSourceModel
 from pytorch_translate.data import dictionary
 from pytorch_translate.research.knowledge_distillation import (
     dual_decoder_kd_model,
     hybrid_dual_decoder_kd_model,
 )
 from pytorch_translate.tasks.pytorch_translate_task import DictionaryHolderTask
-from pytorch_translate.transformer import TransformerEncoder
 from pytorch_translate.word_prediction import word_prediction_model
 from torch import Tensor
 from torch.onnx import ExportTypes, OperatorExportTypes
@@ -1061,8 +1058,12 @@ class BeamSearch(torch.jit.ScriptModule):
         self.word_reward = word_reward
         self.unk_reward = unk_reward
 
-        if isinstance(self.models[0], CharSourceModel) or isinstance(
-            self.models[0], char_source_transformer_model.CharSourceTransformerModel
+        if (
+            isinstance(self.models[0], char_source_model.CharSourceModel)
+            or isinstance(
+                self.models[0], char_source_transformer_model.CharSourceTransformerModel
+            )
+            or isinstance(self.models[0], char_source_hybrid.CharSourceHybridModel)
         ):
             encoder_ens = CharSourceEncoderEnsemble(self.models)
         else:
@@ -1073,8 +1074,12 @@ class BeamSearch(torch.jit.ScriptModule):
             encoder_ens = torch.jit.quantized.quantize_linear_modules(encoder_ens)
             encoder_ens = torch.jit.quantized.quantize_rnn_cell_modules(encoder_ens)
 
-        if isinstance(self.models[0], CharSourceModel) or isinstance(
-            self.models[0], char_source_transformer_model.CharSourceTransformerModel
+        if (
+            isinstance(self.models[0], char_source_model.CharSourceModel)
+            or isinstance(
+                self.models[0], char_source_transformer_model.CharSourceTransformerModel
+            )
+            or isinstance(self.models[0], char_source_hybrid.CharSourceHybridModel)
         ):
             self.is_char_source = True
             enc_inputs = (src_tokens, src_lengths, char_inds, word_lengths)
@@ -1288,8 +1293,12 @@ class BeamSearch(torch.jit.ScriptModule):
         )
         src_tokens = torch.LongTensor(np.ones((length, 1), dtype="int64"))
         src_lengths = torch.IntTensor(np.array([length], dtype="int32"))
-        if isinstance(models[0], CharSourceModel) or isinstance(
-            models[0], char_source_transformer_model.CharSourceTransformerModel
+        if (
+            isinstance(models[0], char_source_model.CharSourceModel)
+            or isinstance(
+                models[0], char_source_transformer_model.CharSourceTransformerModel
+            )
+            or isinstance(models[0], char_source_hybrid.CharSourceHybridModel)
         ):
             word_length = 3
             char_inds = torch.LongTensor(
