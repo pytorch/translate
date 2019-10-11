@@ -11,6 +11,7 @@ from fairseq.models import (
     FairseqIncrementalDecoder,
     register_model,
     register_model_architecture,
+    transformer as fairseq_transformer,
 )
 from fairseq.modules import (
     AdaptiveSoftmax,
@@ -300,16 +301,8 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
             else None
         )
 
-        self.embed_positions = (
-            PositionalEmbeddingCreator(
-                args.max_target_positions,
-                embed_dim,
-                padding_idx,
-                left_pad=left_pad,
-                learned=args.decoder_learned_pos,
-            )
-            if not args.no_token_positional_embeddings
-            else None
+        self.embed_positions = fairseq_transformer.PositionalEmbedding(
+            1024, embed_dim, padding_idx, learned=args.decoder_learned_pos
         )
 
         self.layers = nn.ModuleList([])
@@ -374,19 +367,13 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
     ):
         (encoder_x, src_tokens, encoder_padding_mask) = encoder_out
 
-        # embed positions
-        positions = (
-            self.embed_positions(
-                prev_output_tokens, incremental_state=incremental_state
-            )
-            if self.embed_positions is not None
-            else None
+        positions = self.embed_positions(
+            prev_output_tokens, incremental_state=incremental_state, timestep=timestep
         )
 
         if incremental_state is not None:
             prev_output_tokens = prev_output_tokens[:, -1:]
-            if positions is not None:
-                positions = positions[:, -1:]
+            positions = positions[:, -1:]
 
             if self.onnx_trace:
                 assert type(incremental_state) is list
@@ -425,8 +412,7 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
         if self.project_in_dim is not None:
             x = self.project_in_dim(x)
 
-        if positions is not None:
-            x += positions
+        x += positions
         x = F.dropout(x, p=self.dropout, training=self.training)
 
         # B x T x C -> T x B x C
