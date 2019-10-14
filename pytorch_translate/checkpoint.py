@@ -266,7 +266,7 @@ class CheckpointManager:
     ) -> Optional[str]:
         # Consider making a copy of each tensor here if we run into issues in
         # the future with callers later modifying the params passed in.
-        self._averaged_params = new_averaged_params
+        self.set_averaged_params(new_averaged_params=new_averaged_params)
 
         checkpoint_to_remove = None
         if (
@@ -282,6 +282,12 @@ class CheckpointManager:
         # even if the file gets copied to another name (ex: checkpoint_last.py).
         self._checkpoint_files.append(new_params_filename)
         return checkpoint_to_remove
+
+    def averaged_params(self) -> OrderedDict:
+        return self._averaged_params
+
+    def set_averaged_params(self, new_averaged_params: OrderedDict) -> None:
+        self._averaged_params = new_averaged_params
 
     def _remove_checkpoint(self, checkpoint_to_remove: Optional[str]):
         if checkpoint_to_remove:

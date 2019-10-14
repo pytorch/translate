@@ -654,6 +654,23 @@ def train(
     train_meter.stop()
     print(f"| done training in {train_meter.sum:.1f} seconds")
 
+    # If the model is a Char-aware hybrid model, precompute its character
+    # representations.
+    if type(trainer.get_model()) is char_aware_hybrid.CharAwareHybridModel:
+        char_model: char_aware_hybrid.CharAwareHybridModel = task.build_model(args)
+        char_model.load_state_dict(checkpoint_manager.averaged_params())
+        char_model.decoder.precompute_char_representations(
+            char_dict=task.char_target_dict,
+            embed_bytes=getattr(args, "embed_bytes", False),
+        )
+        checkpoint_manager.set_averaged_params(
+            new_averaged_params=char_model.state_dict()
+        )
+        checkpoint_manager.save_best_averaged_checkpoint(
+            args=args, trainer=trainer, extra_state=extra_state
+        )
+        print("Saved the character-aware model after precomputation.")
+
     # the checkpoint manager may be None
     if checkpoint_manager:
         checkpoint_manager.remove_all_checkpoints()
