@@ -222,17 +222,11 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
         summed with their corresponding character representations. Thus the model
         will look like the same as a word-based decoder.
         """
-        if self.training:
-            x, prev_output_tokens = self._embed_prev_outputs(
-                prev_output_tokens=prev_output_tokens,
-                incremental_state=incremental_state,
-                prev_output_chars=prev_output_chars,
-            )
-        else:
-            x, prev_output_tokens = super()._embed_prev_outputs(
-                prev_output_tokens=prev_output_tokens,
-                incremental_state=incremental_state,
-            )
+        x, prev_output_tokens = self._embed_prev_outputs(
+            prev_output_tokens=prev_output_tokens,
+            incremental_state=incremental_state,
+            prev_output_chars=prev_output_chars,
+        )
         return self._forward_given_embeddings(
             embed_out=x,
             prev_output_tokens=prev_output_tokens,
