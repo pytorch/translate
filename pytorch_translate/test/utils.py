@@ -191,6 +191,8 @@ class ModelParamsDict:
         self.length_penalty = 0.0
         self.use_bmuf = False
         self.no_save_optimizer_state = False
+        self.fast_stat_sync = False
+        self.empty_cache_freq = 0
         # Rescoring params
         self.enable_rescoring = False
         self.l2r_model_path = None
