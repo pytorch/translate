@@ -224,6 +224,8 @@ def _generate_score(models, args, task, dataset):
 
             if getattr(args, "translation_output_file", False):
                 translated_sentences[trans_info.sample_id] = trans_info.hypo_str
+            if getattr(args, "translation_probs_file", False):
+                translated_scores[trans_info.sample_id] = trans_info.hypo_score
             if getattr(args, "hypotheses_export_path", False):
                 hypos_list.append(trans_info.hypos)
             if collect_output_hypos:
@@ -274,13 +276,19 @@ def _generate_score(models, args, task, dataset):
         pickle.dump(translation_info_list, f)
         f.close()
 
-    # If applicable, save the translations and hypos to the output file
-    # For eg. external evaluation
+    # If applicable, save the translations and scores to the output files
+    # These two ouputs are used in dual learning for weighted backtranslation
     if getattr(args, "translation_output_file", False):
         with open(args.translation_output_file, "w") as out_file:
             for hypo_str in translated_sentences:
                 print(hypo_str, file=out_file)
 
+    if getattr(args, "translation_probs_file", False):
+        with open(args.translation_probs_file, "w") as out_file:
+            for hypo_score in translated_scores:
+                print(np.exp(hypo_score), file=out_file)
+
+    # For eg. external evaluation
     if getattr(args, "hypotheses_export_path", False):
         with open(args.hypotheses_export_path, "w") as out_file:
             for hypos in hypos_list:
@@ -291,11 +299,6 @@ def _generate_score(models, args, task, dataset):
                         ),
                         file=out_file,
                     )
-
-    if getattr(args, "translation_probs_file", False):
-        with open(args.translation_probs_file, "w") as out_file:
-            for hypo_score in translated_scores:
-                print(np.exp(hypo_score), file=out_file)
 
     if oracle_scorer is not None:
         print(f"| Oracle BLEU (best hypo in beam): {oracle_scorer.result_string()}")
