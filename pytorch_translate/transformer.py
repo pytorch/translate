@@ -407,6 +407,17 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
         self.onnx_trace = False
 
+        # Use quantizable nn.Linear for output projection instead of F.linear
+        self.output_projection = None
+        if self.vocab_reduction_module is None:
+            self.output_projection = nn.Linear(
+                self.embed_out.shape[1], self.embed_out.shape[0]
+            )
+            if self.share_input_output_embed:
+                self.output_projection.weight = self.embed_tokens.weight
+            else:
+                self.output_projection.weight = self.embed_out
+
     def prepare_for_onnx_export_(self):
         self.onnx_trace = True
 
@@ -493,7 +504,11 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 dim=0, index=possible_translation_tokens
             )
 
-        logits = F.linear(x, output_weights)
+        # Use quantizable self.output_projection if vocab reduction is not used
+        if self.vocab_reduction_module is None:
+            logits = self.output_projection(x)
+        else:
+            logits = F.linear(x, output_weights)
 
         if self.onnx_trace:
             return logits, attn, possible_translation_tokens, state_outputs
