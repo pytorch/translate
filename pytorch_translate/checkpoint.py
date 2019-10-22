@@ -8,14 +8,9 @@ import torch
 from fairseq import checkpoint_utils
 from pytorch_translate import constants
 
-
-def save_checkpoint_atomic(trainer, final_filename, extra_state):
-    """Wrapper around trainer.save_checkpoint to make save atomic."""
-    path, filename = os.path.split(final_filename)
-    temp_filename = os.path.join(path, "." + filename + ".tmp")
-
-    trainer.save_checkpoint(temp_filename, extra_state)
-    os.rename(temp_filename, final_filename)
+# TODO(T55884145): Replace with
+# from fvcore.common.file_io import PathManager
+from pytorch_translate.file_io import PathManager
 
 
 def load_existing_checkpoint(
@@ -24,7 +19,7 @@ def load_existing_checkpoint(
     loaded = False
     extra_state = None
 
-    if not os.path.isfile(checkpoint_path):
+    if not PathManager.isfile(checkpoint_path):
         print(
             f"| No existing checkpoint at {checkpoint_path}. "
             f"Starting training from scratch."
@@ -67,12 +62,13 @@ def load_to_cpu(path: str) -> Dict[str, Any]:
     to upgrade the state dict for backward compatibility - to make cases
     where we only care about loading the model params easier to unit test.
     """
-    state = torch.load(
-        path,
-        map_location=(
-            lambda s, _: torch.serialization.default_restore_location(s, "cpu")
-        ),
-    )
+    with PathManager.open(path, "rb") as f:
+        state = torch.load(
+            f,
+            map_location=(
+                lambda s, _: torch.serialization.default_restore_location(s, "cpu")
+            ),
+        )
     return state
 
 
@@ -289,12 +285,15 @@ class CheckpointManager:
                 f"| Preparing to remove old checkpoint {checkpoint_to_remove}."
             )
             try:
-                os.remove(checkpoint_to_remove)
+                PathManager.rm(checkpoint_to_remove)
+                self.log_if_verbose(
+                    f"| Finished removing old checkpoint {checkpoint_to_remove}."
+                )
             except FileNotFoundError:
-                pass
-            self.log_if_verbose(
-                f"| Finished removing old checkpoint {checkpoint_to_remove}."
-            )
+                print(
+                    f"| Unable to find old checkpoint {checkpoint_to_remove} for removal",
+                    flush=True,
+                )
 
     def remove_all_checkpoints(self):
         """
@@ -353,19 +352,13 @@ class CheckpointManager:
         # corresponding to its epoch/offset, and another under the generic
         # "checkpoint_last.py" that we restore from in case training is
         # interrupted.
-        save_checkpoint_atomic(
-            trainer=trainer, final_filename=filename, extra_state=extra_state
-        )
+        trainer.save_checkpoint(filename, extra_state)
         # We update checkpoint_last.pt only after the new averaged checkpoint
         # and epoch/offset-named copy have been written - so that in case either
         # write fails, we'd still be able to resume from the previous
         # checkpoint_last.pt
-        save_checkpoint_atomic(
-            trainer=trainer,
-            final_filename=os.path.join(
-                args.save_dir, constants.LAST_CHECKPOINT_FILENAME
-            ),
-            extra_state=extra_state,
+        trainer.save_checkpoint(
+            os.path.join(args.save_dir, constants.LAST_CHECKPOINT_FILENAME), extra_state
         )
         self.log_if_verbose(
             f"| Finished saving checkpoints for epoch {epoch}, "

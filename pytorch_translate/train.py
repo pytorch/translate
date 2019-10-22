@@ -35,6 +35,10 @@ from pytorch_translate import (
 from pytorch_translate.data import dictionary as pytorch_translate_dictionary
 from pytorch_translate.dual_learning import dual_learning_criterion  # noqa
 from pytorch_translate.dual_learning import dual_learning_task  # noqa
+
+# TODO(T55884145): Replace with
+# from fvcore.common.file_io import PathManager
+from pytorch_translate.file_io import PathManager
 from pytorch_translate.research.deliberation_networks import (  # noqa
     deliberation_networks,
 )
@@ -322,7 +326,7 @@ def setup_training_model(args):
 def setup_training_state(args, trainer, task, epoch_itr):
     """Set up the directory for saving checkpoints.
     Load pretrained model if specified."""
-    os.makedirs(args.save_dir, exist_ok=True)
+    PathManager.mkdirs(args.save_dir)
 
     # If --restore-file is already present under --save-dir, use that one
     # instead of --pretrained-checkpoint-file. The idea is that
@@ -339,11 +343,11 @@ def setup_training_state(args, trainer, task, epoch_itr):
     # ignore previous directory args and just use the absolute path as is.
     checkpoint_path = os.path.join(args.save_dir, args.restore_file)
     restore_state = True
-    if os.path.isfile(checkpoint_path):
+    if PathManager.isfile(checkpoint_path):
         print(
             f"| Using --save-dir={args.save_dir}, --restore-file={args.restore_file}."
         )
-    elif args.pretrained_checkpoint_file and os.path.isfile(
+    elif args.pretrained_checkpoint_file and PathManager.isfile(
         args.pretrained_checkpoint_file
     ):
         checkpoint_path = args.pretrained_checkpoint_file
@@ -354,7 +358,7 @@ def setup_training_state(args, trainer, task, epoch_itr):
         )
 
     extra_state = default_extra_state(args)
-    if not os.path.isfile(checkpoint_path) and args.multi_model_restore_files:
+    if not PathManager.isfile(checkpoint_path) and args.multi_model_restore_files:
         print(f"| Restoring individual models from {args.multi_model_restore_files}")
         multi_model.import_individual_models(args.multi_model_restore_files, trainer)
     else:

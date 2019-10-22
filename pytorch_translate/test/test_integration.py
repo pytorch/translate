@@ -18,6 +18,7 @@ from pytorch_translate import generate, models, train  # noqa need to load model
 from pytorch_translate.test.utils import (
     create_dummy_data,
     create_dummy_multilingual_data,
+    generate_main,
     train_translation_model,
 )
 
@@ -753,37 +754,6 @@ class TestTranslation(unittest.TestCase):
                     ],
                     criterion=["--criterion", "legacy_masked_lm_loss"],
                 )
-
-
-def generate_main(data_dir, extra_flags=None):
-    parser = generate.get_parser_with_args()
-    args = options.parse_args_and_arch(
-        parser,
-        [
-            "--source-vocab-file",
-            os.path.join(data_dir, "dictionary-in.txt"),
-            "--target-vocab-file",
-            os.path.join(data_dir, "dictionary-out.txt"),
-            "--source-text-file",
-            os.path.join(data_dir, "test.in"),
-            "--target-text-file",
-            os.path.join(data_dir, "test.out"),
-            "--path",
-            os.path.join(data_dir, "checkpoint_last.pt"),
-            "--beam",
-            "3",
-            "--length-penalty",
-            "0.0",
-            "--batch-size",
-            "64",
-            "--max-len-b",
-            "5",
-            "--no-progress-bar",
-        ]
-        + (extra_flags or []),
-    )
-    generate.validate_args(args)
-    generate.generate(args)
 
 
 if __name__ == "__main__":

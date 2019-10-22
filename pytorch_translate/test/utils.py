@@ -11,7 +11,7 @@ import torch
 from fairseq import data, options
 from fairseq.trainer import Trainer
 from pytorch_translate import rnn  # noqa
-from pytorch_translate import models, train, vocab_constants
+from pytorch_translate import generate, models, train, vocab_constants
 from pytorch_translate.data import (
     data as pytorch_translate_data,
     dictionary as pytorch_translate_dictionary,
@@ -512,12 +512,44 @@ def create_dummy_multilingual_data(data_dir, num_examples=100, maxlen=5):
         _create_dummy_data(f"tune.{langpair}.{tgt}")
 
 
+def generate_main(data_dir, extra_flags=None):
+    parser = generate.get_parser_with_args()
+    args = options.parse_args_and_arch(
+        parser,
+        [
+            "--source-vocab-file",
+            os.path.join(data_dir, "dictionary-in.txt"),
+            "--target-vocab-file",
+            os.path.join(data_dir, "dictionary-out.txt"),
+            "--source-text-file",
+            os.path.join(data_dir, "test.in"),
+            "--target-text-file",
+            os.path.join(data_dir, "test.out"),
+            "--path",
+            os.path.join(data_dir, "checkpoint_last.pt"),
+            "--beam",
+            "3",
+            "--length-penalty",
+            "0.0",
+            "--batch-size",
+            "64",
+            "--max-len-b",
+            "5",
+            "--no-progress-bar",
+        ]
+        + (extra_flags or []),
+    )
+    generate.validate_args(args)
+    generate.generate(args)
+
+
 def train_translation_model(
     data_dir,
     extra_flags,
     criterion=None,
     set_empty_data_positional_arg=False,
     set_lang_args=True,
+    save_dir: str = None,
 ):
     parser = train.get_parser_with_args()
     args = options.parse_args_and_arch(
@@ -525,7 +557,7 @@ def train_translation_model(
         ([""] if set_empty_data_positional_arg else [])
         + [
             "--save-dir",
-            data_dir,
+            save_dir if save_dir else data_dir,
             "--train-source-text-file",
             os.path.join(data_dir, "train.in"),
             "--train-target-text-file",

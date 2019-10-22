@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Union
 
 import torch
 from fairseq import distributed_utils, tasks, utils
+from pytorch_translate.file_io import PathManager
 
 
 # Helper type for argparse to enable flippable boolean flags. For example,
@@ -100,16 +101,17 @@ def load_diverse_ensemble_for_inference(
     # load model architectures and weights
     checkpoints_data = []
     for filename in filenames:
-        if not os.path.exists(filename):
+        if not PathManager.exists(filename):
             raise IOError("Model file not found: {}".format(filename))
-        checkpoints_data.append(
-            torch.load(
-                filename,
-                map_location=lambda s, l: torch.serialization.default_restore_location(
-                    s, "cpu"
-                ),
+        with PathManager.open(filename, "rb") as f:
+            checkpoints_data.append(
+                torch.load(
+                    f,
+                    map_location=lambda s, l: torch.serialization.default_restore_location(
+                        s, "cpu"
+                    ),
+                )
             )
-        )
     # build ensemble
     ensemble = []
     if task is None:
