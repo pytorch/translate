@@ -203,6 +203,9 @@ class PytorchTranslateTask(FairseqTask):
         weights_dataset = None
         if corpus.weights_file and os.path.exists(corpus.weights_file):
             weights_dataset = weighted_data.IndexedWeightsDataset(corpus.weights_file)
+            print(
+                f"dst: {len(dst_dataset)} lines, weights: {len(weights_dataset)} lines."
+            )
             assert len(dst_dataset) == len(weights_dataset)
 
         if self.char_source_dict is not None:
@@ -227,15 +230,27 @@ class PytorchTranslateTask(FairseqTask):
             src_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
                 corpus.source.data_file, is_npz=is_npz
             )
-            self.datasets[split] = LanguagePairDataset(
-                src=src_dataset,
-                src_sizes=src_dataset.sizes,
-                src_dict=self.source_dictionary,
-                tgt=dst_dataset,
-                tgt_sizes=dst_dataset.sizes,
-                tgt_dict=self.target_dictionary,
-                left_pad_source=False,
-            )
+            if getattr(self.args, "train_weights_path", None):
+                self.datasets[split] = weighted_data.WeightedLanguagePairDataset(
+                    src=src_dataset,
+                    src_sizes=src_dataset.sizes,
+                    src_dict=self.source_dictionary,
+                    tgt=dst_dataset,
+                    tgt_sizes=dst_dataset.sizes,
+                    tgt_dict=self.target_dictionary,
+                    weights=weights_dataset,
+                    left_pad_source=False,
+                )
+            else:
+                self.datasets[split] = LanguagePairDataset(
+                    src=src_dataset,
+                    src_sizes=src_dataset.sizes,
+                    src_dict=self.source_dictionary,
+                    tgt=dst_dataset,
+                    tgt_sizes=dst_dataset.sizes,
+                    tgt_dict=self.target_dictionary,
+                    left_pad_source=False,
+                )
 
     def _normalized_weighted_sampling(self, weights: Dict[str, float]):
         factor = 1.0 / sum(weights.values())
