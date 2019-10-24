@@ -80,7 +80,6 @@ def load_models_from_checkpoints(
     models = []
     for filename in checkpoint_filenames:
         checkpoint_data = torch.load(filename, map_location="cpu")
-        checkpoint_data["args"].task = "ptt_translation_lev"
         if lexical_dict_paths is not None:
             assert (
                 checkpoint_data["args"].vocab_reduction_params is not None
