@@ -64,6 +64,7 @@ class Dictionary(dictionary.Dictionary):
         pad: str = "<pad>",
         eos: str = "</s>",
         unk: str = "<unk>",
+        bos: str = "<s>",
         max_special_tokens: int = vocab_constants.MAX_SPECIAL_TOKENS,
     ) -> None:
         self.unk_word, self.pad_word, self.eos_word = unk, pad, eos
@@ -83,6 +84,7 @@ class Dictionary(dictionary.Dictionary):
 
         self.unk_index = self.add_symbol(unk)
         assert self.unk_index == vocab_constants.UNK_ID
+        self.bos_index = self.add_symbol(bos)
 
         # Adds junk symbols to pad up to the number of special tokens.
         num_reserved = max_special_tokens - len(self.symbols)

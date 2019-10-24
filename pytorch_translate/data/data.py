@@ -292,9 +292,7 @@ def is_multilingual(args):
     Checks whether we would be using the multilingual implementation that
     extends fariseq's MultilingualTranslationTask and FairseqMultiModel
     """
-    if args.task == constants.MULTILINGUAL_TRANSLATION_TASK:
-        return True
-    return False
+    return args.task == constants.MULTILINGUAL_TRANSLATION_TASK
 
 
 def is_latent_variable(args):

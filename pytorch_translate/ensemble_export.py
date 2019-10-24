@@ -19,7 +19,8 @@ from caffe2.python import core, workspace
 from caffe2.python.onnx import backend as caffe2_backend
 from caffe2.python.predictor import predictor_exporter
 from fairseq import tasks, utils
-from fairseq.models import ARCH_MODEL_REGISTRY
+from fairseq.models import ARCH_MODEL_REGISTRY, levenshtein_transformer
+from fairseq.models.model_utils import script_skip_tensor, script_skip_tensor_list
 from pytorch_translate.beam_decode import BeamDecode
 from pytorch_translate.data import dictionary
 from pytorch_translate.research.knowledge_distillation import (
@@ -79,6 +80,7 @@ def load_models_from_checkpoints(
     models = []
     for filename in checkpoint_filenames:
         checkpoint_data = torch.load(filename, map_location="cpu")
+        checkpoint_data["args"].task = "ptt_translation_lev"
         if lexical_dict_paths is not None:
             assert (
                 checkpoint_data["args"].vocab_reduction_params is not None
@@ -139,9 +141,13 @@ def load_models_from_checkpoints(
             model = latent_var_models.LatentVarModel.build_model(
                 checkpoint_data["args"], task
             )
+        elif architecture == "levenshtein_transformer":
+            task = tasks.setup_task(checkpoint_data["args"])
+            model = levenshtein_transformer.LevenshteinTransformerModel.build_model(
+                checkpoint_data["args"], task
+            )
         else:
             raise RuntimeError(f"Architecture not supported: {architecture}")
-
         model.load_state_dict(checkpoint_data["model"])
         if hasattr(model, "get_student_model"):
             model = model.get_student_model()
@@ -313,13 +319,15 @@ class EncoderEnsemble(nn.Module):
         output_names = []
         states = []
 
-        # underlying assumption is each model has same vocab_reduction_module
-        vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
         possible_translation_tokens = None
-        if vocab_reduction_module is not None:
-            possible_translation_tokens = vocab_reduction_module(
-                src_tokens=src_tokens, decoder_input_tokens=None
-            )
+
+        # underlying assumption is each model has same vocab_reduction_module
+        if hasattr(self.models[0].decoder, "vocab_reduction_module"):
+            vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
+            if vocab_reduction_module is not None:
+                possible_translation_tokens = vocab_reduction_module(
+                    src_tokens=src_tokens, decoder_input_tokens=None
+                )
 
         # Precompute reduced decoder weight matrices.
         # Once we have possible_translation_tokens, we need to gather rows
@@ -573,13 +581,13 @@ class DecoderBatchedStepEnsemble(nn.Module):
         # size of "batch" dimension of input as tensor
         batch_size = torch.onnx.operators.shape_as_tensor(input_tokens)[0]
 
+        possible_translation_tokens = None
         # underlying assumption is each model has same vocab_reduction_module
-        vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
-        if vocab_reduction_module is not None:
-            possible_translation_tokens = inputs[len(self.models)]
-            next_state_input += 1
-        else:
-            possible_translation_tokens = None
+        if hasattr(self.models[0].decoder, "vocab_reduction_module"):
+            vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
+            if vocab_reduction_module is not None:
+                possible_translation_tokens = inputs[len(self.models)]
+                next_state_input += 1
 
         futures = []
 
@@ -772,6 +780,59 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 )
 
                 futures.append(fut)
+
+            elif isinstance(model, levenshtein_transformer.LevenshteinTransformerModel):
+                encoder_output = inputs[i]
+                # store cached states, use evaluation mode
+                model.decoder._is_incremental_eval = True
+                model.eval()
+
+                states_per_layer = 4
+
+                state_inputs = []
+                for _ in model.decoder.layers:
+                    # (prev_key, prev_value) for self- and encoder-attention
+                    state_inputs.extend(
+                        inputs[next_state_input : next_state_input + states_per_layer]
+                    )
+                    next_state_input += states_per_layer
+
+                encoder_out = (encoder_output, None, None)
+
+                # TODO(jcross)
+                reduced_output_weights = None
+                reduced_output_weights_per_model.append(reduced_output_weights)
+
+                def forked_section(
+                    input_tokens,
+                    encoder_out,
+                    state_inputs,
+                    possible_translation_tokens,
+                    timestep,
+                ):
+                    decoder_output = model.decoder(
+                        input_tokens,
+                        encoder_out,
+                        incremental_state=state_inputs,
+                        possible_translation_tokens=possible_translation_tokens,
+                        timestep=timestep,
+                    )
+                    logits, attn_scores, attention_states = decoder_output
+
+                    log_probs = F.log_softmax(logits, dim=2)
+
+                    return log_probs, attn_scores, tuple(attention_states)
+
+                fut = torch.jit._fork(
+                    forked_section,
+                    input_tokens,
+                    encoder_out,
+                    state_inputs,
+                    possible_translation_tokens,
+                    timestep,
+                )
+
+                futures.append(fut)
             elif isinstance(model, latent_var_models.LatentVarModel):
                 encoder_output = inputs[i]
                 # store cached states, use evaluation mode
@@ -921,6 +982,14 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
                 state_outputs.extend(attention_states)
                 beam_axis_per_state.extend([0 for _ in attention_states])
+            elif isinstance(model, levenshtein_transformer.LevenshteinTransformerModel):
+                log_probs, attn_scores, attention_states = torch.jit._wait(fut)
+
+                log_probs_per_model.append(log_probs)
+                attn_weights_per_model.append(attn_scores)
+
+                state_outputs.extend(attention_states)
+                beam_axis_per_state.extend([None for _ in attention_states])
             elif isinstance(model, latent_var_models.LatentVarModel):
                 log_probs, attn_scores, attention_states = torch.jit._wait(fut)
 
@@ -1951,3 +2020,264 @@ class BeamSearchAndDecode(torch.jit.ScriptModule):
         self.apply(pack)
         torch.jit.save(self, output_path)
         self.apply(unpack)
+
+
+@torch.jit.script
+def finalize_hypos_loop_tokens(
+    finalized_tokens_list: List[Tensor],
+    finalized_idxs,
+    pad_idx: int,
+    finalized_tokens,
+    finalized_scores,
+):
+    for i in range(finalized_idxs.size(0)):
+        cutoff = finalized_tokens[i].ne(pad_idx)
+        tokens = finalized_tokens[i][cutoff]
+        finalized_tokens_list[finalized_idxs[i]] = tokens
+    return finalized_tokens_list
+
+
+@torch.jit.script
+def finalize_hypos_loop_scores(
+    finalized_scores_list: List[Tensor],
+    finalized_idxs,
+    pad_idx: int,
+    finalized_tokens,
+    finalized_scores,
+):
+    for i in range(finalized_idxs.size(0)):
+        cutoff = finalized_scores[i].ne(pad_idx)
+        scores = finalized_scores[i][cutoff]
+        finalized_scores_list[finalized_idxs[i]] = scores
+    return finalized_scores_list
+
+
+@torch.jit.script
+def finalize_hypos_loop_attns(
+    finalized_attns_list: List[Tensor],
+    finalized_alignments_list: List[Tensor],
+    finalized_idxs,
+    pad_idx: int,
+    finalized_tokens,
+    finalized_scores,
+    finalized_attn,
+):
+    for i in range(finalized_idxs.size(0)):
+        cutoff = finalized_scores[i].ne(pad_idx)
+        hypo_attn = finalized_attn[i][cutoff]
+        alignment = hypo_attn.max(dim=1)[1]
+        finalized_attns_list[finalized_idxs[i]] = hypo_attn
+        finalized_alignments_list[finalized_idxs[i]] = alignment
+
+    return finalized_attns_list, finalized_alignments_list
+
+
+class IterativeRefinementGenerateAndDecode(torch.jit.ScriptModule):
+    def __init__(
+        self, checkpoint_files, src_dict_filename, tgt_dict_filename, max_iter=2
+    ):
+        super().__init__()
+        self.models, _, tgt_dict = load_models_from_checkpoints(
+            checkpoint_files, src_dict_filename, tgt_dict_filename
+        )
+        src_tokens = torch.tensor([[4, 3360]])
+        src_lengths = torch.tensor([2])
+
+        generator = IterativeRefinementGenerator(
+            self.models, tgt_dict, max_iter=max_iter
+        )
+        enc_inputs = (src_tokens, src_lengths)
+        self.generator = torch.jit.trace(generator, enc_inputs, _force_outplace=True)
+
+    @torch.jit.script_method
+    def forward(
+        self, src_tokens: torch.Tensor, src_lengths: torch.Tensor
+    ) -> List[Tuple[Tensor, float, Tensor]]:
+
+        return [
+            (x.long(), float(y), at)
+            for x, y, at in list(self.generator(src_tokens.t(), src_lengths))
+        ]
+
+    def save_to_pytorch(self, output_path):
+        def pack(s):
+            if hasattr(s, "_pack"):
+                s._pack()
+
+        def unpack(s):
+            if hasattr(s, "_unpack"):
+                s._unpack()
+
+        self.apply(pack)
+        torch.jit.save(self, output_path)
+        self.apply(unpack)
+
+
+@torch.jit.script
+def is_a_loop(pad_idx: int, x, y, s, a):
+    b, l_x, l_y = x.size(0), x.size(1), y.size(1)
+    if l_x > l_y:
+        y = torch.cat([y, torch.zeros([b, l_x - l_y]).to(y).fill_(pad_idx)], 1)
+        s = torch.cat([s, torch.zeros([b, l_x - l_y]).to(s)], 1)
+        if a.size()[0] > 0:
+            a = torch.cat([a, torch.zeros([b, l_x - l_y, a.size(2)]).to(a)], 1)
+    elif l_x < l_y:
+        x = torch.cat([x, torch.zeros([b, l_y - l_x]).to(x).fill_(pad_idx)], 1)
+    return (x == y).all(1), y, s, a
+
+
+@torch.jit.script
+def last_step(step: int, max_iter: int, terminated):
+    if step == max_iter:  # reach last iteration, terminate
+        terminated.fill_(1)
+    return terminated
+
+
+class IterativeRefinementGenerator(nn.Module):
+    def __init__(
+        self,
+        models,
+        tgt_dict,
+        eos_penalty=0.0,
+        max_iter=2,
+        max_ratio=2,
+        decoding_format=None,
+        retain_dropout=False,
+        adaptive=True,
+    ):
+        """
+        Generates translations based on iterative refinement.
+
+        Args:
+            tgt_dict: target dictionary
+        """
+        super().__init__()
+        self.models = models
+        self.bos = tgt_dict.bos()
+        self.pad = tgt_dict.pad()
+        self.unk = tgt_dict.unk()
+        self.eos = tgt_dict.eos()
+        self.vocab_size = len(tgt_dict)
+        self.eos_penalty = eos_penalty
+        self.max_iter = max_iter
+        self.max_ratio = max_ratio
+        self.decoding_format = decoding_format
+        self.retain_dropout = retain_dropout
+        self.adaptive = adaptive
+        for i, model in enumerate(self.models):
+            model.prepare_for_onnx_export_()
+            model.eval()
+            if hasattr(model, "get_student_model"):
+                model = model.get_student_model()
+                self.models[i] = model
+            self._modules[f"model_{i}"] = model
+
+    def forward(
+        self, src_tokens: torch.Tensor, src_lengths: torch.Tensor
+    ) -> Tuple[Tuple[Tensor, Tensor, Tensor]]:
+
+        o1, o2, o3, _ = self.generate(self.models, src_tokens, src_lengths)
+        return tuple((x, y.float().mean(), z) for x, y, z in zip(o1, o2, o3))
+
+    @torch.no_grad()
+    def generate(self, models, src_tokens, src_lengths, prefix_tokens=None):
+
+        # TODO: model ensemble
+        assert len(models) == 1, "only support single model"
+        model = models[0]
+        bsz, src_len = src_tokens.size()
+        sent_idxs = torch.arange(bsz)
+        # encoding
+        encoder_out = model.encoder(src_tokens, src_lengths)
+
+        # initialize buffers (very model specific, with length prediction or not)
+        prev_decoder_out = model.initialize_output_tokens(encoder_out, src_tokens)
+        prev_output_tokens = prev_decoder_out[0].clone()
+
+        finalized_tokens_list = [torch.tensor(0) for _ in range(bsz)]
+        finalized_scores_list = [torch.tensor(0) for _ in range(bsz)]
+        finalized_attns_list = [torch.tensor(0) for _ in range(bsz)]
+        finalized_alignments_list = [torch.tensor(0) for _ in range(bsz)]
+        prev_decoder_out[4] = self.max_iter + 1
+
+        for step in range(self.max_iter + 1):
+            prev_decoder_out[3] = step
+            decoder_out = model.forward_decoder(
+                prev_decoder_out,
+                encoder_out,
+                eos_penalty=self.eos_penalty,
+                max_ratio=self.max_ratio if step == 0 else None,
+                decoding_format=self.decoding_format,
+            )
+
+            if self.adaptive:
+                # terminate if looping.
+                terminated, output_tokens, output_scores, output_attn = is_a_loop(
+                    self.pad,
+                    prev_output_tokens,
+                    decoder_out[0],
+                    decoder_out[1],
+                    decoder_out[2],
+                )
+                decoder_out[0] = output_tokens
+                decoder_out[1] = output_scores
+                decoder_out[2] = output_attn
+
+            else:
+                terminated = torch.zeros_like(decoder_out[0]).bool()
+
+            terminated = last_step(step, self.max_iter, terminated)
+            # collect finalized sentences
+            finalized_idxs = sent_idxs[terminated]
+            finalized_tokens = decoder_out[0][terminated]
+            finalized_scores = decoder_out[1][terminated]
+            finalized_attn = (
+                None if decoder_out[2] is None else decoder_out[2][terminated]
+            )
+            finalized_tokens_list = finalize_hypos_loop_tokens(
+                finalized_tokens_list,
+                finalized_idxs,
+                self.pad,
+                finalized_tokens,
+                finalized_scores,
+            )
+            finalized_scores_list = finalize_hypos_loop_scores(
+                finalized_scores_list,
+                finalized_idxs,
+                self.pad,
+                finalized_tokens,
+                finalized_scores,
+            )
+            finalized_attns_list, finalized_alignments_list = finalize_hypos_loop_attns(
+                finalized_attns_list,
+                finalized_alignments_list,
+                finalized_idxs,
+                self.pad,
+                finalized_tokens,
+                finalized_scores,
+                finalized_attn,
+            )
+
+            # check if all terminated
+            if terminated.sum() == terminated.size(0):
+                break
+
+            # for next step
+            prev_decoder_out = [
+                script_skip_tensor(decoder_out[0], ~terminated),
+                script_skip_tensor(decoder_out[1], ~terminated),
+                decoder_out[2],
+                decoder_out[3],
+                decoder_out[4],
+            ]
+            encoder_out = script_skip_tensor_list(encoder_out, ~terminated)
+            sent_idxs = script_skip_tensor(sent_idxs, ~terminated)
+
+            prev_output_tokens = prev_decoder_out[0].clone()
+
+        return (
+            finalized_tokens_list,
+            finalized_scores_list,
+            finalized_attns_list,
+            finalized_alignments_list,
+        )

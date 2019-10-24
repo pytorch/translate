@@ -8,9 +8,18 @@ from typing import List, NamedTuple, Optional
 
 import numpy as np
 import torch
-from fairseq import bleu, data, options, progress_bar, tasks, utils
+from fairseq import (
+    bleu,
+    data,
+    iterative_refinement_generator,
+    options,
+    progress_bar,
+    tasks,
+    utils,
+)
 from fairseq.meters import StopwatchMeter, TimeMeter
 from fairseq.models import FairseqEncoderDecoderModel, FairseqMultiModel
+from fairseq.models.levenshtein_transformer import LevenshteinTransformerModel
 from pytorch_translate import hybrid_transformer_rnn  # noqa
 from pytorch_translate import rnn  # noqa
 from pytorch_translate import transformer  # noqa
@@ -108,6 +117,9 @@ def build_sequence_generator(args, task, models):
         translator_class = multisource_decode.MultiSourceSequenceGenerator
     elif getattr(args, "competing_completed_beam_search", False):
         translator_class = competing_completed.CompetingCompletedSequenceGenerator
+    elif isinstance(models[0], LevenshteinTransformerModel):
+        translator_class = iterative_refinement_generator.IterativeRefinementGenerator
+        return translator_class(models, tgt_dict=task.target_dictionary)
     else:
         translator_class = beam_decode.SequenceGenerator
     translator = translator_class(
@@ -413,7 +425,9 @@ def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
             hypo_tokens, hypo_str, alignment = utils.post_process_prediction(
                 hypo_tokens=hypo["tokens"].int().cpu(),
                 src_str=src_str,
-                alignment=hypo["alignment"].int().cpu(),
+                alignment=hypo["alignment"].int().cpu()
+                if align_dict is not None
+                else None,
                 align_dict=align_dict,
                 tgt_dict=task.target_dictionary,
                 remove_bpe=args.remove_bpe,
@@ -421,12 +435,13 @@ def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
 
             if not args.quiet:
                 print(f"H-{sample_id}\t{hypo['score']}\t{hypo_str}")
-                print(
-                    "A-{}\t{}".format(
-                        sample_id,
-                        " ".join(map(lambda x: str(utils.item(x)), alignment)),
+                if alignment is not None:
+                    print(
+                        "A-{}\t{}".format(
+                            sample_id,
+                            " ".join(map(lambda x: str(utils.item(x)), alignment)),
+                        )
                     )
-                )
 
             if collect_oracle_hypos:
                 score = smoothed_sentence_bleu(task, target_tokens, hypo_tokens)
@@ -610,6 +625,11 @@ def get_parser_with_args():
         "implementation in research/beam_search. This beam search keeps completed "
         "hypos in the beam and let them compete against hypo expansions in the "
         "next time step.",
+    )
+    generation_group.add_argument(
+        "--iterative-refinement",
+        action="store_true",
+        help="If this flag is present, use iterative refinement.",
     )
 
     return parser

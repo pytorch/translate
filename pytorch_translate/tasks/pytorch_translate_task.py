@@ -185,8 +185,9 @@ class PytorchTranslateTask(FairseqTask):
             weights_file=weights_file,
         )
 
-        if self.args.log_verbose:
+        if getattr(self.args, "log_verbose", False):
             print("Starting to load binarized data files.", flush=True)
+        append_bos = getattr(self.args, "append_bos", False)
         data_utils.validate_corpus_exists(corpus=corpus, split=split, is_npz=is_npz)
 
         if self.char_target_dict is not None:
@@ -249,6 +250,7 @@ class PytorchTranslateTask(FairseqTask):
                     tgt=dst_dataset,
                     tgt_sizes=dst_dataset.sizes,
                     tgt_dict=self.target_dictionary,
+                    append_bos=append_bos,
                     left_pad_source=False,
                 )
 
@@ -467,7 +469,7 @@ class PytorchTranslateTask(FairseqTask):
                 split, src_bin_path, tgt_bin_path, is_npz=is_npz
             )
 
-        if self.args.log_verbose:
+        if getattr(self.args, "log_verbose", False):
             print("Finished loading dataset", flush=True)
 
         print(f"| {split} {len(self.datasets[split])} examples")
@@ -480,6 +482,7 @@ class PytorchTranslateTask(FairseqTask):
         append_eos: Optional[bool] = False,
         reverse_source: Optional[bool] = True,
     ):
+        append_bos = getattr(self.args, "append_bos", False)
         if self.char_target_dict is not None:
             dst_dataset = char_data.InMemoryNumpyWordCharDataset()
             dst_dataset.parse(
@@ -542,6 +545,7 @@ class PytorchTranslateTask(FairseqTask):
                 tgt_sizes=dst_dataset.sizes,
                 tgt_dict=self.target_dictionary,
                 left_pad_source=False,
+                append_bos=append_bos,
             )
 
         print(f"| {split} {len(self.datasets[split])} examples")
