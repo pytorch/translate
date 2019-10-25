@@ -558,8 +558,8 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
 
             # (key, value) for encoder-decoder attention computed from encoder
             # output and remain the same throughout decoding
-            key = layer.encoder_attn.in_proj_k(encoder_x)
-            value = layer.encoder_attn.in_proj_v(encoder_x)
+            key = layer.encoder_attn.k_proj(encoder_x)
+            value = layer.encoder_attn.v_proj(encoder_x)
 
             # (key, value) kept in shape (bsz, num_heads, seq_len, head_dim)
             # to avoid repeated transpose operations

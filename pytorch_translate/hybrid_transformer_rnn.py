@@ -471,8 +471,8 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
 
         # (key, value) for encoder-decoder attention computed from encoder
         # output and remain the same throughout decoding
-        key = self.attention.in_proj_k(encoder_x)
-        value = self.attention.in_proj_v(encoder_x)
+        key = self.attention.k_proj(encoder_x)
+        value = self.attention.v_proj(encoder_x)
 
         # (key, value) kept in shape (bsz, num_heads, seq_len, head_dim)
         # to avoid repeated transpose operations
