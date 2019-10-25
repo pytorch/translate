@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from typing import Dict
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -330,22 +332,25 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
             timestep=timestep,
         )
 
-    def _forward_given_embeddings(
+    def _encode_input(
         self,
         embed_out,
         prev_output_tokens,
         encoder_out,
         incremental_state=None,
         possible_translation_tokens=None,
-        timestep=None,
-    ):
+    ) -> Dict:
+        """
+        Returns the reprensentations and other required information from encoding
+        input (prev_output_tokens).
+        """
         x = embed_out
         (encoder_x, src_tokens, encoder_padding_mask) = self._unpack_encoder_out(
             encoder_out
         )
         bsz, seqlen = prev_output_tokens.size()
 
-        state_outputs = []
+        state_outputs, prev_states = [], None
         if incremental_state is not None:
             prev_states = utils.get_incremental_state(
                 self, incremental_state, "cached_state"
@@ -427,6 +432,23 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
                 src_tokens, decoder_input_tokens=decoder_input_tokens
             )
 
+        return {
+            "state_outputs": state_outputs,
+            "prev_states": prev_states,
+            "embed_out": x,
+            "attention_weights": attention_weights,
+            "possible_translation_tokens": possible_translation_tokens,
+        }
+
+    def _forward_given_encoded_info(
+        self, encoded_output_dict: Dict, incremental_state=None
+    ):
+        state_outputs = encoded_output_dict["state_outputs"]
+        prev_states = encoded_output_dict["prev_states"]
+        x = encoded_output_dict["embed_out"]
+        attention_weights = encoded_output_dict["attention_weights"]
+        possible_translation_tokens = encoded_output_dict["possible_translation_tokens"]
+
         output_weights = self.embed_out
         if possible_translation_tokens is not None:
             output_weights = output_weights.index_select(
@@ -443,6 +465,26 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
             )
 
         return logits, attention_weights, possible_translation_tokens
+
+    def _forward_given_embeddings(
+        self,
+        embed_out,
+        prev_output_tokens,
+        encoder_out,
+        incremental_state=None,
+        possible_translation_tokens=None,
+        timestep=None,
+    ):
+        encoded_output_dict = self._encode_input(
+            embed_out=embed_out,
+            prev_output_tokens=prev_output_tokens,
+            encoder_out=encoder_out,
+            incremental_state=incremental_state,
+            possible_translation_tokens=possible_translation_tokens,
+        )
+        return self._forward_given_encoded_info(
+            encoded_output_dict=encoded_output_dict, incremental_state=incremental_state
+        )
 
     def max_positions(self):
         """Maximum output length supported by the decoder."""
