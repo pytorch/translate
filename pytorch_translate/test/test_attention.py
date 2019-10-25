@@ -139,6 +139,12 @@ class MultiheadAttentionTest(unittest.TestCase):
                 if X_fc_b is not None:
                     raise Exception(f"Duplicate FC name {name} found")
                 X_fc_b = param[start:end].detach().numpy()
+            elif "_proj_weight" in X_name and X_name in name:
+                X_fc_w = param.detach().numpy()
+            elif "_proj_weight" in X_name and "in_proj_bias" in name:
+                if X_fc_b is not None:
+                    raise Exception(f"Duplicate FC name {name} found")
+                X_fc_b = param[start:end].detach().numpy()
         return np.matmul(X, np.transpose(X_fc_w)) + X_fc_b
 
     def _multihead_attn_test_helper(self, use_src_lengths):
@@ -184,11 +190,17 @@ class MultiheadAttentionTest(unittest.TestCase):
                     self.assertEqual(result.ndim, 3)
                     result = np.squeeze(result, axis=0)
 
-                Q_fc = self._fc(Q, "in_proj_", multihead_attn_module, end=d_model)
+                Q_fc = self._fc(Q, "q_proj_weight", multihead_attn_module, end=d_model)
                 K_fc = self._fc(
-                    K, "in_proj_", multihead_attn_module, start=d_model, end=2 * d_model
+                    K,
+                    "k_proj_weight",
+                    multihead_attn_module,
+                    start=d_model,
+                    end=2 * d_model,
                 )
-                V_fc = self._fc(V, "in_proj_", multihead_attn_module, start=2 * d_model)
+                V_fc = self._fc(
+                    V, "v_proj_weight", multihead_attn_module, start=2 * d_model
+                )
 
                 Q_split = self._split_heads_ref(
                     Q_fc, [batch_sz, 1, d_model], nheads, d_head
