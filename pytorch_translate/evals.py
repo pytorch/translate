@@ -7,7 +7,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from fairseq import distributed_utils, progress_bar, utils
 from fairseq.meters import AverageMeter
-from pytorch_translate import checkpoint, generate, utils as pytorch_translate_utils
+from pytorch_translate import (
+    char_aware_hybrid,
+    checkpoint,
+    generate,
+    utils as pytorch_translate_utils,
+)
 from pytorch_translate.dual_learning.dual_learning_task import DualLearningTask
 from pytorch_translate.tasks.pytorch_translate_multi_task import (
     PyTorchTranslateMultiTask,
@@ -341,6 +346,14 @@ def save_and_eval(
     # processes, so the eval stats from all processes' trainer should
     # remain synchronized.
 
+    # If the model has characters in the target, we should run precomputation
+    # before every evaluation.
+    if type(trainer.get_model()) is char_aware_hybrid.CharAwareHybridModel:
+        trainer.get_model().decoder.precompute_char_representations(
+            char_dict=task.char_target_dict,
+            embed_bytes=getattr(args, "embed_bytes", False),
+        )
+
     # Tune loss
     extra_state, stop_due_to_tune_loss = eval_tune_loss(
         args=args,
@@ -362,7 +375,8 @@ def save_and_eval(
             f"have a checkpoint_manager defined."
         )
 
-    # trick to prepare the task for evaluation, e.g. in latent variable model we need to set eval_key in RoundRobinZipDataset
+    # trick to prepare the task for evaluation, e.g. in latent variable model
+    # we need to set eval_key in RoundRobinZipDataset
     if hasattr(task, "prepare_for_eval") and callable(task.prepare_for_eval):
         task.prepare_for_eval()
     # Only save checkpoints and eval tune BLEU on the master - all other
