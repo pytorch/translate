@@ -543,6 +543,39 @@ class TransformerDecoder(FairseqIncrementalDecoder):
             if f"{name}.embed_positions.weights" in state_dict:
                 del state_dict[f"{name}.embed_positions.weights"]
             state_dict[f"{name}.embed_positions._float_tensor"] = torch.FloatTensor(1)
+
+        if self.vocab_reduction_module is None:
+            prefix = name + "." if name != "" else ""
+            items_to_add = {}
+            keys_to_remove = []
+            for k in state_dict.keys():
+                if self.share_input_output_embed is True:
+                    if k.endswith(prefix + "embed_tokens.weight"):
+                        keys_to_remove.append(k)
+
+                        items_to_add[prefix + "output_projection"] = nn.Linear(
+                            state_dict[k].shape[0], state_dict[k].shape[1]
+                        )
+                        items_to_add[prefix + "output_projection.weight"] = state_dict[k]
+                        bias = nn.Parameter(torch.Tensor(state_dict[k].shape[0]))
+                        nn.init.constant_(bias, 0.0)
+                        items_to_add[prefix + "output_projection.bias"] = bias
+                else:
+                    if k.endswith(prefix + "embed_out"):
+                        items_to_add[prefix + "output_projection"] = nn.Linear(
+                            state_dict[k].shape[0], state_dict[k].shape[1]
+                        )
+                        items_to_add[prefix + "output_projection.weight"] = state_dict[k]
+                        bias = nn.Parameter(torch.Tensor(state_dict[k].shape[0]))
+                        nn.init.constant_(bias, 0.0)
+                        items_to_add[prefix + "output_projection.bias"] = bias
+
+            for k in keys_to_remove:
+                del state_dict[k]
+
+            for key, value in items_to_add.items():
+                state_dict[key] = value
+
         return state_dict
 
     def _init_prev_states(self, encoder_out):
