@@ -120,6 +120,10 @@ def load_models_from_checkpoints(
             model = char_source_hybrid.CharSourceHybridModel.build_model(
                 checkpoint_data["args"], task
             )
+        elif architecture == "char_aware_hybrid":
+            model = char_aware_hybrid.CharAwareHybridModel.build_model(
+                checkpoint_data["args"], task
+            )
         elif architecture == "dual_decoder_kd":
             model = dual_decoder_kd_model.DualDecoderKDModel.build_model(
                 checkpoint_data["args"], task
@@ -878,9 +882,11 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
                 futures.append(fut)
 
-            elif isinstance(
-                model, hybrid_transformer_rnn.HybridTransformerRNNModel
-            ) or isinstance(model, char_source_hybrid.CharSourceHybridModel):
+            elif (
+                isinstance(model, hybrid_transformer_rnn.HybridTransformerRNNModel)
+                or isinstance(model, char_source_hybrid.CharSourceHybridModel)
+                or isinstance(model, char_aware_hybrid.CharAwareHybridModel)
+            ):
                 encoder_output = inputs[i]
 
                 # store cached states, use evaluation mode
@@ -996,9 +1002,11 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 attn_weights_per_model.append(attn_scores)
                 state_outputs.extend(attention_states)
                 beam_axis_per_state.extend([0 for _ in attention_states])
-            elif isinstance(
-                model, hybrid_transformer_rnn.HybridTransformerRNNModel
-            ) or isinstance(model, char_source_hybrid.CharSourceHybridModel):
+            elif (
+                isinstance(model, hybrid_transformer_rnn.HybridTransformerRNNModel)
+                or isinstance(model, char_source_hybrid.CharSourceHybridModel)
+                or isinstance(model, char_aware_hybrid.CharAwareHybridModel)
+            ):
                 log_probs, attn_scores, next_states = torch.jit._wait(fut)
 
                 log_probs_per_model.append(log_probs)
