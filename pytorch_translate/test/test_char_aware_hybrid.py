@@ -253,7 +253,11 @@ class TestCharAwareHybrid(unittest.TestCase):
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
         char_cnn_output = decoder._get_char_cnn_output(prev_output_chars)
-        embed_output = x + char_cnn_output
+
+        gates = torch.sigmoid(decoder.w_gate(prev_output_tokens))
+        gates = gates.transpose(0, 1)
+
+        embed_output = (1 - gates) * x + gates * char_cnn_output
 
         # Due to a known issue in padding, we know that the results are not exactly
         # the same.

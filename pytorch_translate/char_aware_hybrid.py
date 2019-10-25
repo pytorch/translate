@@ -158,6 +158,12 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
             embed_tokens.num_embeddings, embed_tokens.embedding_dim
         )
 
+        # Gating for learning which dimensions in the compositional character
+        # embeddings are important. This gate goes under a sigmoid function.
+        self.w_gate = nn.Embedding(
+            embed_tokens.num_embeddings, embed_tokens.embedding_dim
+        )
+
     def _get_char_cnn_output(self, char_inds):
         if char_inds.dim() == 2:
             char_inds = char_inds.unsqueeze(1)
@@ -205,7 +211,10 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
             # B x T x C -> T x B x C
             x = x.transpose(0, 1)
             char_cnn_output = self._get_char_cnn_output(prev_output_chars)
-            combined_embedding = x + char_cnn_output
+
+            gates = torch.sigmoid(self.w_gate(prev_output_tokens))
+            gates = gates.transpose(0, 1)
+            combined_embedding = (1 - gates) * x + gates * char_cnn_output
         else:
             combined_embedding = self.combined_word_char_embed(prev_output_tokens)
             if combined_embedding.dim() == 4:
@@ -282,10 +291,12 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
                 char_cnn_output = self._get_char_cnn_output(maybe_cuda(char_inds))
 
                 # Filling in the precomputed embedding values.
+                gates = torch.sigmoid(self.w_gate(all_idx))
                 for j in range(char_cnn_output.size()[1]):
                     cur_idx = j + index_start
                     self.combined_word_char_embed.weight[cur_idx] = (
-                        char_cnn_output[0, j, :] + word_embeds[j]
+                        gates[j] * char_cnn_output[0, j, :]
+                        + (1 - gates[j]) * word_embeds[j]
                     )
 
     def _char_list_from_dict(self, char_dict, embed_bytes=False) -> List[List[int]]:
