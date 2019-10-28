@@ -13,6 +13,18 @@ from pytorch_translate import constants
 from pytorch_translate.file_io import PathManager
 
 
+def save_checkpoint_atomic(trainer, final_filename, extra_state):
+    """Wrapper around trainer.save_checkpoint to make save atomic."""
+    temp_filename = os.path.join(final_filename + ".tmp")
+    trainer.save_checkpoint(temp_filename, extra_state)
+    # TODO(T56266125): Use mv() instead of copy() + rm() after it's added to
+    # PathManager.
+    assert PathManager.copy(
+        temp_filename, final_filename, overwrite=True
+    ), f"Failed to copy {temp_filename} to {final_filename}"
+    PathManager.rm(temp_filename)
+
+
 def load_existing_checkpoint(
     checkpoint_path, trainer, restore_state=True
 ) -> Tuple[bool, Optional[Dict]]:
@@ -352,14 +364,19 @@ class CheckpointManager:
         # corresponding to its epoch/offset, and another under the generic
         # "checkpoint_last.py" that we restore from in case training is
         # interrupted.
-        trainer.save_checkpoint(filename, extra_state)
+        save_checkpoint_atomic(
+            trainer=trainer, final_filename=filename, extra_state=extra_state
+        )
         # We update checkpoint_last.pt only after the new averaged checkpoint
         # and epoch/offset-named copy have been written - so that in case either
         # write fails, we'd still be able to resume from the previous
         # checkpoint_last.pt
-        trainer.save_checkpoint(
-            os.path.join(args.save_dir, constants.LAST_CHECKPOINT_FILENAME), extra_state
+        last_checkpoint_path = os.path.join(
+            args.save_dir, constants.LAST_CHECKPOINT_FILENAME
         )
+        assert PathManager.copy(
+            filename, last_checkpoint_path, overwrite=True
+        ), f"Failed to copy {filename} to {last_checkpoint_path}"
         self.log_if_verbose(
             f"| Finished saving checkpoints for epoch {epoch}, "
             f"offset {batch_offset}."
