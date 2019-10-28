@@ -32,6 +32,7 @@ class ModelParamsDict:
             self.decoder_ffn_embed_dim = 16
             self.decoder_layers = 2
             self.decoder_attention_heads = 2
+            self.aan = False
         elif arch == "transformer_aan":
             self.arch = "transformer_aan"
             self.encoder_embed_dim = 10
