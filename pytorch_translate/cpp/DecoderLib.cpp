@@ -37,8 +37,6 @@ NmtDecoder::NmtDecoder(
       stopAtEos_(stopAtEos),
       appendEos_(appendEos),
       lengthPenalty_(lengthPenalty) {
-  batchedBeamSearch_ = caffe2::make_unique<BatchedBeamSearch>(
-      encoderModel, decoderStepModel, beamSize_);
   LOG(INFO) << "C2 NMT Decoder is initialized";
 }
 
