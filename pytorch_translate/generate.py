@@ -119,7 +119,7 @@ def build_sequence_generator(args, task, models):
         translator_class = competing_completed.CompetingCompletedSequenceGenerator
     elif isinstance(models[0], LevenshteinTransformerModel):
         translator_class = iterative_refinement_generator.IterativeRefinementGenerator
-        return translator_class(models, tgt_dict=task.target_dictionary)
+        return translator_class(tgt_dict=task.target_dictionary, models=models)
     else:
         translator_class = beam_decode.SequenceGenerator
     translator = translator_class(
