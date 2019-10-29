@@ -154,10 +154,13 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
         # By default (before training ends), character representations are
         # not precomputed. After precomputation, this value should be used in place of
         # the two embeddings.
-        self._is_precomputed = False
         self.combined_word_char_embed = nn.Embedding(
             embed_tokens.num_embeddings, embed_tokens.embedding_dim
         )
+
+        # This is used for precomputation. The first time that is used, we keep it
+        # in memory.
+        self._character_list = None
 
     def _get_char_cnn_output(self, char_inds):
         if char_inds.dim() == 2:
@@ -193,19 +196,27 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
         If the embeddings are precomputed for character compositions (this holds
         in inference), use the cached embeddings, otherwise compute it.
         """
-        if self._is_precomputed:
-            combined_embedding = (
-                self.combined_word_char_embed(prev_output_tokens)
-                .squeeze(1)
-                .unsqueeze(0)
-            )
-        else:
+
+        if self.training or prev_output_chars is not None:
+            """
+            In case where prev_output_chars is not None, it is used
+            for validation: that means combined_word_char_embed is not
+            updated yet. That's why we still use the character representation
+            in here eventhough it is not in training mode.
+            """
             x = self.embed_tokens(prev_output_tokens)
             x = F.dropout(x, p=self.dropout, training=self.training)
             # B x T x C -> T x B x C
             x = x.transpose(0, 1)
             char_cnn_output = self._get_char_cnn_output(prev_output_chars)
             combined_embedding = x + char_cnn_output
+        else:
+            combined_embedding = self.combined_word_char_embed(prev_output_tokens)
+            if combined_embedding.dim() == 4:
+                combined_embedding = combined_embedding.squeeze(1)
+
+            # B x T x C -> T x B x C
+            combined_embedding = combined_embedding.transpose(0, 1)
         return combined_embedding
 
     def forward(
@@ -222,17 +233,11 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
         summed with their corresponding character representations. Thus the model
         will look like the same as a word-based decoder.
         """
-        if self.training:
-            x, prev_output_tokens = self._embed_prev_outputs(
-                prev_output_tokens=prev_output_tokens,
-                incremental_state=incremental_state,
-                prev_output_chars=prev_output_chars,
-            )
-        else:
-            x, prev_output_tokens = super()._embed_prev_outputs(
-                prev_output_tokens=prev_output_tokens,
-                incremental_state=incremental_state,
-            )
+        x, prev_output_tokens = self._embed_prev_outputs(
+            prev_output_tokens=prev_output_tokens,
+            incremental_state=incremental_state,
+            prev_output_chars=prev_output_chars,
+        )
         return self._forward_given_embeddings(
             embed_out=x,
             prev_output_tokens=prev_output_tokens,
@@ -243,7 +248,7 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
         )
 
     def precompute_char_representations(
-        self, char_dict, embed_bytes=False, batch_size=5000
+        self, char_dict, embed_bytes=False, batch_size=10000
     ):
         """
         Precomputes the embeddings from character CNNs. Then adds that to the
@@ -254,54 +259,60 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
         character_list = self._char_list_from_dict(
             char_dict=char_dict, embed_bytes=embed_bytes
         )
-        all_idx = maybe_cuda(
-            torch.LongTensor([i for i in range(self.embed_tokens.num_embeddings)])
-        )
-        word_embeds = self.embed_tokens(all_idx)
-        num_minibatches = math.ceil(len(character_list) / batch_size)
-        for i in range(num_minibatches):
-            character_sublist = character_list[
-                i * batch_size : min((i + 1) * batch_size, len(character_list))
-            ]
-            max_word_len = max(len(chars) for chars in character_sublist)
-            char_inds = (
-                torch.Tensor(len(character_sublist), max_word_len)
-                .long()
-                .fill_(char_dict.pad_index)
-            )
 
-            for j, chars in enumerate(character_sublist):
-                char_inds[j, : len(chars)] = torch.LongTensor(chars)
+        char_list_len = len(character_list)
+        num_minibatches = math.ceil(char_list_len / batch_size)
+        with torch.no_grad():
+            embedding_results = []
+            for i in range(num_minibatches):
+                index_start = i * batch_size
+                index_end = min((i + 1) * batch_size, char_list_len)
+                all_idx = [j for j in range(index_start, index_end)]
+                all_idx = maybe_cuda(torch.LongTensor(all_idx))
+                word_embeds = self.embed_tokens(all_idx)
 
-            char_cnn_output = self._get_char_cnn_output(maybe_cuda(char_inds))
-
-            # Filling in the precomputed embedding values.
-            index_offset = i * batch_size
-            for j in range(char_cnn_output.size()[1]):
-                cur_idx = j + index_offset
-                self.combined_word_char_embed.weight[cur_idx] = (
-                    char_cnn_output[0, j, :] + word_embeds[cur_idx]
+                character_sublist = character_list[
+                    i * batch_size : min((i + 1) * batch_size, char_list_len)
+                ]
+                max_word_len = max(len(chars) for chars in character_sublist)
+                char_inds = (
+                    torch.Tensor(len(character_sublist), max_word_len)
+                    .long()
+                    .fill_(char_dict.pad_index)
                 )
 
-        self._is_precomputed = True
-        self.combined_word_char_embed.weight.detach()
+                for j, chars in enumerate(character_sublist):
+                    char_inds[j, : len(chars)] = torch.LongTensor(chars)
+
+                char_cnn_output = self._get_char_cnn_output(maybe_cuda(char_inds))
+                embedding_results.append(char_cnn_output[0, :, :] + word_embeds)
+                # Filling in the precomputed embedding values.
+                for j in range(char_cnn_output.size()[1]):
+                    cur_idx = j + index_start
+                    self.combined_word_char_embed.weight[cur_idx] = (
+                        char_cnn_output[0, j, :] + word_embeds[j]
+                    )
+            self.combined_word_char_embed.weight = torch.nn.Parameter(
+                torch.cat(embedding_results, dim=0)
+            )
 
     def _char_list_from_dict(self, char_dict, embed_bytes=False) -> List[List[int]]:
         """
         From self.word_dict, extracts all character sequneces, and convert
         them to their corresponding list of characters.
         """
-        character_list = []
-        for word_index, word in enumerate(self.dictionary.symbols):
-            character_list.append(
-                self._char_list_for_word(
-                    word_index=word_index,
-                    word=word,
-                    char_dict=char_dict,
-                    embed_bytes=embed_bytes,
+        if self._character_list is None:
+            self._character_list = []
+            for word_index, word in enumerate(self.dictionary.symbols):
+                self._character_list.append(
+                    self._char_list_for_word(
+                        word_index=word_index,
+                        word=word,
+                        char_dict=char_dict,
+                        embed_bytes=embed_bytes,
+                    )
                 )
-            )
-        return character_list
+        return self._character_list
 
     def _char_list_for_word(
         self, word_index: int, word: str, char_dict, embed_bytes=False
