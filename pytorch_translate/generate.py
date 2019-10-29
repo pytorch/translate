@@ -111,6 +111,7 @@ def build_sequence_generator(args, task, models):
             models[0], char_source_transformer_model.CharSourceTransformerModel
         )
         or isinstance(models[0], char_source_hybrid.CharSourceHybridModel)
+        or isinstance(models[0], char_aware_hybrid.CharAwareHybridModel)
     )
     # Use a different sequence generator in the multisource setting
     if getattr(args, "source_ensembling", False):
