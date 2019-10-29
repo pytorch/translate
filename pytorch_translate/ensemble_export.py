@@ -2073,7 +2073,12 @@ def finalize_hypos_loop_attns(
 
 class IterativeRefinementGenerateAndDecode(torch.jit.ScriptModule):
     def __init__(
-        self, checkpoint_files, src_dict_filename, tgt_dict_filename, max_iter=1
+        self,
+        checkpoint_files,
+        src_dict_filename,
+        tgt_dict_filename,
+        max_iter=1,
+        quantize=True,
     ):
         super().__init__()
         self.models, _, tgt_dict = load_models_from_checkpoints(
@@ -2085,6 +2090,8 @@ class IterativeRefinementGenerateAndDecode(torch.jit.ScriptModule):
         generator = IterativeRefinementGenerator(
             self.models, tgt_dict, max_iter=max_iter
         )
+        if quantize:
+            generator = torch.jit.quantized.quantize_linear_modules(generator)
         enc_inputs = (src_tokens, src_lengths)
         self.generator = torch.jit.trace(generator, enc_inputs, _force_outplace=True)
 
