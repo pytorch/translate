@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "BatchedBeamSearch.h"
 #include "DecoderUtil.h"
 #include "Dictionary.h"
 
@@ -52,6 +53,7 @@ class NmtDecoder {
   bool stopAtEos_;
   bool appendEos_;
   double lengthPenalty_;
+  std::unique_ptr<BatchedBeamSearch> batchedBeamSearch_;
 };
 
 } // namespace translate
