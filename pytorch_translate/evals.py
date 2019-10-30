@@ -324,6 +324,8 @@ def save_and_eval(
 ) -> Tuple[Dict[str, Any], bool, Optional[List]]:
     # Checks for time limit stopping criterion even when we're not doing
     # eval/saving checkpoints.
+    max_update = args.max_update or math.inf
+    stop_due_to_max_update = trainer.get_num_updates() > max_update
     stop_due_to_time_limit = is_training_over_time_limit(extra_state, args.stop_time_hr)
     if not end_of_epoch and (
         args.save_interval_updates <= 0
@@ -412,7 +414,10 @@ def save_and_eval(
     if is_master:
         master_tune_bleu = extra_state["tune_bleu"]
         master_stop_training = (
-            stop_due_to_time_limit or stop_due_to_tune_loss or stop_due_to_tune_bleu
+            stop_due_to_time_limit
+            or stop_due_to_tune_loss
+            or stop_due_to_tune_bleu
+            or stop_due_to_max_update
         )
     tune_bleu, stop_training = pytorch_translate_utils.all_gather_from_master(
         args=args, data=[master_tune_bleu, master_stop_training]
