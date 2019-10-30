@@ -48,7 +48,6 @@ from pytorch_translate import (  # noqa; noqa
     rnn,
     semi_supervised,
     transformer,
-    transformer_aan,
 )
 
 logger = logging.getLogger(__name__)
@@ -106,10 +105,6 @@ def load_models_from_checkpoints(
             )
         elif architecture == "ptt_transformer":
             model = transformer.TransformerModel.build_model(
-                checkpoint_data["args"], task
-            )
-        elif architecture == "transformer_aan":
-            model = transformer_aan.TransformerAANModel.build_model(
                 checkpoint_data["args"], task
             )
         elif architecture == "hybrid_transformer_rnn":
@@ -719,22 +714,15 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 )
 
                 futures.append(fut)
-            elif (
-                isinstance(model, transformer.TransformerModel)
-                or isinstance(
-                    model, char_source_transformer_model.CharSourceTransformerModel
-                )
-                or isinstance(model, transformer_aan.TransformerAANModel)
+            elif isinstance(model, transformer.TransformerModel) or isinstance(
+                model, char_source_transformer_model.CharSourceTransformerModel
             ):
                 encoder_output = inputs[i]
                 # store cached states, use evaluation mode
                 model.decoder._is_incremental_eval = True
                 model.eval()
 
-                states_per_layer = (
-                    3 if isinstance(model, transformer_aan.TransformerAANModel) else 4
-                )
-
+                states_per_layer = 4
                 state_inputs = []
                 for _ in model.decoder.layers:
                     # (prev_key, prev_value) for self- and encoder-attention
@@ -967,12 +955,8 @@ class DecoderBatchedStepEnsemble(nn.Module):
                         [None for _ in reduced_output_weights_per_model[i]]
                     )
 
-            elif (
-                isinstance(model, transformer.TransformerModel)
-                or isinstance(
-                    model, char_source_transformer_model.CharSourceTransformerModel
-                )
-                or isinstance(model, transformer_aan.TransformerAANModel)
+            elif isinstance(model, transformer.TransformerModel) or isinstance(
+                model, char_source_transformer_model.CharSourceTransformerModel
             ):
                 log_probs, attn_scores, attention_states = torch.jit._wait(fut)
 
