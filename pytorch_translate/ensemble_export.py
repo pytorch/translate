@@ -724,8 +724,13 @@ class DecoderBatchedStepEnsemble(nn.Module):
 
                 states_per_layer = 4
                 state_inputs = []
-                for _ in model.decoder.layers:
+                for i, _ in enumerate(model.decoder.layers):
                     # (prev_key, prev_value) for self- and encoder-attention
+                    if hasattr(model.decoder, "decoder_layers_to_keep") and (
+                        i not in model.decoder.decoder_layers_to_keep.keys()
+                    ):
+                        continue
+
                     state_inputs.extend(
                         inputs[next_state_input : next_state_input + states_per_layer]
                     )

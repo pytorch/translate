@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import math
+import random
 
 import torch
 import torch.nn as nn
@@ -162,6 +163,18 @@ class TransformerModel(FairseqEncoderDecoderModel):
             default=False,
             action="store_true",
             help="apply layernorm before each decoder block",
+        )
+        parser.add_argument(
+            "--decoder-layerdrop",
+            type=float,
+            metavar="D",
+            default=0,
+            help="LayerDrop probability for decoder",
+        )
+        parser.add_argument(
+            "--decoder-layers-to-keep",
+            default=None,
+            help="which layers to *keep* when pruning as a comma-separated list",
         )
         parser.add_argument(
             "--share-decoder-input-output-embed",
@@ -365,6 +378,10 @@ class TransformerDecoder(FairseqIncrementalDecoder):
     def __init__(self, args, src_dict, dst_dict, embed_tokens):
         super().__init__(dst_dict)
         self.dropout = args.dropout
+        self.decoder_layerdrop = 0
+        if hasattr(args, "decoder_layerdrop") and args.decoder_layerdrop > 0:
+            self.decoder_layerdrop = args.decoder_layerdrop
+
         self.share_input_output_embed = args.share_decoder_input_output_embed
 
         embed_dim = embed_tokens.embedding_dim
@@ -385,6 +402,13 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         self.layers.extend(
             [decoder_layer_class(args) for i in range(args.decoder_layers)]
         )
+        if hasattr(args, "decoder_layers_to_keep") and args.decoder_layers_to_keep:
+            layers_to_keep = sorted(
+                int(x) for x in args.decoder_layers_to_keep.split(",")
+            )
+            self.decoder_layers_to_keep = {
+                layer_id: layer_idx for layer_idx, layer_id in enumerate(layers_to_keep)
+            }
 
         self.adaptive_softmax = None
 
@@ -468,8 +492,15 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
         # decoder layers
         state_outputs = []  # onnx_trace only
-        for i, layer in enumerate(self.layers):
-            if self.onnx_trace:
+        attn = None
+
+        if self.onnx_trace:
+            for i, layer in enumerate(self.layers):
+                if hasattr(self, "decoder_layers_to_keep"):
+                    if i not in self.decoder_layers_to_keep.keys():
+                        continue
+                    else:
+                        i = self.decoder_layers_to_keep[i]
                 # (prev_key, prev_value)
                 self_attn_input = incremental_state[4 * i : 4 * i + 2]
                 attn_state = incremental_state[4 * i + 2 : 4 * i + 4]
@@ -478,12 +509,26 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                     encoder_x,
                     encoder_padding_mask,
                     incremental_state={},
-                    prev_self_attn_state=self_attn_input,
-                    prev_attn_state=attn_state,
+                    prev_self_attn_state=self_attn_input
+                    if len(incremental_state) > 0
+                    else None,
+                    prev_attn_state=attn_state if len(incremental_state) > 0 else None,
                 )
                 state_outputs.extend(self_attn_out)
                 state_outputs.extend(attn_state)  # unchanged
-            else:
+        else:
+            for i, layer in enumerate(self.layers):
+                if hasattr(self, "decoder_layers_to_keep"):
+                    dropout_probability = random.uniform(0, 1)
+                    if (
+                        self.training
+                        and dropout_probability < self.decoder_layerdrop
+                        or (
+                            not self.training
+                            and i not in self.decoder_layers_to_keep.keys()
+                        )
+                    ):
+                        continue
                 x, attn = layer(
                     x,
                     encoder_x,
@@ -599,7 +644,11 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         encoder_x, src_tokens, encoder_padding_mask = encoder_out
         batch_size = torch.onnx.operators.shape_as_tensor(encoder_x)[1]
         states = []
-        for layer in self.layers:
+        for i, layer in enumerate(self.layers):
+            if hasattr(self, "decoder_layers_to_keep") and (
+                i not in self.decoder_layers_to_keep.keys()
+            ):
+                continue
             if self.aan:
                 # (bsz, channel)
                 prev_sum = torch.zeros([1, layer.avg_attn.embed_dim])
@@ -646,7 +695,6 @@ class TransformerDecoder(FairseqIncrementalDecoder):
             )
 
             states.extend([key, value])
-
         return states
 
 
@@ -864,6 +912,8 @@ def base_architecture(args):
     args.decoder_freeze_embed = getattr(args, "decoder_freeze_embed", False)
     args.decoder_learned_pos = getattr(args, "decoder_learned_pos", False)
     args.decoder_normalize_before = getattr(args, "decoder_normalize_before", False)
+    args.decoder_layerdrop = getattr(args, "decoder_layerdrop", 0)
+    args.decoder_layers_to_keep = getattr(args, "decoder_layers_to_keep", None)
     args.share_decoder_input_output_embed = getattr(
         args, "share_decoder_input_output_embed", False
     )
