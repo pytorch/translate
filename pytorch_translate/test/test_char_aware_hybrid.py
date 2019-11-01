@@ -63,6 +63,7 @@ class TestCharAwareHybrid(unittest.TestCase):
                 num_chars=len(self.char_dict),
             )
         )
+        decoder.eval()
 
         src_tokens = maybe_cuda(self.sample["net_input"]["src_tokens"])
         src_lengths = maybe_cuda(self.sample["net_input"]["src_lengths"])
@@ -220,7 +221,6 @@ class TestCharAwareHybrid(unittest.TestCase):
                 num_chars=len(self.char_dict),
             )
         )
-        decoder.eval()
         prev_output_word_strs = self.word_dict.symbols[-3:]
         prev_out_word_indices = [
             self.word_dict.indices[w] for w in prev_output_word_strs
@@ -242,19 +242,20 @@ class TestCharAwareHybrid(unittest.TestCase):
             )
         )
 
-        embed_output = maybe_cuda(
-            decoder._embed_prev_outputs(
-                prev_output_tokens=prev_output_tokens,
-                prev_output_chars=prev_output_chars,
-            )[0]
-        )
-
+        decoder.eval()
         decoder.precompute_char_representations(
             char_dict=self.char_dict, embed_bytes=False, batch_size=30
         )
         embed_output_after_precompute = decoder._embed_prev_outputs(
             prev_output_tokens=prev_output_tokens, prev_output_chars=prev_output_chars
         )[0]
+
+        x = decoder.embed_tokens(prev_output_tokens)
+        # B x T x C -> T x B x C
+        x = x.transpose(0, 1)
+        char_cnn_output = decoder._get_char_cnn_output(prev_output_chars)
+        embed_output = x + char_cnn_output
+
         # Due to a known issue in padding, we know that the results are not exactly
         # the same.
         assert torch.allclose(

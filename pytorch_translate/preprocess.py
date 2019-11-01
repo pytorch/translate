@@ -42,10 +42,13 @@ def binarize_text_file(
     embed_bytes: bool = False,
     char_dictionary: Optional[Dictionary] = None,
     already_numberized: bool = False,
+    ignore_chars_for_unks: bool = False,
 ) -> str:
     output_path = maybe_generate_temp_file_path(output_path)
     if char_dictionary is not None:
-        dataset = char_data.InMemoryNumpyWordCharDataset()
+        dataset = char_data.InMemoryNumpyWordCharDataset(
+            ignore_chars_for_unks=ignore_chars_for_unks
+        )
         dataset.parse(
             path=text_file,
             word_dict=dictionary,
@@ -110,10 +113,13 @@ def binarize_text_file_multilingual(
     use_char_data: bool = False,
     embed_bytes: bool = False,
     already_numberized: bool = False,
+    ignore_chars_for_unks: bool = False,
 ) -> str:
     output_path = maybe_generate_temp_file_path(output_path)
     if use_char_data:
-        dataset = char_data.InMemoryNumpyWordCharDataset()
+        dataset = char_data.InMemoryNumpyWordCharDataset(
+            ignore_chars_for_unks=ignore_chars_for_unks
+        )
         dataset.parse_multilingual(
             corpus_configs,
             reverse_order=reverse_order,
@@ -250,6 +256,7 @@ def preprocess_monolingual_corpora(
             reverse_order=False,
             embed_bytes=embed_bytes,
             char_dictionary=char_target_dict,
+            ignore_chars_for_unks=True,
         )
 
 
@@ -376,6 +383,7 @@ def preprocess_bilingual_corpora(
             reverse_order=False,
             embed_bytes=embed_bytes,
             char_dictionary=char_target_dict,
+            ignore_chars_for_unks=True,
         )
     if args.eval_target_text_file:
         args.eval_target_binary_path = binarize_text_file(
@@ -386,6 +394,7 @@ def preprocess_bilingual_corpora(
             reverse_order=False,
             embed_bytes=embed_bytes,
             char_dictionary=char_target_dict,
+            ignore_chars_for_unks=True,
         )
 
 

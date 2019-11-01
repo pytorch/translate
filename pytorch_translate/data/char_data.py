@@ -90,13 +90,16 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
         Extract the char/byte ids for char/bytes associated with the input word.
         """
         if embed_bytes:
-            # The byte_id needs to be incremented by 1 to account for the
-            # padding id (0) in the embedding table
-            char_inds = (
-                [vocab_constants.NUM_BYTE_INDICES + TAGS.index(word) + 1]
-                if word in TAGS
-                else [byte_id + 1 for byte_id in word.encode("utf8", "ignore")]
-            )
+            if word in word_dict or not self.ignore_chars_for_unks:
+                # The byte_id needs to be incremented by 1 to account for the
+                # padding id (0) in the embedding table
+                char_inds = (
+                    [vocab_constants.NUM_BYTE_INDICES + TAGS.index(word) + 1]
+                    if word in TAGS
+                    else [byte_id + 1 for byte_id in word.encode("utf8", "ignore")]
+                )
+            else:
+                char_inds = [char_dict.eos_index]
         else:
             if word in word_dict or not self.ignore_chars_for_unks:
                 chars = [word] if word in TAGS else list(word)
@@ -216,8 +219,10 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
         del word_array_list, word_offsets, char_array_list, char_offsets, sizes
 
     @staticmethod
-    def create_from_file(path):
-        result = InMemoryNumpyWordCharDataset()
+    def create_from_file(path, ignore_chars_for_unks: bool = False):
+        result = InMemoryNumpyWordCharDataset(
+            ignore_chars_for_unks=ignore_chars_for_unks
+        )
         result.load(path)
         return result
 
