@@ -2,11 +2,13 @@
 
 import math
 from ast import literal_eval
-from typing import List
+from typing import Dict, List
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from fairseq import utils
 from fairseq.models import register_model, register_model_architecture
 from pytorch_translate import (
     char_encoder,
@@ -50,8 +52,6 @@ class CharAwareHybridModel(char_source_hybrid.CharSourceHybridModel):
             args, "char_cnn_params"
         ), "Only char CNN is supported for the char encoder hybrid model"
 
-        args.embed_bytes = getattr(args, "embed_bytes", False)
-
         # In case use_pretrained_weights is true, verify the model params
         # are correctly set
         if args.embed_bytes and getattr(args, "use_pretrained_weights", False):
@@ -61,7 +61,7 @@ class CharAwareHybridModel(char_source_hybrid.CharSourceHybridModel):
             args=args, src_dict=src_dict
         )
         decoder = CharAwareHybridModel.build_decoder(
-            args=args, src_dict=src_dict, dst_dict=dst_dict
+            args=args, task=task, src_dict=src_dict, dst_dict=dst_dict
         )
 
         return cls(task, encoder, decoder)
@@ -85,7 +85,7 @@ class CharAwareHybridModel(char_source_hybrid.CharSourceHybridModel):
         return decoder_out
 
     @classmethod
-    def build_decoder(cls, args, src_dict, dst_dict):
+    def build_decoder(cls, args, task, src_dict, dst_dict):
         # If we embed bytes then the number of indices is fixed and does not
         # depend on the dictionary
         if args.embed_bytes:
@@ -103,6 +103,7 @@ class CharAwareHybridModel(char_source_hybrid.CharSourceHybridModel):
             args,
             src_dict=src_dict,
             dst_dict=dst_dict,
+            char_dict=task.char_target_dict,
             embed_tokens=decoder_embed_tokens,
             num_chars=num_chars,
             char_embed_dim=args.char_embed_dim,
@@ -134,6 +135,7 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
         char_cnn_num_highway_layers=0,
         use_pretrained_weights=False,
         finetune_pretrained_weights=False,
+        char_dict=None,  # Only used in training.
     ):
         super().__init__(args, src_dict, dst_dict, embed_tokens)
         convolutions_params = literal_eval(char_cnn_params)
@@ -150,6 +152,7 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
             finetune_pretrained_weights=finetune_pretrained_weights,
         )
         self.char_layer_norm = nn.LayerNorm(embed_tokens.embedding_dim)
+        self.embed_bytes = getattr(args, "embed_bytes", False)
 
         # By default (before training ends), character representations are
         # not precomputed. After precomputation, this value should be used in place of
@@ -161,6 +164,7 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
         # This is used for precomputation. The first time that is used, we keep it
         # in memory.
         self._character_list = None
+        self.char_dict = char_dict
 
         # Gating for learning which dimensions in the compositional character
         # embeddings are important. This gate goes under a sigmoid function.
@@ -258,54 +262,102 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
             timestep=timestep,
         )
 
-    def precompute_char_representations(
-        self, char_dict, embed_bytes=False, batch_size=10000
+    def _forward_given_encoded_info(
+        self, encoded_output_dict: Dict, incremental_state=None
     ):
+        state_outputs = encoded_output_dict["state_outputs"]
+        prev_states = encoded_output_dict["prev_states"]
+        x = encoded_output_dict["embed_out"]
+        attention_weights = encoded_output_dict["attention_weights"]
+        possible_translation_tokens = encoded_output_dict["possible_translation_tokens"]
+        output_weights = self._get_output_weight(
+            possible_translation_tokens=possible_translation_tokens
+        )
+        logits = F.linear(x, output_weights)
+
+        if incremental_state is not None:
+            # encoder projections can be reused at each incremental step
+            state_outputs.extend([prev_states[-2], prev_states[-1]])
+            utils.set_incremental_state(
+                self, incremental_state, "cached_state", state_outputs
+            )
+
+        return logits, attention_weights, possible_translation_tokens
+
+    def precompute_char_representations(self, batch_size=10000):
         """
         Precomputes the embeddings from character CNNs. Then adds that to the
         word embeddings.
         Args:
             batch_size: maximum number of words in one batch
         """
-        character_list = self._char_list_from_dict(
-            char_dict=char_dict, embed_bytes=embed_bytes
-        )
-
-        char_list_len = len(character_list)
-        num_minibatches = math.ceil(char_list_len / batch_size)
         with torch.no_grad():
-            embedding_results = []
-            for i in range(num_minibatches):
-                index_start = i * batch_size
-                index_end = min((i + 1) * batch_size, char_list_len)
-                all_idx = [j for j in range(index_start, index_end)]
-                all_idx = maybe_cuda(torch.LongTensor(all_idx))
-                word_embeds = self.embed_tokens(all_idx)
-
-                character_sublist = character_list[
-                    i * batch_size : min((i + 1) * batch_size, char_list_len)
-                ]
-                max_word_len = max(len(chars) for chars in character_sublist)
-                char_inds = (
-                    torch.Tensor(len(character_sublist), max_word_len)
-                    .long()
-                    .fill_(char_dict.pad_index)
-                )
-
-                for j, chars in enumerate(character_sublist):
-                    char_inds[j, : len(chars)] = torch.LongTensor(chars)
-
-                char_cnn_output = self._get_char_cnn_output(maybe_cuda(char_inds))
-                gates = torch.sigmoid(self.w_gate(all_idx))
-                embedding_results.append(
-                    gates * char_cnn_output[0, :, :] + (1 - gates) * word_embeds
-                )
-
-            self.combined_word_char_embed.weight = torch.nn.Parameter(
-                torch.cat(embedding_results, dim=0)
+            self.combined_word_char_embed.weight = self.compute_char_representations(
+                batch_size=batch_size
             )
 
-    def _char_list_from_dict(self, char_dict, embed_bytes=False) -> List[List[int]]:
+    def compute_char_representations(self, batch_size=10000):
+        assert self.char_dict is not None
+        character_list = self._char_list_from_dict()
+        char_list_len = len(character_list)
+        num_minibatches = math.ceil(char_list_len / batch_size)
+        embedding_results = []
+        for i in range(num_minibatches):
+            index_start = i * batch_size
+            index_end = min((i + 1) * batch_size, char_list_len)
+            character_sublist = character_list[index_start:index_end]
+            all_idx = [j for j in range(index_start, index_end)]
+            all_idx = maybe_cuda(torch.LongTensor(all_idx))
+            result = self._compute_word_char_rep_for_subset(
+                indices=all_idx, character_sublist=character_sublist
+            )
+            embedding_results.append(result)
+
+        return torch.nn.Parameter(torch.cat(embedding_results, dim=0))
+
+    def _get_output_weight(self, possible_translation_tokens):
+        # todo write unit test for both cases
+        vocab_size = len(self.dictionary)
+        if possible_translation_tokens is not None:
+            character_list = self._char_list_from_dict()
+            character_sublist = [
+                character_list[idx] for idx in possible_translation_tokens
+            ]
+            results = self._compute_word_char_rep_for_subset(
+                indices=possible_translation_tokens, character_sublist=character_sublist
+            )
+        else:
+            all_idx = [j for j in range(vocab_size)]
+            sampled_indices_tensor = maybe_cuda(torch.LongTensor(all_idx))
+            character_list = self._char_list_from_dict()
+            results = self._compute_word_char_rep_for_subset(
+                indices=sampled_indices_tensor, character_sublist=character_list
+            )
+        return results
+
+    def _compute_word_char_rep_for_subset(
+        self, indices: torch.Tensor, character_sublist: List
+    ):
+        word_embeds = self.embed_tokens(indices)
+        word_embeds = F.dropout(word_embeds, p=self.dropout, training=self.training)
+
+        max_word_len = max(len(chars) for chars in character_sublist)
+        char_inds = (
+            torch.Tensor(len(character_sublist), max_word_len)
+            .long()
+            .fill_(self.char_dict.pad_index)
+        )
+        for j, chars in enumerate(character_sublist):
+            char_inds[j, : len(chars)] = torch.LongTensor(chars)
+
+        char_cnn_output = self._get_char_cnn_output(maybe_cuda(char_inds))
+        gates = self.w_gate(indices)
+        gates = F.dropout(gates, p=self.dropout, training=self.training)
+        gates = torch.sigmoid(gates)
+        result = gates * char_cnn_output[0, :, :] + (1 - gates) * word_embeds
+        return result
+
+    def _char_list_from_dict(self) -> List[List[int]]:
         """
         From self.word_dict, extracts all character sequneces, and convert
         them to their corresponding list of characters.
@@ -314,29 +366,22 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
             self._character_list = []
             for word_index, word in enumerate(self.dictionary.symbols):
                 self._character_list.append(
-                    self._char_list_for_word(
-                        word_index=word_index,
-                        word=word,
-                        char_dict=char_dict,
-                        embed_bytes=embed_bytes,
-                    )
+                    self._char_list_for_word(word_index=word_index, word=word)
                 )
         return self._character_list
 
-    def _char_list_for_word(
-        self, word_index: int, word: str, char_dict, embed_bytes=False
-    ) -> List[int]:
+    def _char_list_for_word(self, word_index: int, word: str) -> List[int]:
         """
         Extracts character
         For special words except pad, we put eos, because we actually
         do not need their character sequences.
         """
         if word_index == self.dictionary.pad_index:
-            char_inds = [char_dict.pad_index]
+            char_inds = [self.char_dict.pad_index]
         elif word_index < self.dictionary.nspecial:
-            char_inds = [char_dict.eos_index]
+            char_inds = [self.char_dict.eos_index]
         else:
-            if embed_bytes:
+            if self.embed_bytes:
                 # The byte_id needs to be incremented by 1 to account for the
                 # padding id (0) in the embedding table
                 char_inds = (
@@ -346,7 +391,7 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
                 )
             else:
                 chars = [word] if word in TAGS else list(word)
-                char_inds = [char_dict.index(c) for c in chars]
+                char_inds = [self.char_dict.index(c) for c in chars]
         return char_inds
 
 

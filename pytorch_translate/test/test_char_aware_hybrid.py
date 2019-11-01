@@ -59,6 +59,7 @@ class TestCharAwareHybrid(unittest.TestCase):
                 args=test_args,
                 src_dict=self.word_dict,
                 dst_dict=self.word_dict,
+                char_dict=self.char_dict,
                 embed_tokens=decoder_embed_tokens,
                 num_chars=len(self.char_dict),
             )
@@ -77,7 +78,8 @@ class TestCharAwareHybrid(unittest.TestCase):
         encoder_out = word_model.encoder(src_tokens, src_lengths)
 
         embed_output = decoder._embed_prev_outputs(
-            prev_output_tokens=prev_output_tokens, prev_output_chars=prev_output_chars
+            word_char_tensor=decoder.combined_word_char_embed.weight,
+            prev_output_tokens=prev_output_tokens,
         )[0]
         forward_output = decoder(
             prev_output_tokens=prev_output_tokens,
@@ -110,8 +112,8 @@ class TestCharAwareHybrid(unittest.TestCase):
         # Making sure that we embed the inputs correctly.
         encoder_out_shuffled = word_model.encoder(src_tokens_shuffled, src_lengths)
         embed_output_shuffled = decoder._embed_prev_outputs(
+            word_char_tensor=decoder.combined_word_char_embed.weight,
             prev_output_tokens=prev_output_tokens_shuffled,
-            prev_output_chars=prev_output_chars_shuffled,
         )[0]
         assert torch.allclose(embed_output[0, 0], embed_output_shuffled[0, 2])
         assert torch.allclose(embed_output[0, 1], embed_output_shuffled[0, 0])
@@ -172,21 +174,18 @@ class TestCharAwareHybrid(unittest.TestCase):
                 args=test_args,
                 src_dict=self.word_dict,
                 dst_dict=self.word_dict,
+                char_dict=self.char_dict,
                 embed_tokens=decoder_embed_tokens,
                 num_chars=len(self.char_dict),
             )
         )
         # Making sure we do not apply dropout.
         decoder.eval()
-        decoder.precompute_char_representations(
-            char_dict=self.char_dict, embed_bytes=False, batch_size=5
-        )
+        decoder.precompute_char_representations(batch_size=5)
 
         first_embedding = decoder.combined_word_char_embed.weight.clone()
         first_embedding.detach()
-        decoder.precompute_char_representations(
-            char_dict=self.char_dict, embed_bytes=False, batch_size=11
-        )
+        decoder.precompute_char_representations(batch_size=11)
         second_embedding = decoder.combined_word_char_embed.weight.clone()
         second_embedding.detach()
 
@@ -194,9 +193,7 @@ class TestCharAwareHybrid(unittest.TestCase):
         # torch.equal (T53048656)
         assert torch.allclose(first_embedding, second_embedding, rtol=1e-04, atol=1e-04)
 
-        decoder.precompute_char_representations(
-            char_dict=self.char_dict, embed_bytes=False, batch_size=23
-        )
+        decoder.precompute_char_representations(batch_size=23)
         third_embedding = decoder.combined_word_char_embed.weight.clone()
         third_embedding.detach()
         # Due to a known issue in the char_encoder model, this does not hold for
@@ -217,6 +214,7 @@ class TestCharAwareHybrid(unittest.TestCase):
                 args=test_args,
                 src_dict=self.word_dict,
                 dst_dict=self.word_dict,
+                char_dict=self.char_dict,
                 embed_tokens=decoder_embed_tokens,
                 num_chars=len(self.char_dict),
             )
@@ -232,9 +230,7 @@ class TestCharAwareHybrid(unittest.TestCase):
         prev_output_chars = maybe_cuda(
             torch.LongTensor(
                 [
-                    decoder._char_list_for_word(
-                        word_index=word_index, word=word, char_dict=self.char_dict
-                    )
+                    decoder._char_list_for_word(word_index=word_index, word=word)
                     for word_index, word in zip(
                         prev_out_word_indices, prev_output_word_strs
                     )
@@ -243,11 +239,10 @@ class TestCharAwareHybrid(unittest.TestCase):
         )
 
         decoder.eval()
-        decoder.precompute_char_representations(
-            char_dict=self.char_dict, embed_bytes=False, batch_size=30
-        )
+        decoder.precompute_char_representations(batch_size=30)
         embed_output_after_precompute = decoder._embed_prev_outputs(
-            prev_output_tokens=prev_output_tokens, prev_output_chars=prev_output_chars
+            word_char_tensor=decoder.combined_word_char_embed.weight,
+            prev_output_tokens=prev_output_tokens,
         )[0]
 
         x = decoder.embed_tokens(prev_output_tokens)
@@ -257,7 +252,6 @@ class TestCharAwareHybrid(unittest.TestCase):
 
         gates = torch.sigmoid(decoder.w_gate(prev_output_tokens))
         gates = gates.transpose(0, 1)
-
         embed_output = (1 - gates) * x + gates * char_cnn_output
 
         # Due to a known issue in padding, we know that the results are not exactly

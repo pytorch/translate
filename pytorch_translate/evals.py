@@ -351,10 +351,7 @@ def save_and_eval(
     # If the model has characters in the target, we should run precomputation
     # before every evaluation.
     if type(trainer.get_model()) is char_aware_hybrid.CharAwareHybridModel:
-        trainer.get_model().decoder.precompute_char_representations(
-            char_dict=task.char_target_dict,
-            embed_bytes=getattr(args, "embed_bytes", False),
-        )
+        trainer.get_model().decoder.precompute_char_representations()
 
     # Tune loss
     extra_state, stop_due_to_tune_loss = eval_tune_loss(
