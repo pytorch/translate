@@ -148,9 +148,7 @@ class PytorchTranslateTask(FairseqTask):
         else:
             char_source_dict = None
 
-        use_char_target = (getattr(args, "char_target_vocab_file", "") != "") or (
-            getattr(args, "arch", "") in constants.ARCHS_FOR_CHAR_TARGET
-        )
+        use_char_target = getattr(args, "arch", "") in constants.ARCHS_FOR_CHAR_TARGET
         if use_char_target:
             char_target_dict = pytorch_translate_dictionary.Dictionary.load(
                 args.char_target_vocab_file
