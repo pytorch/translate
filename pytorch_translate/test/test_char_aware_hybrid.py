@@ -113,9 +113,9 @@ class TestCharAwareHybrid(unittest.TestCase):
             prev_output_tokens=prev_output_tokens_shuffled,
             prev_output_chars=prev_output_chars_shuffled,
         )[0]
-        assert embed_output[0, 0].equal(embed_output_shuffled[0, 2])
-        assert embed_output[0, 1].equal(embed_output_shuffled[0, 0])
-        assert embed_output[0, 2].equal(embed_output_shuffled[0, 1])
+        assert torch.allclose(embed_output[0, 0], embed_output_shuffled[0, 2])
+        assert torch.allclose(embed_output[0, 1], embed_output_shuffled[0, 0])
+        assert torch.allclose(embed_output[0, 2], embed_output_shuffled[0, 1])
 
         # Making sure the output of the forward function is correct.
         forward_output_shuffled = decoder(
@@ -125,13 +125,13 @@ class TestCharAwareHybrid(unittest.TestCase):
         )
         output_logits_shuffled = forward_output_shuffled[0]
 
-        assert encoder_out[0][:, 0, :].equal(encoder_out_shuffled[0][:, 2, :])
-        assert encoder_out[0][:, 1, :].equal(encoder_out_shuffled[0][:, 0, :])
-        assert encoder_out[0][:, 2, :].equal(encoder_out_shuffled[0][:, 1, :])
+        assert torch.allclose(encoder_out[0][:, 0, :], encoder_out_shuffled[0][:, 2, :])
+        assert torch.allclose(encoder_out[0][:, 1, :], encoder_out_shuffled[0][:, 0, :])
+        assert torch.allclose(encoder_out[0][:, 2, :], encoder_out_shuffled[0][:, 1, :])
 
-        assert output_logits[0].equal(output_logits_shuffled[2])
-        assert output_logits[1].equal(output_logits_shuffled[0])
-        assert output_logits[2].equal(output_logits_shuffled[1])
+        assert torch.allclose(output_logits[0], output_logits_shuffled[2])
+        assert torch.allclose(output_logits[1], output_logits_shuffled[0])
+        assert torch.allclose(output_logits[2], output_logits_shuffled[1])
 
         """
         Now trying in the eval mode.
@@ -149,9 +149,9 @@ class TestCharAwareHybrid(unittest.TestCase):
             prev_output_chars=prev_output_chars_shuffled,
         )
         output_logits_shuffled = forward_output_shuffled[0]
-        assert output_logits[0].equal(output_logits_shuffled[2])
-        assert output_logits[1].equal(output_logits_shuffled[0])
-        assert output_logits[2].equal(output_logits_shuffled[1])
+        assert torch.allclose(output_logits[0], output_logits_shuffled[2])
+        assert torch.allclose(output_logits[1], output_logits_shuffled[0])
+        assert torch.allclose(output_logits[2], output_logits_shuffled[1])
 
     def test_precompute(self):
         """
@@ -254,7 +254,11 @@ class TestCharAwareHybrid(unittest.TestCase):
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
         char_cnn_output = decoder._get_char_cnn_output(prev_output_chars)
-        embed_output = x + char_cnn_output
+
+        gates = torch.sigmoid(decoder.w_gate(prev_output_tokens))
+        gates = gates.transpose(0, 1)
+
+        embed_output = (1 - gates) * x + gates * char_cnn_output
 
         # Due to a known issue in padding, we know that the results are not exactly
         # the same.
