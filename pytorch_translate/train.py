@@ -824,8 +824,12 @@ def main(args, trainer_class=Trainer, **train_step_kwargs):
                 pass
 
 
-if __name__ == "__main__":
+def _main():
     parser = get_parser_with_args()
     args = options.parse_args_and_arch(parser)
     validate_and_set_default_args(args)
     main(args)
+
+
+if __name__ == "__main__":
+    _main()
