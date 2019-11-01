@@ -192,7 +192,7 @@ class PytorchTranslateTask(FairseqTask):
 
         if self.char_target_dict is not None:
             dst_dataset = char_data.InMemoryNumpyWordCharDataset.create_from_file(
-                corpus.target.data_file
+                corpus.target.data_file, ignore_chars_for_unks=True
             )
         else:
             dst_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
@@ -287,7 +287,7 @@ class PytorchTranslateTask(FairseqTask):
             src, tgt = corpora_map.src_files[key], corpora_map.tgt_files[key]
             if self.char_target_dict is not None:
                 tgt_dataset = char_data.InMemoryNumpyWordCharDataset.create_from_file(
-                    tgt
+                    tgt, ignore_chars_for_unks=True
                 )
             else:
                 tgt_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
@@ -484,7 +484,9 @@ class PytorchTranslateTask(FairseqTask):
     ):
         append_bos = getattr(self.args, "append_bos", False)
         if self.char_target_dict is not None:
-            dst_dataset = char_data.InMemoryNumpyWordCharDataset()
+            dst_dataset = char_data.InMemoryNumpyWordCharDataset(
+                ignore_chars_for_unks=True
+            )
             dst_dataset.parse(
                 path=target_text_file,
                 word_dict=self.target_dictionary,
