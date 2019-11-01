@@ -290,15 +290,16 @@ def _generate_score(models, args, task, dataset):
 
     # If applicable, save the translations and scores to the output files
     # These two ouputs are used in dual learning for weighted backtranslation
-    if getattr(args, "translation_output_file", False):
-        with open(args.translation_output_file, "w") as out_file:
-            for hypo_str in translated_sentences:
-                print(hypo_str, file=out_file)
-
-    if getattr(args, "translation_probs_file", False):
-        with open(args.translation_probs_file, "w") as out_file:
-            for hypo_score in translated_scores:
-                print(np.exp(hypo_score), file=out_file)
+    if getattr(args, "translation_output_file", False) and getattr(
+        args, "translation_probs_file", False
+    ):
+        with open(args.translation_output_file, "w") as translation_file, open(
+            args.translation_probs_file, "w"
+        ) as score_file:
+            for hypo_str, hypo_score in zip(translated_sentences, translated_scores):
+                if len(hypo_str.strip()) > 0:
+                    print(hypo_str, file=translation_file)
+                    print(np.exp(hypo_score), file=score_file)
 
     # For eg. external evaluation
     if getattr(args, "hypotheses_export_path", False):
