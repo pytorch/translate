@@ -162,6 +162,12 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
         # in memory.
         self._character_list = None
 
+        # Gating for learning which dimensions in the compositional character
+        # embeddings are important. This gate goes under a sigmoid function.
+        self.w_gate = nn.Embedding(
+            embed_tokens.num_embeddings, embed_tokens.embedding_dim
+        )
+
     def _get_char_cnn_output(self, char_inds):
         if char_inds.dim() == 2:
             char_inds = char_inds.unsqueeze(1)
@@ -209,7 +215,12 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
             # B x T x C -> T x B x C
             x = x.transpose(0, 1)
             char_cnn_output = self._get_char_cnn_output(prev_output_chars)
-            combined_embedding = x + char_cnn_output
+
+            gates = self.w_gate(prev_output_tokens)
+            gates = F.dropout(gates, p=self.dropout, training=self.training)
+            gates = torch.sigmoid(gates)
+            gates = gates.transpose(0, 1)
+            combined_embedding = (1 - gates) * x + gates * char_cnn_output
         else:
             combined_embedding = self.combined_word_char_embed(prev_output_tokens)
             if combined_embedding.dim() == 4:
@@ -285,13 +296,11 @@ class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
                     char_inds[j, : len(chars)] = torch.LongTensor(chars)
 
                 char_cnn_output = self._get_char_cnn_output(maybe_cuda(char_inds))
-                embedding_results.append(char_cnn_output[0, :, :] + word_embeds)
-                # Filling in the precomputed embedding values.
-                for j in range(char_cnn_output.size()[1]):
-                    cur_idx = j + index_start
-                    self.combined_word_char_embed.weight[cur_idx] = (
-                        char_cnn_output[0, j, :] + word_embeds[j]
-                    )
+                gates = torch.sigmoid(self.w_gate(all_idx))
+                embedding_results.append(
+                    gates * char_cnn_output[0, :, :] + (1 - gates) * word_embeds
+                )
+
             self.combined_word_char_embed.weight = torch.nn.Parameter(
                 torch.cat(embedding_results, dim=0)
             )
