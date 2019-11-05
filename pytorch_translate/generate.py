@@ -47,6 +47,7 @@ def generate_score(
     dataset: data.FairseqDataset,
     models: List[FairseqEncoderDecoderModel],
     lang_pair: Optional[str] = None,
+    modify_target_dict: bool = True,
 ):
     """
     Generation for single and multi model training
@@ -67,6 +68,7 @@ def generate_score(
             args=args,
             task=task,
             dataset=dataset,
+            modify_target_dict=modify_target_dict,
         )
     elif lang_pair and len(models) > 0 and isinstance(models[0], DualLearningModel):
         # TODO: this could be refactored to use lang_pari as key too
@@ -80,10 +82,17 @@ def generate_score(
             args=args,
             task=task,
             dataset=dataset,
+            modify_target_dict=modify_target_dict,
         )
 
     else:
-        return _generate_score(models=models, args=args, task=task, dataset=dataset)
+        return _generate_score(
+            models=models,
+            args=args,
+            task=task,
+            dataset=dataset,
+            modify_target_dict=modify_target_dict,
+        )
 
 
 class TranslationInfo(NamedTuple):
@@ -145,7 +154,7 @@ def build_sequence_generator(args, task, models):
     return translator
 
 
-def _generate_score(models, args, task, dataset):
+def _generate_score(models, args, task, dataset, modify_target_dict):
     use_cuda = torch.cuda.is_available() and not args.cpu
 
     # Load ensemble
@@ -225,7 +234,7 @@ def _generate_score(models, args, task, dataset):
         )
 
         for trans_info in _iter_translations(
-            args, task, dataset, translations, align_dict, rescorer
+            args, task, dataset, translations, align_dict, rescorer, modify_target_dict
         ):
             if hasattr(scorer, "add_string"):
                 scorer.add_string(trans_info.target_str, trans_info.hypo_str)
@@ -353,7 +362,9 @@ def smoothed_sentence_bleu(task, target_tokens, hypo_tokens):
     return smoothed_bleu
 
 
-def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
+def _iter_translations(
+    args, task, dataset, translations, align_dict, rescorer, modify_target_dict
+):
     """Iterate over translations.
 
     This is a generator function which wraps the beam-search sequence generator,
@@ -455,7 +466,7 @@ def _iter_translations(args, task, dataset, translations, align_dict, rescorer):
                     # Convert back to tokens for evaluation with unk replacement
                     # and/or without BPE
                     target_tokens = task.target_dictionary.encode_line(
-                        target_str, add_if_not_exist=True
+                        target_str, add_if_not_exist=modify_target_dict
                     )
                 # The probs score for the hypo_str; whether it's normalized by
                 # sequence length or not depends on normalize_scores, which is

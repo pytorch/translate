@@ -267,7 +267,12 @@ def calculate_bleu_on_subset(
     for dataset, lang_pair in zip(datasets, lang_pairs):
         # Generate score
         scorer, num_sentences, gen_timer, translation_samples = generate.generate_score(
-            args=args, task=task, dataset=dataset, models=[model], lang_pair=lang_pair
+            args=args,
+            task=task,
+            dataset=dataset,
+            models=[model],
+            lang_pair=lang_pair,
+            modify_target_dict=False,
         )
         scores.append(scorer.score())
         print(
