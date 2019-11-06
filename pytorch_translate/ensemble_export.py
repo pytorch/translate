@@ -2084,7 +2084,7 @@ class IterativeRefinementGenerateAndDecode(torch.jit.ScriptModule):
             self.models, tgt_dict, max_iter=max_iter
         )
         if quantize:
-            torch.quantization.quantize_dynamic(
+            generator = torch.quantization.quantize_dynamic(
                 generator, {torch.nn.Linear}, dtype=torch.qint8, inplace=True
             )
         enc_inputs = (src_tokens, src_lengths)
