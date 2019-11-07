@@ -10,7 +10,6 @@ from typing import List
 
 try:
     from fvcore.common.file_io import PathManager
-    from manifold.clients.python import StorageException
 
 except (ImportError, ModuleNotFoundError):
 
@@ -46,6 +45,3 @@ except (ImportError, ModuleNotFoundError):
         @staticmethod
         def rm(path: str):
             os.remove(path)
-
-    class StorageException(Exception):
-        pass
