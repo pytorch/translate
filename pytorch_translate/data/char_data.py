@@ -5,6 +5,7 @@ from typing import Any, Dict
 import numpy as np
 import torch
 from fairseq import data, tokenizer
+from fvcore.common.file_io import PathManager
 from pytorch_translate import vocab_constants
 from pytorch_translate.data.dictionary import TAGS
 
@@ -54,23 +55,25 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
         assert self.word_offsets is not None
         assert self.char_buffer is not None
         assert self.char_offsets is not None
-        np.savez(
-            path,
-            word_buffer=self.word_buffer,
-            word_offsets=self.word_offsets,
-            char_buffer=self.char_buffer,
-            char_offsets=self.char_offsets,
-        )
+        with PathManager.open(path, "wb") as f:
+            np.savez(
+                f,
+                word_buffer=self.word_buffer,
+                word_offsets=self.word_offsets,
+                char_buffer=self.char_buffer,
+                char_offsets=self.char_offsets,
+            )
 
     def load(self, path):
-        npz = np.load(path)
-        if "char_buffer" not in npz or "char_offsets" not in npz:
-            raise RuntimeError(f"{path} does not appear to be a word-char dataset!")
-        self.word_buffer = npz["word_buffer"]
-        self.word_offsets = npz["word_offsets"]
-        self.sizes = self.word_offsets[1:] - self.word_offsets[:-1]
-        self.char_buffer = npz["char_buffer"]
-        self.char_offsets = npz["char_offsets"]
+        with PathManager.open(path, "rb") as f:
+            npz = np.load(f)
+            if "char_buffer" not in npz or "char_offsets" not in npz:
+                raise RuntimeError(f"{path} does not appear to be a word-char dataset!")
+            self.word_buffer = npz["word_buffer"]
+            self.word_offsets = npz["word_offsets"]
+            self.sizes = self.word_offsets[1:] - self.word_offsets[:-1]
+            self.char_buffer = npz["char_buffer"]
+            self.char_offsets = npz["char_offsets"]
 
     def _sent_to_word_ids(
         self, sent, word_dict, reverse_order, prepend_inds, append_inds
@@ -123,7 +126,7 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
         append_inds = []
         if append_eos:
             append_inds.append(word_dict.eos_index)
-        with open(path, "r") as f:
+        with PathManager.open(path, "r") as f:
             for line in f:
                 words, word_inds = self._sent_to_word_ids(
                     sent=line,
@@ -179,7 +182,7 @@ class InMemoryNumpyWordCharDataset(data.indexed_dataset.IndexedDataset):
                     prepend_inds.append(corpus_config.dialect_id)
                 else:
                     append_inds.append(corpus_config.dialect_id)
-            with open(corpus_config.data_file, "r") as f:
+            with PathManager.open(corpus_config.data_file, "r") as f:
                 for line in f:
                     words, word_inds = self._sent_to_word_ids(
                         sent=line,
