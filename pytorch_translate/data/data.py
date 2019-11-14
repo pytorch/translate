@@ -7,6 +7,7 @@ from typing import Dict, NamedTuple, Optional
 import numpy as np
 import torch
 from fairseq import data, tokenizer
+from fvcore.common.file_io import PathManager
 from pytorch_translate import constants
 from pytorch_translate.data import dictionary as pytorch_translate_dictionary
 
@@ -89,7 +90,8 @@ class InMemoryIndexedDataset(data.indexed_dataset.IndexedDataset):
     def save(self, path):
         assert self.buffer is not None
         assert self.offsets is not None
-        np.savez(path, buffer=self.buffer, offsets=self.offsets)
+        with PathManager.open(path, "wb") as f:
+            np.savez(f, buffer=self.buffer, offsets=self.offsets)
 
     def reverse(self, eos_token=True):
         for i in range(len(self.offsets) - 1):
@@ -101,22 +103,24 @@ class InMemoryIndexedDataset(data.indexed_dataset.IndexedDataset):
             ]
 
     def load(self, path, num_examples_limit: Optional[int] = None):
-        npz = np.load(path)
+        with PathManager.open(path, "rb") as f:
+            npz = np.load(f)
 
-        # For big input data, we don't want the cpu to OOM.
-        # Therefore, we are loading the huge buffer array into disc
-        # and reading it from disc instead of memory.
-        if npz["buffer"].nbytes > ARRAY_SIZE_LIMIT_FOR_MEMORY:
-            self.buffer = np.memmap(
-                tempfile.NamedTemporaryFile().name,
-                dtype="float32",
-                mode="w+",
-                shape=npz["buffer"].shape,
-            )
-            self.buffer[:] = npz["buffer"][:]
-        else:
-            self.buffer = npz["buffer"]
-        self.offsets = npz["offsets"]
+            # For big input data, we don't want the cpu to OOM.
+            # Therefore, we are loading the huge buffer array into disc
+            # and reading it from disc instead of memory.
+            if npz["buffer"].nbytes > ARRAY_SIZE_LIMIT_FOR_MEMORY:
+                self.buffer = np.memmap(
+                    tempfile.NamedTemporaryFile().name,
+                    dtype="float32",
+                    mode="w+",
+                    shape=npz["buffer"].shape,
+                )
+                self.buffer[:] = npz["buffer"][:]
+            else:
+                self.buffer = npz["buffer"]
+            self.offsets = npz["offsets"]
+
         if num_examples_limit is not None and len(self.offsets) > num_examples_limit:
             self.offsets = self.offsets[: num_examples_limit + 1]
             self.buffer = self.buffer[: self.offsets[-1]]
@@ -203,7 +207,7 @@ class InMemoryIndexedDataset(data.indexed_dataset.IndexedDataset):
                     prepend_inds.append(corpus_config.dialect_id)
                 else:
                     append_inds.append(corpus_config.dialect_id)
-            with open(corpus_config.data_file, "r") as f:
+            with PathManager.open(corpus_config.data_file, "r") as f:
                 for line in f:
                     if already_numberized:
                         inds = line.strip().split()
