@@ -10,7 +10,7 @@ from pytorch_translate import constants
 
 # TODO(T55884145): Replace with
 # from fvcore.common.file_io import PathManager
-from pytorch_translate.file_io import PathManager
+from pytorch_translate.file_io import PathManager, StorageException
 
 
 def save_checkpoint_atomic(trainer, final_filename, extra_state):
@@ -301,9 +301,10 @@ class CheckpointManager:
                 self.log_if_verbose(
                     f"| Finished removing old checkpoint {checkpoint_to_remove}."
                 )
-            except FileNotFoundError:
+            except (FileNotFoundError, StorageException) as e:
                 print(
-                    f"| Unable to find old checkpoint {checkpoint_to_remove} for removal",
+                    f"| Failed to remove old checkpoint {checkpoint_to_remove} "
+                    f"- exception: {e}",
                     flush=True,
                 )
 
