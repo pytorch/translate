@@ -19,7 +19,7 @@ from caffe2.python import core, workspace
 from caffe2.python.onnx import backend as caffe2_backend
 from caffe2.python.predictor import predictor_exporter
 from fairseq import tasks, utils
-from fairseq.models import ARCH_MODEL_REGISTRY, levenshtein_transformer
+from fairseq.models import ARCH_MODEL_REGISTRY
 from fairseq.models.model_utils import script_skip_tensor, script_skip_tensor_list
 from pytorch_translate.beam_decode import BeamDecode
 from pytorch_translate.data import dictionary
@@ -35,6 +35,7 @@ from torch.onnx import ExportTypes, OperatorExportTypes
 
 try:
     from pytorch_translate import latent_var_models  # noqa;
+    from fairseq.models import fb_levenshtein_transformer as levenshtein_transformer
 except ImportError:
     pass
 
@@ -135,7 +136,7 @@ def load_models_from_checkpoints(
             model = latent_var_models.LatentVarModel.build_model(
                 checkpoint_data["args"], task
             )
-        elif architecture == "levenshtein_transformer":
+        elif architecture == "fb_levenshtein_transformer":
             task = tasks.setup_task(checkpoint_data["args"])
             model = levenshtein_transformer.LevenshteinTransformerModel.build_model(
                 checkpoint_data["args"], task

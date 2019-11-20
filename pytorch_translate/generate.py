@@ -19,7 +19,6 @@ from fairseq import (
 )
 from fairseq.meters import StopwatchMeter, TimeMeter
 from fairseq.models import FairseqEncoderDecoderModel, FairseqMultiModel
-from fairseq.models.levenshtein_transformer import LevenshteinTransformerModel
 from pytorch_translate import hybrid_transformer_rnn  # noqa
 from pytorch_translate import rnn  # noqa
 from pytorch_translate import transformer  # noqa
@@ -39,6 +38,14 @@ from pytorch_translate.research.multisource import multisource_data, multisource
 from pytorch_translate.tasks.pytorch_translate_multi_task import (
     PyTorchTranslateMultiTask,
 )
+
+
+try:
+    from fairseq.models.fb_levenshtein_transformer import (
+        LevenshteinTransformerModel,
+    )  # noqa
+except ImportError:
+    pass
 
 
 def generate_score(
