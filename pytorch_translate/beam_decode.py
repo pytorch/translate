@@ -758,6 +758,8 @@ class SequenceGenerator(object):
                 all_log_probs.append(log_probs)
 
             if attn is not None:
+                if isinstance(attn, dict):
+                    attn = attn["attn"]
                 attn = attn[:, -1, :].data
                 if avg_attn is None:
                     avg_attn = attn
