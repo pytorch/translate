@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-import os
 from typing import Optional
 
 from fairseq.data.indexed_dataset import IndexedDataset
+from fvcore.common.file_io import PathManager
 from pytorch_translate.data import (
     char_data,
     data as pytorch_translate_data,
@@ -72,7 +72,7 @@ def load_monolingual_dataset(
     if log_verbose:
         print("Starting to load binarized monolingual data file.", flush=True)
 
-    if not os.path.exists(bin_path):
+    if not PathManager.exists(bin_path):
         raise ValueError(f"Monolingual binary path {bin_path} not found!")
 
     if char_source_dict is not None and is_source:
@@ -101,9 +101,9 @@ def validate_corpus_exists(
     for logging.
     """
     if is_npz:
-        if not os.path.exists(corpus.source.data_file):
+        if not PathManager.exists(corpus.source.data_file):
             raise ValueError(f"{corpus.source.data_file} for {split} not found!")
-        if not os.path.exists(corpus.target.data_file):
+        if not PathManager.exists(corpus.target.data_file):
             raise ValueError(f"{corpus.target.data_file} for {split} not found!")
     else:
         if not IndexedDataset.exists(corpus.source.data_file):
