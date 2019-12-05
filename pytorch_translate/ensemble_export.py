@@ -2068,20 +2068,11 @@ def finalize_hypos_loop_attns(
 
 
 class IterativeRefinementGenerateAndDecode(torch.jit.ScriptModule):
-    def __init__(
-        self,
-        checkpoint_files,
-        src_dict_filename,
-        tgt_dict_filename,
-        max_iter=1,
-        quantize=True,
-    ):
+    def __init__(self, models, tgt_dict, max_iter=1, quantize=True, check_trace=True):
         super().__init__()
-        self.models, _, tgt_dict = load_models_from_checkpoints(
-            checkpoint_files, src_dict_filename, tgt_dict_filename
-        )
-        src_tokens = torch.tensor([[4, 3360]])
+        src_tokens = torch.tensor([[4, 2]])
         src_lengths = torch.tensor([2])
+        self.models = models
 
         generator = IterativeRefinementGenerator(
             self.models, tgt_dict, max_iter=max_iter
@@ -2091,7 +2082,9 @@ class IterativeRefinementGenerateAndDecode(torch.jit.ScriptModule):
                 generator, {torch.nn.Linear}, dtype=torch.qint8, inplace=True
             )
         enc_inputs = (src_tokens, src_lengths)
-        self.generator = torch.jit.trace(generator, enc_inputs, _force_outplace=True)
+        self.generator = torch.jit.trace(
+            generator, enc_inputs, _force_outplace=True, check_trace=check_trace
+        )
 
     @torch.jit.script_method
     def forward(
@@ -2115,6 +2108,23 @@ class IterativeRefinementGenerateAndDecode(torch.jit.ScriptModule):
         self.apply(pack)
         torch.jit.save(self, output_path)
         self.apply(unpack)
+
+    @classmethod
+    def build_from_checkpoints(
+        cls,
+        checkpoint_filenames,
+        src_dict_filename,
+        tgt_dict_filename,
+        lexical_dict_paths=None,
+        max_iter=1,
+    ):
+        models, _, tgt_dict = load_models_from_checkpoints(
+            checkpoint_filenames,
+            src_dict_filename,
+            tgt_dict_filename,
+            lexical_dict_paths,
+        )
+        return cls(models, tgt_dict=tgt_dict, max_iter=max_iter)
 
 
 @torch.jit.script
@@ -2202,10 +2212,11 @@ class IterativeRefinementGenerator(nn.Module):
         finalized_scores_list = [torch.tensor(0) for _ in range(bsz)]
         finalized_attns_list = [torch.tensor(0) for _ in range(bsz)]
         finalized_alignments_list = [torch.tensor(0) for _ in range(bsz)]
-        prev_decoder_out._replace(max_step=self.max_iter + 1)
 
         for step in range(self.max_iter + 1):
-            prev_decoder_out._replace(step=step)
+            prev_decoder_out = prev_decoder_out._replace(
+                step=step, max_step=self.max_iter + 1
+            )
             decoder_out = model.forward_decoder(
                 prev_decoder_out,
                 encoder_out,
@@ -2220,7 +2231,7 @@ class IterativeRefinementGenerator(nn.Module):
                 decoder_out.output_scores,
                 decoder_out.attn,
             )
-            decoder_out._replace(
+            decoder_out = decoder_out._replace(
                 output_tokens=output_tokens,
                 output_scores=output_scores,
                 attn=output_attn,
