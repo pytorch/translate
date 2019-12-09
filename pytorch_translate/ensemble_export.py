@@ -2058,7 +2058,7 @@ def finalize_hypos_loop_attns(
     finalized_attn,
 ):
     for i in range(finalized_idxs.size(0)):
-        cutoff = finalized_scores[i].ne(pad_idx)
+        cutoff = finalized_tokens[i].ne(pad_idx)
         hypo_attn = finalized_attn[i][cutoff]
         alignment = hypo_attn.max(dim=1)[1]
         finalized_attns_list[finalized_idxs[i]] = hypo_attn
@@ -2221,7 +2221,7 @@ class IterativeRefinementGenerator(nn.Module):
                 prev_decoder_out,
                 encoder_out,
                 eos_penalty=self.eos_penalty,
-                max_ratio=self.max_ratio if step == 0 else None,
+                max_ratio=self.max_ratio,
                 decoding_format=self.decoding_format,
             )
             terminated, output_tokens, output_scores, output_attn = is_a_loop(
@@ -2270,19 +2270,18 @@ class IterativeRefinementGenerator(nn.Module):
             )
 
             # for next step
-            prev_decoder_out = DecoderOut(
+            not_terminated = ~terminated
+            prev_decoder_out = decoder_out._replace(
                 output_tokens=script_skip_tensor(
-                    decoder_out.output_tokens, ~terminated
+                    decoder_out.output_tokens, not_terminated
                 ),
                 output_scores=script_skip_tensor(
-                    decoder_out.output_scores, ~terminated
+                    decoder_out.output_scores, not_terminated
                 ),
                 attn=decoder_out.attn,
                 step=decoder_out.step,
                 max_step=decoder_out.max_step,
-                history=None,
             )
-
             encoder_out = EncoderOut(
                 encoder_out=script_skip_tensor(encoder_out.encoder_out, ~terminated),
                 encoder_padding_mask=None,
@@ -2291,9 +2290,10 @@ class IterativeRefinementGenerator(nn.Module):
                 ),
                 encoder_states=None,
             )
-            sent_idxs = script_skip_tensor(sent_idxs, ~terminated)
+            sent_idxs = script_skip_tensor(sent_idxs, not_terminated)
 
             prev_output_tokens = prev_decoder_out.output_tokens.clone()
+            sent_idxs = sent_idxs[not_terminated]
 
         return (
             finalized_tokens_list,
