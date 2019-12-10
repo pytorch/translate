@@ -31,6 +31,7 @@ from pytorch_translate import (
     options as pytorch_translate_options,
     utils as pytorch_translate_utils,
 )
+from pytorch_translate.constants import CHECKPOINT_PATHS_DELIMITER
 from pytorch_translate.data import data as pytorch_translate_data
 from pytorch_translate.dual_learning.dual_learning_models import DualLearningModel
 from pytorch_translate.research.beam_search import competing_completed
@@ -166,7 +167,11 @@ def _generate_score(models, args, task, dataset, modify_target_dict):
 
     # Load ensemble
     if not args.quiet:
-        print("| loading model(s) from {}".format(", ".join(args.path.split(":"))))
+        print(
+            "| loading model(s) from {}".format(
+                ", ".join(args.path.split(CHECKPOINT_PATHS_DELIMITER))
+            )
+        )
 
     # Optimize ensemble for generation
     for model in models:
@@ -683,7 +688,7 @@ def generate(args):
     pytorch_translate_options.print_args(args)
 
     models, model_args, task = pytorch_translate_utils.load_diverse_ensemble_for_inference(
-        args.path.split(":")
+        args.path.split(CHECKPOINT_PATHS_DELIMITER)
     )
     args.source_lang = model_args[0].source_lang
     args.target_lang = model_args[0].target_lang

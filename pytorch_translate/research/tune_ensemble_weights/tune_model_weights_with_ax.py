@@ -4,6 +4,7 @@ import json
 from ax.service.managed_loop import optimize
 from fairseq import options
 from pytorch_translate import generate
+from pytorch_translate.constants import CHECKPOINT_PATHS_DELIMITER
 
 
 def add_tune_args(parser):
@@ -52,7 +53,7 @@ def tune_model_weights():
     parser = generate.get_parser_with_args()
     parser = add_tune_args(parser)
     args = options.parse_args_and_arch(parser)
-    n_models = len(args.path.split(":"))
+    n_models = len(args.path.split(CHECKPOINT_PATHS_DELIMITER))
     print(n_models)
     print(args.weight_lower_bound)
     print(args.weight_upper_bound)

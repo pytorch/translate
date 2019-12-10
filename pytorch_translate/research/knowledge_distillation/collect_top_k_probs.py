@@ -11,6 +11,7 @@ from pytorch_translate import (
     options as pytorch_translate_options,
     utils as pytorch_translate_utils,
 )
+from pytorch_translate.constants import CHECKPOINT_PATHS_DELIMITER
 from pytorch_translate.tasks.pytorch_translate_multi_task import (  # noqa
     PyTorchTranslateMultiTask,
 )
@@ -109,7 +110,7 @@ def save_top_k(args):
         model_args,
         task,
     ) = pytorch_translate_utils.load_diverse_ensemble_for_inference(
-        args.path.split(":")
+        args.path.split(CHECKPOINT_PATHS_DELIMITER)
     )
     for model in models:
         model.eval()

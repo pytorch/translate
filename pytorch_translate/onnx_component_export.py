@@ -5,6 +5,7 @@ import argparse
 import numpy as np
 import torch
 from pytorch_translate import rnn  # noqa
+from pytorch_translate.constants import CHECKPOINT_PATHS_DELIMITER
 from pytorch_translate.ensemble_export import (
     CharSourceEncoderEnsemble,
     DecoderBatchedStepEnsemble,
@@ -90,7 +91,7 @@ def main():
 
 def export(args):
     assert_required_args_are_set(args)
-    checkpoint_filenames = args.path.split(":")
+    checkpoint_filenames = args.path.split(CHECKPOINT_PATHS_DELIMITER)
 
     if args.char_source:
         encoder_class = CharSourceEncoderEnsemble

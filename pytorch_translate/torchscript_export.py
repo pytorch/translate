@@ -3,6 +3,7 @@
 import argparse
 
 from pytorch_translate import rnn  # noqa
+from pytorch_translate.constants import CHECKPOINT_PATHS_DELIMITER
 from pytorch_translate.ensemble_export import BeamSearch
 
 
@@ -62,7 +63,7 @@ def main():
         parser.print_help()
         return
 
-    checkpoint_filenames = args.path.split(":")
+    checkpoint_filenames = args.path.split(CHECKPOINT_PATHS_DELIMITER)
 
     beam_search = BeamSearch.build_from_checkpoints(
         checkpoint_filenames=checkpoint_filenames,
