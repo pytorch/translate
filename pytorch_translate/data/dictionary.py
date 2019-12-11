@@ -5,6 +5,10 @@ import re
 from typing import Dict, List, Optional, Set
 
 from fairseq.data import dictionary
+
+# TODO(T55884145): Replace with
+# from fvcore.common.file_io import PathManager
+from fairseq.file_io import PathManager
 from pytorch_translate import vocab_constants
 
 
@@ -49,7 +53,7 @@ def char_tokenize_line(line):
 
 
 def add_file_to_dictionary(filename, dict, tokenize):
-    with open(filename, "r", encoding="utf-8") as f:
+    with PathManager.open(filename, "r", encoding="utf-8") as f:
         for line in f:
             for word in tokenize(line):
                 dict.add_symbol(word)
@@ -123,7 +127,7 @@ class Dictionary(dictionary.Dictionary):
         if tokens_with_penalty:
             # Assume input tokens are unique
             lexicon = []
-            with open(tokens_with_penalty, "r", encoding="utf-8") as f:
+            with PathManager.open(tokens_with_penalty, "r", encoding="utf-8") as f:
                 for line in f:
                     tokens = line.strip().split()
                     if len(tokens) == 1:
@@ -154,7 +158,7 @@ class Dictionary(dictionary.Dictionary):
         embed_bytes: bool = False,
         padding_factor: int = 8,
     ) -> "Dictionary":  # https://www.python.org/dev/peps/pep-0484/#forward-references
-        if os.path.isfile(vocab_file):
+        if PathManager.isfile(vocab_file):
             d = cls.load(vocab_file)
             print(
                 f"Re-using existing vocab file {vocab_file}. Specified "
