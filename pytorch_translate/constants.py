@@ -18,3 +18,4 @@ ARCHS_FOR_CHAR_SOURCE = {
     "char_aware_hybrid",
 }
 ARCHS_FOR_CHAR_TARGET = {"char_aware_hybrid"}
+CHECKPOINT_PATHS_DELIMITER = "|"

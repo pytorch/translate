@@ -24,6 +24,7 @@ from fairseq.models import ARCH_MODEL_REGISTRY
 from fairseq.models.model_utils import script_skip_tensor
 from fairseq.models.transformer import EncoderOut
 from pytorch_translate.beam_decode import BeamDecode
+from pytorch_translate.checkpoint import load_to_cpu
 from pytorch_translate.data import dictionary
 from pytorch_translate.research.knowledge_distillation import (
     dual_decoder_kd_model,
@@ -81,7 +82,7 @@ def load_models_from_checkpoints(
     dst_dict = dictionary.Dictionary.load(dst_dict_filename)
     models = []
     for filename in checkpoint_filenames:
-        checkpoint_data = torch.load(filename, map_location="cpu")
+        checkpoint_data = load_to_cpu(filename)
         if lexical_dict_paths is not None:
             assert (
                 checkpoint_data["args"].vocab_reduction_params is not None
