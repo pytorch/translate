@@ -918,7 +918,7 @@ class BeamDecode(torch.jit.ScriptModule):
             min_score = 65504.0
             for idx in range(len(end_states)):
                 s = end_states[idx]
-                if bool(float(s[0]) <= min_score):
+                if min_score is None or bool(float(s[0]) <= min_score):
                     min_index = idx
                     min_score = float(s[0])
         return end_states, min_score, min_index
