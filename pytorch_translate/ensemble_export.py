@@ -2,9 +2,6 @@
 
 import copy
 import logging
-import os
-import tempfile
-from collections import defaultdict
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -14,10 +11,6 @@ import torch.jit.quantized
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.onnx.operators
-from caffe2.proto.caffe2_pb2 import Argument
-from caffe2.python import core, workspace
-from caffe2.python.onnx import backend as caffe2_backend
-from caffe2.python.predictor import predictor_exporter
 from fairseq import tasks, utils
 from fairseq.iterative_refinement_generator import DecoderOut
 from fairseq.models import ARCH_MODEL_REGISTRY
@@ -33,7 +26,6 @@ from pytorch_translate.research.knowledge_distillation import (
 from pytorch_translate.tasks.pytorch_translate_task import DictionaryHolderTask
 from pytorch_translate.word_prediction import word_prediction_model
 from torch import Tensor
-from torch.onnx import ExportTypes, OperatorExportTypes
 
 
 try:
@@ -55,24 +47,6 @@ from pytorch_translate import (  # noqa; noqa
 )
 
 logger = logging.getLogger(__name__)
-
-
-def onnx_export_ensemble(module, output_path, input_tuple, input_names, output_names):
-    # include parameters as inputs of exported graph
-    for name, _ in module.named_parameters():
-        input_names.append(name)
-
-    with open(output_path, "w+b") as netdef_file:
-        torch.onnx._export(
-            module,
-            input_tuple,
-            netdef_file,
-            verbose=False,
-            input_names=input_names,
-            output_names=output_names,
-            export_type=ExportTypes.ZIP_ARCHIVE,
-            operator_export_type=OperatorExportTypes.ONNX_ATEN_FALLBACK,
-        )
 
 
 def load_models_from_checkpoints(
@@ -163,124 +137,6 @@ def load_models_from_checkpoints(
             models.append(model)
 
     return models, src_dict, dst_dict
-
-
-def merge_transpose_and_batchmatmul(caffe2_backend_rep):
-    """
-    Fuses Transpose and BatchMatMul ops if the Transpose inverts the last two
-    axes and the BatchMatMul is the only thing that consumes the output
-    of the Transpose.
-    """
-    consumed_count = defaultdict(int)
-    transposed_last_axes_blobs = set()
-    consumed_by_batchmatmul = set()
-
-    for operator in caffe2_backend_rep.predict_net.op:
-        for blob in operator.input:
-            consumed_count[blob] += 1
-        if operator.type == "BatchMatMul":
-            for blob in operator.input:
-                consumed_by_batchmatmul.add(blob)
-
-        if operator.type == "Transpose":
-            transpose_last_axes = False
-            for arg in operator.arg:
-                if arg.name == "axes":
-                    axes = arg.ints
-                    if axes[-2:] == [len(axes) - 1, len(axes) - 2]:
-                        transpose_last_axes = True
-            if transpose_last_axes:
-                transposed_last_axes_blobs.add(operator.output[0])
-
-    transpose_ops_to_remove = []
-    removed_transpose_outputs_to_inputs = {}
-    for operator in caffe2_backend_rep.predict_net.op:
-        if (
-            operator.type == "Transpose"
-            and operator.output[0] in transposed_last_axes_blobs
-            and consumed_count[operator.output[0]] == 1
-            and operator.output[0] in consumed_by_batchmatmul
-        ):
-            transpose_ops_to_remove.append(operator)
-            removed_transpose_outputs_to_inputs[operator.output[0]] = operator.input[0]
-
-        if operator.type == "BatchMatMul":
-            if operator.input[0] in removed_transpose_outputs_to_inputs:
-                operator.input[0] = removed_transpose_outputs_to_inputs[
-                    operator.input[0]
-                ]
-                new_arg = Argument()
-                new_arg.name = "trans_a"
-                new_arg.i = 1
-                operator.arg.extend([new_arg])
-            if operator.input[1] in removed_transpose_outputs_to_inputs:
-                operator.input[1] = removed_transpose_outputs_to_inputs[
-                    operator.input[1]
-                ]
-                new_arg = Argument()
-                new_arg.name = "trans_b"
-                new_arg.i = 1
-                operator.arg.extend([new_arg])
-
-    for operator in transpose_ops_to_remove:
-        caffe2_backend_rep.predict_net.op.remove(operator)
-
-
-def save_caffe2_rep_to_db(
-    caffe2_backend_rep, output_path, input_names, output_names, num_workers
-):
-    merge_transpose_and_batchmatmul(caffe2_backend_rep)
-
-    # netdef external_input includes internally produced blobs
-    actual_external_inputs = set()
-    produced = set()
-    for operator in caffe2_backend_rep.predict_net.op:
-        for blob in operator.input:
-            if blob not in produced:
-                actual_external_inputs.add(blob)
-        for blob in operator.output:
-            produced.add(blob)
-    for blob in output_names:
-        if blob not in produced:
-            actual_external_inputs.add(blob)
-
-    param_names = [blob for blob in actual_external_inputs if blob not in input_names]
-
-    init_net = core.Net(caffe2_backend_rep.init_net)
-    predict_net = core.Net(caffe2_backend_rep.predict_net)
-
-    # predictor_exporter requires disjoint params, inputs and outputs
-    for i, param in enumerate(param_names):
-        if param in output_names:
-            saved_name = param + "_PARAM"
-            init_net.Copy(param, saved_name)
-            predict_net.Copy(saved_name, param)
-            param_names[i] = saved_name
-
-    dummy_shapes = {}
-    for blob in output_names:
-        dummy_shapes[blob] = (0,)
-    for blob in input_names:
-        dummy_shapes[blob] = (0,)
-
-    # Required because of https://github.com/pytorch/pytorch/pull/6456/files
-    with caffe2_backend_rep.workspace._ctx:
-        workspace.RunNetOnce(init_net)
-        predictor_export_meta = predictor_exporter.PredictorExportMeta(
-            predict_net=predict_net,
-            parameters=param_names,
-            inputs=input_names,
-            outputs=output_names,
-            shapes=dummy_shapes,
-            net_type="dag",
-            num_workers=num_workers,
-        )
-        predictor_exporter.save_to_db(
-            db_type="minidb",
-            db_destination=output_path,
-            predictor_export_meta=predictor_export_meta,
-        )
-    logger.info(f"Caffe2 predictor net saved as: {output_path}")
 
 
 class EncoderEnsemble(nn.Module):
@@ -374,43 +230,6 @@ class EncoderEnsemble(nn.Module):
         self.output_names = output_names
 
         return tuple(outputs)
-
-    def onnx_export(self, output_path):
-        # The discrepancy in types here is a temporary expedient.
-        # PyTorch indexing requires int64 while support for tracing
-        # pack_padded_sequence() requires int32.
-        length = 5
-        src_tokens = torch.LongTensor(np.ones((length, 1), dtype="int64"))
-        src_lengths = torch.IntTensor(np.array([length], dtype="int32"))
-
-        # generate output names
-        self.forward(src_tokens, src_lengths)
-
-        onnx_export_ensemble(
-            module=self,
-            output_path=output_path,
-            input_tuple=(src_tokens, src_lengths),
-            input_names=["encoder_inputs", "encoder_lengths"],
-            output_names=self.output_names,
-        )
-
-    def save_to_db(self, output_path):
-        """
-        Save encapsulated encoder export file.
-        """
-        tmp_dir = tempfile.mkdtemp()
-        tmp_file = os.path.join(tmp_dir, "encoder.pb")
-        self.onnx_export(tmp_file)
-
-        onnx_encoder = caffe2_backend.prepare_zip_archive(tmp_file)
-
-        save_caffe2_rep_to_db(
-            caffe2_backend_rep=onnx_encoder,
-            output_path=output_path,
-            input_names=["encoder_inputs", "encoder_lengths"],
-            output_names=self.output_names,
-            num_workers=2 * len(self.models),
-        )
 
     @classmethod
     def build_from_checkpoints(
@@ -1013,25 +832,6 @@ class DecoderBatchedStepEnsemble(nn.Module):
             possible_translation_tokens,
         )
 
-    def onnx_export(self, output_path, encoder_ensemble_outputs):
-        # single EOS (as flat array)
-        input_token = torch.LongTensor(np.array([self.tgt_dict.eos()]))
-        prev_scores = torch.FloatTensor(np.array([0.0]))
-        timestep = torch.LongTensor(np.array([0]))
-
-        # generate input and output names
-        self.forward(input_token, prev_scores, timestep, *encoder_ensemble_outputs)
-
-        onnx_export_ensemble(
-            module=self,
-            output_path=output_path,
-            input_tuple=tuple(
-                [input_token, prev_scores, timestep] + list(encoder_ensemble_outputs)
-            ),
-            input_names=self.input_names,
-            output_names=self.output_names,
-        )
-
     @classmethod
     def build_from_checkpoints(
         cls,
@@ -1055,26 +855,6 @@ class DecoderBatchedStepEnsemble(nn.Module):
             beam_size=beam_size,
             word_reward=word_reward,
             unk_reward=unk_reward,
-        )
-
-    def save_to_db(self, output_path, encoder_ensemble_outputs):
-        """
-        Save encapsulated decoder step export file.
-        Example encoder_ensemble_outputs (PyTorch tensors) from corresponding
-        encoder are necessary to run through network once.
-        """
-        tmp_dir = tempfile.mkdtemp()
-        tmp_file = os.path.join(tmp_dir, "decoder_step.pb")
-        self.onnx_export(tmp_file, encoder_ensemble_outputs)
-
-        onnx_decoder_step = caffe2_backend.prepare_zip_archive(tmp_file)
-
-        save_caffe2_rep_to_db(
-            caffe2_backend_rep=onnx_decoder_step,
-            output_path=output_path,
-            input_names=self.input_names,
-            output_names=self.output_names,
-            num_workers=2 * len(self.models),
         )
 
 
@@ -1304,40 +1084,6 @@ class BeamSearch(torch.jit.ScriptModule):
 
         return all_tokens, all_scores, all_weights, all_prev_indices
 
-    def onnx_export(self, output_path):
-        length = 10
-        src_tokens = torch.LongTensor(np.ones((length, 1), dtype="int64"))
-        src_lengths = torch.IntTensor(np.array([length], dtype="int32"))
-        prev_token = torch.LongTensor([self.tgt_dict.eos()])
-        prev_scores = torch.FloatTensor([0.0])
-        attn_weights = torch.zeros(length)
-        prev_hypos_indices = torch.zeros(self.beam_size, dtype=torch.int64)
-        num_steps = torch.LongTensor([20])
-
-        input_tuple = (
-            src_tokens,
-            src_lengths,
-            prev_token,
-            prev_scores,
-            attn_weights,
-            prev_hypos_indices,
-            num_steps,
-        )
-
-        example_outputs = self.forward(*input_tuple)
-
-        with open(output_path, "w+b") as netdef_file:
-            torch.onnx._export(
-                self,
-                input_tuple,
-                netdef_file,
-                verbose=False,
-                input_names=self.input_names,
-                output_names=self.output_names,
-                example_outputs=example_outputs,
-                export_type=ExportTypes.ZIP_ARCHIVE,
-            )
-
     @classmethod
     def build_from_checkpoints(
         cls,
@@ -1386,24 +1132,6 @@ class BeamSearch(torch.jit.ScriptModule):
             quantize=True,
             char_inds=char_inds,
             word_lengths=word_lengths,
-        )
-
-    def save_to_db(self, output_path):
-        """
-        Save encapsulated beam search.
-        """
-        tmp_dir = tempfile.mkdtemp()
-        tmp_file = os.path.join(tmp_dir, "beam_search.pb")
-        self.onnx_export(tmp_file)
-
-        beam_search = caffe2_backend.prepare_zip_archive(tmp_file, no_check_UNSAFE=True)
-
-        save_caffe2_rep_to_db(
-            caffe2_backend_rep=beam_search,
-            output_path=output_path,
-            input_names=self.input_names,
-            output_names=self.output_names,
-            num_workers=2 * len(self.models),
         )
 
     def save_to_pytorch(self, output_path):
@@ -1587,148 +1315,6 @@ class KnownOutputDecoderStepEnsemble(nn.Module):
         return tuple(outputs)
 
 
-class ForcedDecoder(torch.jit.ScriptModule):
-    def __init__(self, model_list, tgt_dict, word_reward=0, unk_reward=0):
-        super().__init__()
-        self.models = model_list
-        self.tgt_dict = tgt_dict
-        self.word_reward = word_reward
-        self.unk_reward = unk_reward
-
-        source_tokens = torch.LongTensor(np.ones((5, 1), dtype="int64"))
-        source_length = torch.LongTensor([5])
-
-        encoder_ens = EncoderEnsemble(self.models)
-        example_encoder_outs = encoder_ens(source_tokens, source_length)
-        self.encoder_ens = torch.jit.trace(
-            encoder_ens, (source_tokens, source_length), _force_outplace=True
-        )
-        decoder_ens = KnownOutputDecoderStepEnsemble(
-            self.models, tgt_dict, word_reward, unk_reward
-        )
-        prev_token = torch.LongTensor([0])
-        target_token = torch.LongTensor([0])
-        ts = torch.LongTensor([0])
-        _, *states = decoder_ens(prev_token, target_token, ts, *example_encoder_outs)
-        self.decoder_ens = torch.jit.trace(
-            decoder_ens,
-            (prev_token, target_token, ts, *example_encoder_outs),
-            _force_outplace=True,
-        )
-
-        self.input_names = [
-            "source_tokens",
-            "source_length",
-            "target_tokens",
-            "target_length",
-            "eos_token",
-            "zero",
-        ]
-        self.output_names = ["score"]
-
-    @torch.jit.script_method
-    def forward(
-        self,
-        source_tokens,
-        source_length,
-        target_tokens,
-        target_length,
-        eos_token,
-        zero,
-    ):
-        # EncoderEnsemble expects tokens in sequence_length-first shape
-        source_tokens = source_tokens.view((-1, 1))
-        states = self.encoder_ens(source_tokens, source_length)
-
-        target_tokens = target_tokens.view((1, -1))
-        eos_token = eos_token.view((1, 1))
-        input_tokens = torch.cat([eos_token, target_tokens], dim=1)
-        output_tokens = torch.cat([target_tokens, eos_token], dim=1)
-
-        num_steps = int(target_length + 1)
-        score = zero
-
-        for i in range(num_steps):
-            # Lint error expected (see @jamesreed's comment on D9021140)
-            index_t = _to_tensor(i)  # noqa F821
-            (step_score, *states) = self.decoder_ens(
-                input_tokens.index_select(dim=1, index=index_t).view((1, 1)),
-                output_tokens.index_select(dim=1, index=index_t).view((1,)),
-                index_t,
-                *states,
-            )
-            score += step_score
-
-        return score
-
-    def onnx_export(self, output_path):
-        source_tokens = torch.LongTensor(np.ones((1, 5), dtype="int64"))
-        source_length = torch.LongTensor([5])
-        target_tokens = torch.LongTensor(np.ones((1, 7), dtype="int64"))
-        target_length = torch.LongTensor([7])
-        eos_token = torch.LongTensor([[self.tgt_dict.eos()]])
-        zero = torch.FloatTensor([0.0])
-
-        input_tuple = (
-            source_tokens,
-            source_length,
-            target_tokens,
-            target_length,
-            eos_token,
-            zero,
-        )
-
-        example_outputs = self.forward(*input_tuple)
-
-        with open(output_path, "w+b") as netdef_file:
-            torch.onnx._export(
-                self,
-                input_tuple,
-                netdef_file,
-                verbose=False,
-                input_names=self.input_names,
-                output_names=self.output_names,
-                example_outputs=example_outputs,
-                export_type=ExportTypes.ZIP_ARCHIVE,
-            )
-
-    @classmethod
-    def build_from_checkpoints(
-        cls,
-        checkpoint_filenames,
-        src_dict_filename,
-        dst_dict_filename,
-        word_reward=0,
-        unk_reward=0,
-        lexical_dict_paths=None,
-    ):
-        models, _, tgt_dict = load_models_from_checkpoints(
-            checkpoint_filenames,
-            src_dict_filename,
-            dst_dict_filename,
-            lexical_dict_paths,
-        )
-        return cls(models, tgt_dict, word_reward=word_reward, unk_reward=unk_reward)
-
-    def save_to_db(self, output_path):
-        """
-        Save encapsulated beam search.
-        """
-        tmp_dir = tempfile.mkdtemp()
-        tmp_file = os.path.join(tmp_dir, "forced_decoder.pb")
-        self.onnx_export(tmp_file)
-
-        forced_decoder = caffe2_backend.prepare_zip_archive(tmp_file)
-
-        save_caffe2_rep_to_db(
-            caffe2_backend_rep=forced_decoder,
-            output_path=output_path,
-            input_names=self.input_names,
-            output_names=self.output_names,
-            num_workers=2 * len(self.models),
-        )
-
-
 class CharSourceEncoderEnsemble(nn.Module):
     def __init__(self, models, src_dict=None):
         super().__init__()
@@ -1820,30 +1406,6 @@ class CharSourceEncoderEnsemble(nn.Module):
 
         return tuple(outputs)
 
-    def onnx_export(self, output_path):
-        # The discrepancy in types here is a temporary expedient.
-        # PyTorch indexing requires int64 while support for tracing
-        # pack_padded_sequence() requires int32.
-        length = 5
-        src_tokens = torch.LongTensor(np.ones((length, 1), dtype="int64"))
-        src_lengths = torch.IntTensor(np.array([length], dtype="int32"))
-        word_length = 3
-        char_inds = torch.LongTensor(np.ones((1, length, word_length), dtype="int64"))
-        word_lengths = torch.IntTensor(
-            np.array([word_length] * length, dtype="int32")
-        ).reshape((1, length))
-
-        # generate output names
-        self.forward(src_tokens, src_lengths, char_inds, word_lengths)
-
-        onnx_export_ensemble(
-            module=self,
-            output_path=output_path,
-            input_tuple=(src_tokens, src_lengths, char_inds, word_lengths),
-            input_names=["src_tokens", "src_lengths", "char_inds", "word_lengths"],
-            output_names=self.output_names,
-        )
-
     @classmethod
     def build_from_checkpoints(
         cls,
@@ -1859,24 +1421,6 @@ class CharSourceEncoderEnsemble(nn.Module):
             lexical_dict_paths,
         )
         return cls(models, src_dict=src_dict)
-
-    def save_to_db(self, output_path):
-        """
-        Save encapsulated encoder export file.
-        """
-        tmp_dir = tempfile.mkdtemp()
-        tmp_file = os.path.join(tmp_dir, "encoder.pb")
-        self.onnx_export(tmp_file)
-
-        onnx_encoder = caffe2_backend.prepare_zip_archive(tmp_file)
-
-        save_caffe2_rep_to_db(
-            caffe2_backend_rep=onnx_encoder,
-            output_path=output_path,
-            input_names=["src_tokens", "src_lengths", "char_inds", "word_lengths"],
-            output_names=self.output_names,
-            num_workers=2 * len(self.models),
-        )
 
 
 class BeamSearchAndDecode(torch.jit.ScriptModule):

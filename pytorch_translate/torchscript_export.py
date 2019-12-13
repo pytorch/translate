@@ -7,7 +7,7 @@ from pytorch_translate.constants import CHECKPOINT_PATHS_DELIMITER
 from pytorch_translate.ensemble_export import BeamSearch
 
 
-def main():
+def get_parser_with_args():
     parser = argparse.ArgumentParser(
         description=("Export PyTorch-trained FBTranslate models")
     )
@@ -28,12 +28,12 @@ def main():
         help="File name to which to save the beam search graph for debugging",
     )
     parser.add_argument(
-        "--src-dict",
+        "--source-vocab-file",
         required=True,
         help="File encoding PyTorch dictionary for source language",
     )
     parser.add_argument(
-        "--dst-dict",
+        "--target-vocab-file",
         required=True,
         help="File encoding PyTorch dictionary for source language",
     )
@@ -56,6 +56,11 @@ def main():
         help="Value to add for each word UNK token",
     )
 
+    return parser
+
+
+def main():
+    parser = get_parser_with_args()
     args = parser.parse_args()
 
     if args.output_file == "":
