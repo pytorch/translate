@@ -3,6 +3,7 @@
 import os
 
 import torch
+from fairseq.data.indexed_dataset import get_available_dataset_impl
 from pytorch_translate import constants, utils
 
 
@@ -68,6 +69,12 @@ def add_dataset_args(parser, train=False, gen=False):
         type=int,
         metavar="N",
         help="maximum number of sentences in a batch",
+    )
+    group.add_argument(
+        "--dataset-impl",
+        metavar="FORMAT",
+        choices=get_available_dataset_impl(),
+        help="output dataset implementation",
     )
     if train:
         group.add_argument(

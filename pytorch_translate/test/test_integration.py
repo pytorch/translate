@@ -744,7 +744,8 @@ class TestTranslation(unittest.TestCase):
                         "--target-vocab-file",
                         os.path.join(data_dir, "dictionary-out.txt"),
                         # additoinal ones
-                        "--raw-text",
+                        "--dataset-impl",
+                        "raw",
                         "--monolingual-langs",
                         "in,out",
                         "--save-only",
