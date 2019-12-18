@@ -1838,7 +1838,6 @@ class IterativeRefinementGenerator(nn.Module):
             sent_idxs = script_skip_tensor(sent_idxs, not_terminated)
 
             prev_output_tokens = prev_decoder_out.output_tokens.clone()
-            sent_idxs = sent_idxs[not_terminated]
 
         return (
             finalized_tokens_list,
