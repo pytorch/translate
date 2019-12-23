@@ -294,7 +294,6 @@ def build_vocabs(
             is_char_vocab=True,
             embed_bytes=embed_bytes,
         )
-
     target_dict = dictionary_cls.build_vocab_file_if_nonexistent(
         corpus_files=target_files,
         vocab_file=args.target_vocab_file,
