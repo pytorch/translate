@@ -158,7 +158,6 @@ class VocabPredictor(nn.Module):
             args.hidden_dim, self.output_dim
         )
 
-
     def forward(self, encoder_outputs, encoder_padding_mask=None):
         x = encoder_outputs
         if type(encoder_outputs) is tuple:

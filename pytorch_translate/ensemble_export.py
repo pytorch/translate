@@ -23,6 +23,7 @@ from pytorch_translate.research.knowledge_distillation import (
     dual_decoder_kd_model,
     hybrid_dual_decoder_kd_model,
 )
+from pytorch_translate.research.vocab_prediction import vocab_prediction_model
 from pytorch_translate.tasks.pytorch_translate_task import DictionaryHolderTask
 from pytorch_translate.word_prediction import word_prediction_model
 from torch import Tensor
@@ -91,6 +92,10 @@ def load_models_from_checkpoints(
             )
         elif architecture == "char_source_hybrid":
             model = char_source_hybrid.CharSourceHybridModel.build_model(
+                checkpoint_data["args"], task
+            )
+        elif architecture == "vocab_prediction":
+            model = vocab_prediction_model.VocabPredictionModel.build_model(
                 checkpoint_data["args"], task
             )
         elif architecture == "dual_decoder_kd":
@@ -178,7 +183,11 @@ class EncoderEnsemble(nn.Module):
         # underlying assumption is each model has same vocab_reduction_module
         if hasattr(self.models[0].decoder, "vocab_reduction_module"):
             vocab_reduction_module = self.models[0].decoder.vocab_reduction_module
-            if vocab_reduction_module is not None:
+            # Only if the vocab reduction module comes from phrase-tables (not classifiers).
+            if (
+                vocab_reduction_module is not None
+                and vocab_reduction_module.predictor is None
+            ):
                 possible_translation_tokens = vocab_reduction_module(
                     src_tokens=src_tokens, decoder_input_tokens=None
                 )
@@ -190,16 +199,15 @@ class EncoderEnsemble(nn.Module):
         # step of the beam search, and this turns out to be a relatively
         # expensive operation.
         reduced_weights = {}
-        for i, model in enumerate(self.models):
-            if (
-                self.enable_precompute_reduced_weights
-                and hasattr(model.decoder, "_precompute_reduced_weights")
-                and possible_translation_tokens is not None
-            ):
-                reduced_weights[i] = torch.jit._fork(
-                    model.decoder._precompute_reduced_weights,
-                    possible_translation_tokens,
-                )
+        if possible_translation_tokens is not None:
+            for i, model in enumerate(self.models):
+                if self.enable_precompute_reduced_weights and hasattr(
+                    model.decoder, "_precompute_reduced_weights"
+                ):
+                    reduced_weights[i] = torch.jit._fork(
+                        model.decoder._precompute_reduced_weights,
+                        possible_translation_tokens,
+                    )
 
         # XXX: This loop is where we wait() for each encoder's output to be
         # ready. If you're trying to add more ops, they should probably not
@@ -208,6 +216,24 @@ class EncoderEnsemble(nn.Module):
             encoder_out = torch.jit._wait(future)
             # "primary" encoder output (vector representations per source token)
             encoder_outputs = encoder_out[0]
+
+            if hasattr(model.decoder, "vocab_reduction_module"):
+                vocab_reduction_module = model.decoder.vocab_reduction_module
+                # Only if the vocab reduction module a classifier.
+                if (
+                    vocab_reduction_module is not None
+                    and vocab_reduction_module.predictor is not None
+                ):
+                    possible_translation_tokens = vocab_reduction_module(
+                        src_tokens=src_tokens,
+                        encoder_output=encoder_outputs,
+                        decoder_input_tokens=None,
+                    )
+                    reduced_weights[i] = torch.jit._fork(
+                        model.decoder._precompute_reduced_weights,
+                        possible_translation_tokens,
+                    )
+
             outputs.append(encoder_outputs)
             output_names.append(f"encoder_output_{i}")
             if hasattr(model.decoder, "_init_prev_states"):
@@ -414,6 +440,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 or isinstance(model, rnn.DummyPyTextRNNPointerModel)
                 or isinstance(model, char_source_model.CharSourceModel)
                 or isinstance(model, word_prediction_model.WordPredictionModel)
+                or isinstance(model, vocab_prediction_model.VocabPredictionModel)
             ):
                 encoder_output = inputs[i]
                 prev_hiddens = []
@@ -761,6 +788,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
                 or isinstance(model, rnn.DummyPyTextRNNPointerModel)
                 or isinstance(model, char_source_model.CharSourceModel)
                 or isinstance(model, word_prediction_model.WordPredictionModel)
+                or isinstance(model, vocab_prediction_model.VocabPredictionModel)
             ):
                 (
                     log_probs,

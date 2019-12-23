@@ -33,6 +33,19 @@ class ModelParamsDict:
             self.decoder_layers = 2
             self.decoder_attention_heads = 2
             self.aan = False
+        elif arch == "vocab_prediction":
+            self.arch = "vocab_prediction"
+            self.core_arch = "ptt_transformer"
+            self.encoder_embed_dim = 10
+            self.encoder_ffn_embed_dim = 16
+            self.encoder_layers = 2
+            self.encoder_attention_heads = 2
+            self.decoder_embed_dim = 10
+            self.decoder_ffn_embed_dim = 16
+            self.decoder_layers = 2
+            self.decoder_attention_heads = 2
+            self.topk_labels_per_source_token = 5
+            self.num_top_tokens = 10
         elif arch == "hybrid_transformer_rnn":
             self.arch = "hybrid_transformer_rnn"
             self.encoder_embed_dim = 6

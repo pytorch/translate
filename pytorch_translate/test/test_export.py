@@ -214,6 +214,12 @@ class TestPyTorchExport(unittest.TestCase):
         }
         self._test_full_beam_decoder(test_args, quantize=True)
 
+    def test_full_beam_decoder_vocab_prediction(self):
+        test_args = test_utils.ModelParamsDict(arch="vocab_prediction")
+        test_args.aan = True
+
+        self._test_full_beam_decoder(test_args)
+
     def test_full_beam_decoder_char_transformer(self):
         test_args = test_utils.ModelParamsDict(arch="char_transformer")
         test_args.char_source_dict_size = 126
