@@ -205,6 +205,7 @@ class VocabReduction(nn.Module):
         vocab_reduction_params,
         predictor=None,
         fp16: bool = False,
+        use_during_training: bool = False,
     ):
         super().__init__()
         self.src_dict = src_dict
@@ -213,6 +214,7 @@ class VocabReduction(nn.Module):
         self.predictor = predictor
         self.fp16 = fp16
         self.translation_candidates = None
+        self.use_during_training = use_during_training
 
         if (
             self.vocab_reduction_params is not None
@@ -258,7 +260,9 @@ class VocabReduction(nn.Module):
             vocab_list.append(top_words)
 
         # Get bag of words predicted by word predictor
-        if self.predictor is not None:
+        if self.predictor is not None and (
+            self.use_during_training or not self.training
+        ):
             assert encoder_output is not None
             pred_output = self.predictor(encoder_output)
             # [batch, k]
@@ -267,7 +271,8 @@ class VocabReduction(nn.Module):
             )
             # flatten indices for entire batch [1, batch * k]
             topk_indices = topk_indices.view(-1)
-            vocab_list.append(topk_indices.detach())
+
+            vocab_list.append(topk_indices)
 
         all_translation_tokens = torch.cat(vocab_list, dim=0)
         possible_translation_tokens = torch.unique(

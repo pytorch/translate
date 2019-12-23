@@ -421,10 +421,15 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         if (
             self.vocab_reduction_module is not None
             and possible_translation_tokens is None
+            and (
+                self.vocab_reduction_module.use_during_training or not self.training
+            )  # If not to use during training.
         ):
             decoder_input_tokens = prev_output_tokens.contiguous()
             possible_translation_tokens = self.vocab_reduction_module(
-                src_tokens, decoder_input_tokens=decoder_input_tokens
+                src_tokens,
+                encoder_output=encoder_out,
+                decoder_input_tokens=decoder_input_tokens,
             )
 
         output_weights = self.embed_out

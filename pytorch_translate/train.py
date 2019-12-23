@@ -52,6 +52,10 @@ from pytorch_translate.research.rescore import (  # noqa
     cloze_transformer_model,
     rescoring_criterion,
 )
+from pytorch_translate.research.vocab_prediction import (  # noqa
+    vocab_prediction_loss,
+    vocab_prediction_model,
+)
 from pytorch_translate.word_prediction import word_prediction_criterion  # noqa
 from pytorch_translate.word_prediction import word_prediction_model  # noqa
 
@@ -832,4 +836,5 @@ def _main():
 
 
 if __name__ == "__main__":
-    _main()
+    with torch.autograd.set_detect_anomaly(True):
+        _main()

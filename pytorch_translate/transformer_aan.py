@@ -455,7 +455,9 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
         ):
             decoder_input_tokens = prev_output_tokens.contiguous()
             possible_translation_tokens = self.vocab_reduction_module(
-                src_tokens, decoder_input_tokens=decoder_input_tokens
+                src_tokens,
+                decoder_input_tokens=decoder_input_tokens,
+                encoder_output=encoder_out,
             )
         if possible_translation_tokens is not None:
             output_weights = output_weights.index_select(
