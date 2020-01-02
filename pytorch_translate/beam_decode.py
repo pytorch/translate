@@ -913,9 +913,7 @@ class BeamDecode(torch.jit.ScriptModule):
             end_states[min_index] = state
             # find new worst hypo, keep min_score and min_index updated
             min_index = -1
-            # not using float("inf") temporarily bc of TorchScript bug
-            # using max representable value in fp16
-            min_score = 65504.0
+            min_score = float("inf")
             for idx in range(len(end_states)):
                 s = end_states[idx]
                 if bool(float(s[0]) <= min_score):
@@ -934,9 +932,7 @@ class BeamDecode(torch.jit.ScriptModule):
         """
         Return all end states and hypothesis scores for those end states.
         """
-        # not using float("inf") temporarily bc of TorchScript bug
-        # using max representable value in fp16
-        min_score = 65504.0
+        min_score = float("inf")
         min_index = -1
         end_states = torch.jit.annotate(List[Tensor], [])
         prev_hypo_is_finished = torch.zeros(self.beam_size).byte()
