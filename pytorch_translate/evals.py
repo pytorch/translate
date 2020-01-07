@@ -165,7 +165,7 @@ def evaluate_bleu(
 ) -> Tuple[Dict[str, Any], bool, bool, List]:
     if args.disable_eval_bleu:
         extra_state["tune_bleu"]["current"] = 0.0
-        return (extra_state, False, False, None)
+        return (extra_state, False, True, None)
     epoch, offset = extra_state["epoch"], extra_state["batch_offset"]
     if args.log_verbose:
         print(
