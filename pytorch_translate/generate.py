@@ -46,7 +46,7 @@ try:
         LevenshteinTransformerModel,
     )  # noqa
 except ImportError:
-    pass
+    from fairseq.models.nat import LevenshteinTransformerModel
 
 
 def generate_score(
