@@ -344,7 +344,7 @@ class TransformerEncoder(FairseqEncoder):
 
     def max_positions(self):
         """Maximum input length supported by the encoder."""
-        return self.transformer_embedding.embed_positions.max_positions()
+        return self.transformer_embedding.embed_positions.max_positions
 
     def upgrade_state_dict_named(self, state_dict, name):
         if isinstance(
@@ -580,7 +580,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
     def max_positions(self):
         """Maximum output length supported by the decoder."""
-        return self.embed_positions.max_positions()
+        return self.embed_positions.max_positions
 
     def buffered_future_mask(self, tensor):
         dim = tensor.size(0)
