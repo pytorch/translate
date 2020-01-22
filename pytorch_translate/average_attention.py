@@ -9,9 +9,11 @@
 import torch
 import torch.nn.functional as F
 from fairseq import utils
+from fairseq.incremental_decoding_utils import with_incremental_state
 from torch import nn
 
 
+@with_incremental_state
 class AttentionAbstract(nn.Module):
     """Abstract class for attention modules
     """
