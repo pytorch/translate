@@ -529,7 +529,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                         )
                     ):
                         continue
-                x, attn = layer(
+                x, attn, _ = layer(
                     x,
                     encoder_x,
                     encoder_padding_mask,
@@ -862,7 +862,7 @@ class AANDecoderLayer(nn.Module):
             self_attn_state = prev_sum, prev_pos
             return x, attn, self_attn_state
 
-        return x, attn
+        return x, attn, None
 
     def maybe_layer_norm(self, layer_norm, x, before=False, after=False):
         assert before ^ after
