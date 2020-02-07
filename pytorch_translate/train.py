@@ -109,12 +109,6 @@ def default_extra_state(args) -> Dict[str, Any]:
             "lowest_loss": None,
             "num_since_best": 0,
         },
-        "tune_bleu": {
-            "current": None,
-            "best": None,
-            "best_epoch": None,
-            "num_since_best": 0,
-        },
         # The list of checkpoint files is actually managed by the
         # CheckpointManager, which overwrites this placeholder when it saves
         # checkpoints.
@@ -136,8 +130,8 @@ def update_output(
             num_updates,
             {
                 "train_ppl": train_ppl,
+                "tune_loss": extra_state["tune_eval"]["loss"],
                 "tune_ppl": extra_state["tune_eval"]["perplexity"],
-                "tune_bleu": extra_state["tune_bleu"]["current"],
                 "wps": wps,
                 # translation_samples isn't currently used by the queue reader,
                 # so just pass None for now until we start needing it.
@@ -159,7 +153,6 @@ def clear_per_step_extra_state(extra_state: Dict[str, Any]) -> Dict[str, Any]:
     """
     extra_state["tune_eval"]["loss"] = None
     extra_state["tune_eval"]["perplexity"] = None
-    extra_state["tune_bleu"]["current"] = None
     return extra_state
 
 
@@ -566,11 +559,7 @@ def train(
             # any case where extra_case does not get populated correctly.
             extra_state = clear_per_step_extra_state(extra_state)
             extra_state["batch_offset"] = i + 1
-            (
-                extra_state,
-                stop_training_mid_epoch,
-                translation_samples,
-            ) = evals.save_and_eval(
+            extra_state, stop_training_mid_epoch = evals.save_and_eval(
                 args=args,
                 trainer=trainer,
                 task=task,
@@ -607,9 +596,9 @@ def train(
                 hasattr(args, "lr_shrink")
                 and args.save_interval_updates > 0
                 and extra_state["num_iterations"] % args.save_interval_updates == 0
-                and args.shrink_lr_no_best_bleu_eval > 0
-                and extra_state["tune_bleu"]["num_since_best"]
-                > args.shrink_lr_no_best_bleu_eval
+                and args.shrink_lr_no_best_tune_loss > 0
+                and extra_state["tune_eval"]["num_since_best"]
+                > args.shrink_lr_no_best_tune_loss
             ):
                 current_lr = trainer.optimizer.get_lr()
                 trainer.optimizer.set_lr(current_lr * args.lr_shrink)
@@ -626,11 +615,7 @@ def train(
 
         # batch_offset being None denotes the end of an epoch.
         extra_state["batch_offset"] = None
-        (
-            extra_state,
-            stop_training_end_of_epoch,
-            translation_samples,
-        ) = evals.save_and_eval(
+        extra_state, stop_training_end_of_epoch = evals.save_and_eval(
             args=args,
             trainer=trainer,
             task=task,
@@ -661,11 +646,6 @@ def train(
     # the checkpoint manager may be None
     if checkpoint_manager:
         checkpoint_manager.remove_all_checkpoints()
-
-    print(
-        f"| Best BLEU score of {extra_state['tune_bleu']['best']} was from "
-        f"epoch {extra_state['tune_bleu']['best_epoch']}"
-    )
 
 
 def setup_epoch(args, epoch_itr, trainer):
