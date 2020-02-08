@@ -555,12 +555,12 @@ def expand_optimization_args(group):
         "in the first place. A value of < 0 disables this.",
     )
     group.add_argument(
-        "--shrink-lr-no-best-bleu-eval",
+        "--shrink-lr-no-best-tune-loss",
         default=5,
         type=int,
         metavar="N",
         help="Decay learning rate after N evals have been run without "
-        "achieving a better BLEU score than before. This is to achieve "
+        "achieving a lower tune loss than before. This is to achieve "
         "decay lr within an epoch, independent of lr_scheduler. "
         "Note that this is affected by --save-interval-updates in "
         "how frequently we run BLEU eval in the first place. "
