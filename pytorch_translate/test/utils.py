@@ -456,7 +456,7 @@ def gpu_train_step(test_args: ModelParamsDict) -> Tuple[Trainer, Dict[Any, Any]]
     model = task.build_model(test_args)
     criterion = task.build_criterion(test_args)
     sample = next(samples)
-    trainer = Trainer(test_args, task, model, criterion, dummy_batch=sample)
+    trainer = Trainer(test_args, task, model, criterion)
     logging_dict = trainer.train_step([sample])
     return trainer, logging_dict
 
