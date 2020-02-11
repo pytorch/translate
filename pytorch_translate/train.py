@@ -300,6 +300,7 @@ def setup_training_model(args):
             src_bin_path=args.train_source_binary_path,
             tgt_bin_path=args.train_target_binary_path,
             weights_file=getattr(args, "train_weights_path", None),
+            is_npz=not args.fairseq_binary_data_format,
         )
 
     if args.task == "dual_learning_task":
@@ -311,6 +312,7 @@ def setup_training_model(args):
             split=args.valid_subset,
             src_bin_path=args.eval_source_binary_path,
             tgt_bin_path=args.eval_target_binary_path,
+            is_npz=not args.fairseq_binary_data_format,
         )
 
     return task, model, criterion

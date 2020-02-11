@@ -15,7 +15,7 @@ from pytorch_translate.data import char_data, data as pytorch_translate_data
 from pytorch_translate.data.dictionary import Dictionary
 
 
-def maybe_generate_temp_file_path(output_path=None):
+def maybe_generate_temp_file_path(output_path=None, is_npz=True):
     """
     This function generates a temp file path if output_path is empty or None.
     This is useful to do before calling any preprocessing function that has a
@@ -28,7 +28,7 @@ def maybe_generate_temp_file_path(output_path=None):
         os.close(fd)
     # numpy silently appends this suffix if it is not present, so this ensures
     # that the correct path is returned
-    if not output_path.endswith(".npz"):
+    if is_npz and not output_path.endswith(".npz"):
         output_path += ".npz"
     return output_path
 
@@ -148,16 +148,18 @@ def preprocess_corpora(args, dictionary_cls=Dictionary):
             utils.maybe_parse_collection_argument(args.train_target_binary_path), str
         ):
             args.train_source_binary_path = maybe_generate_temp_file_path(
-                args.train_source_binary_path
+                args.train_source_binary_path,
+                is_npz=not args.fairseq_binary_data_format,
             )
             args.train_target_binary_path = maybe_generate_temp_file_path(
-                args.train_target_binary_path
+                args.train_target_binary_path,
+                is_npz=not args.fairseq_binary_data_format,
             )
     args.eval_source_binary_path = maybe_generate_temp_file_path(
-        args.eval_source_binary_path
+        args.eval_source_binary_path, is_npz=not args.fairseq_binary_data_format
     )
     args.eval_target_binary_path = maybe_generate_temp_file_path(
-        args.eval_target_binary_path
+        args.eval_target_binary_path, is_npz=not args.fairseq_binary_data_format
     )
 
     # Additional text preprocessing options could be added here before

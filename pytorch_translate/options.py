@@ -293,6 +293,12 @@ def add_preprocessing_args(parser):
         default="",
         help="Path for the binary file containing target side monolingual data",
     )
+    group.add_argument(
+        "--fairseq-binary-data-format",
+        default=False,
+        action="store_true",
+        help="Binary data paths are prefixes of .bin and .idx files",
+    )
 
     # TODO(T43045193): Move this to multilingual_task.py eventually
     group.add_argument(
