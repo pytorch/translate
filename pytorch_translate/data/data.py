@@ -261,7 +261,11 @@ class InMemoryIndexedDataset(data.indexed_dataset.IndexedDataset):
             return result
         else:
             # idx, bin format
-            return InMemoryIndexedDataset(path)
+            impl = data.indexed_dataset.infer_dataset_impl(path)
+            if impl == "mmap":
+                return data.indexed_dataset.MMapIndexedDataset(path)
+            else:
+                return InMemoryIndexedDataset(path)
 
     def subsample(self, indices):
         """
