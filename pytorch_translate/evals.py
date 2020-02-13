@@ -338,7 +338,7 @@ def save_and_eval(
         )
     stop_training = pytorch_translate_utils.all_gather_from_master(
         args=args, data=[master_stop_training]
-    )
+    )[0]
 
     # TODO: fix after masked lm work completes
     if "save_only" not in args or not args.save_only:
