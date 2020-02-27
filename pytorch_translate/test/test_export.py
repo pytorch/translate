@@ -194,7 +194,8 @@ class TestPyTorchExport(unittest.TestCase):
         self._test_full_beam_decoder(test_args, quantize=True)
 
     def test_full_beam_decoder_aan(self):
-        test_args = test_utils.ModelParamsDict(arch="transformer_aan")
+        test_args = test_utils.ModelParamsDict(arch="transformer")
+        test_args.aan = True
         lexical_dictionaries = test_utils.create_lexical_dictionaries()
         test_args.vocab_reduction_params = {
             "lexical_dictionaries": lexical_dictionaries,
@@ -204,7 +205,8 @@ class TestPyTorchExport(unittest.TestCase):
         self._test_full_beam_decoder(test_args, quantize=True)
 
     def test_full_beam_decoder_aan_bottlenceck(self):
-        test_args = test_utils.ModelParamsDict(arch="transformer_aan")
+        test_args = test_utils.ModelParamsDict(arch="transformer")
+        test_args.aan = True
         test_args.decoder_out_embed_dim = 5
         lexical_dictionaries = test_utils.create_lexical_dictionaries()
         test_args.vocab_reduction_params = {
