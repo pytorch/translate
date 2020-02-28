@@ -229,6 +229,12 @@ def add_preprocessing_args(parser):
         "using a BPE target vocab that has an end marker suffix. Ex: '_EOW'",
     )
     group.add_argument(
+        "--fairseq-data-format",
+        type=bool,
+        default=False,
+        help="binary paths are prefixes for .bin/.idx mmap datasets",
+    )
+    group.add_argument(
         "--train-source-text-file",
         default="",
         metavar="FILE",

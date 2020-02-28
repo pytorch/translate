@@ -2,7 +2,6 @@
 
 from typing import Optional
 
-from fairseq.data.indexed_dataset import IndexedDataset
 from fvcore.common.file_io import PathManager
 from pytorch_translate.data import (
     char_data,
@@ -93,6 +92,13 @@ def load_monolingual_dataset(
     return dataset
 
 
+def validate_fairseq_dataset_exists(prefix):
+    if not PathManager.exists(f"{prefix}.idx"):
+        raise ValueError(f"{prefix}.idx not found!")
+    if not PathManager.exists(f"{prefix}.bin"):
+        raise ValueError(f"{prefix}.bin not found!")
+
+
 def validate_corpus_exists(
     corpus: pytorch_translate_data.ParallelCorpusConfig, split: str, is_npz: bool = True
 ):
@@ -106,7 +112,5 @@ def validate_corpus_exists(
         if not PathManager.exists(corpus.target.data_file):
             raise ValueError(f"{corpus.target.data_file} for {split} not found!")
     else:
-        if not IndexedDataset.exists(corpus.source.data_file):
-            raise ValueError(f"{corpus.source.data_file} for {split} not found!")
-        if not IndexedDataset.exists(corpus.target.data_file):
-            raise ValueError(f"{corpus.target.data_file} for {split} not found!")
+        validate_fairseq_dataset_exists(corpus.source.data_file)
+        validate_fairseq_dataset_exists(corpus.target.data_file)
