@@ -32,6 +32,7 @@ class TestPreprocess(unittest.TestCase):
         # Required data preprocessing args
         args.append_eos_to_source = False
         args.reverse_source = True
+        args.fairseq_data_format = False
 
         args.multiling_source_lang = None  # Indicates no multilingual data
         args.penalized_target_tokens_file = ""

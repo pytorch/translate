@@ -142,10 +142,16 @@ def preprocess_corpora(args, dictionary_cls=Dictionary):
         args.train_source_binary_path is not None
         and args.train_target_binary_path is not None
     ):
-        if isinstance(
-            utils.maybe_parse_collection_argument(args.train_source_binary_path), str
-        ) and isinstance(
-            utils.maybe_parse_collection_argument(args.train_target_binary_path), str
+        if (
+            isinstance(
+                utils.maybe_parse_collection_argument(args.train_source_binary_path),
+                str,
+            )
+            and isinstance(
+                utils.maybe_parse_collection_argument(args.train_target_binary_path),
+                str,
+            )
+            and not args.fairseq_data_format
         ):
             args.train_source_binary_path = maybe_generate_temp_file_path(
                 args.train_source_binary_path
@@ -153,12 +159,13 @@ def preprocess_corpora(args, dictionary_cls=Dictionary):
             args.train_target_binary_path = maybe_generate_temp_file_path(
                 args.train_target_binary_path
             )
-    args.eval_source_binary_path = maybe_generate_temp_file_path(
-        args.eval_source_binary_path
-    )
-    args.eval_target_binary_path = maybe_generate_temp_file_path(
-        args.eval_target_binary_path
-    )
+    if not args.fairseq_data_format:
+        args.eval_source_binary_path = maybe_generate_temp_file_path(
+            args.eval_source_binary_path
+        )
+        args.eval_target_binary_path = maybe_generate_temp_file_path(
+            args.eval_target_binary_path
+        )
 
     # Additional text preprocessing options could be added here before
     # binarizing.

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import shutil
 import tempfile
 from typing import Dict, NamedTuple, Optional
 
@@ -261,7 +262,16 @@ class InMemoryIndexedDataset(data.indexed_dataset.IndexedDataset):
             return result
         else:
             # idx, bin format
-            return InMemoryIndexedDataset(path)
+            if path.startswith("manifold://"):
+                tempdir = tempfile.mkdtemp()
+                basename = os.path.basename(path)
+                prefix = os.path.join(tempdir, basename)
+                for suffix in ("bin", "idx"):
+                    remote_path = f"{path}.{suffix}"
+                    local_path = PathManager.get_local_path(remote_path)
+                    shutil.copy(local_path, f"{prefix}.{suffix}")
+                path = prefix
+            return data.indexed_dataset.MMapIndexedDataset(path)
 
     def subsample(self, indices):
         """

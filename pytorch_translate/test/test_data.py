@@ -75,7 +75,7 @@ class TestLoadData(unittest.TestCase):
             ]
             preproc_parser = preprocess_options.get_preprocessing_parser()
             preproc_args = preproc_parser.parse_args(preprocess_args)
-            preproc_args.dataset_impl = "regular"  # No MMP
+            preproc_args.dataset_impl = "mmap"
             split = "train"
             binarize(
                 preproc_args,
