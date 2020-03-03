@@ -2,6 +2,7 @@
 
 import unittest
 
+import numpy as np
 import torch
 from pytorch_translate import char_aware_hybrid, transformer
 from pytorch_translate.data.dictionary import Dictionary
@@ -32,6 +33,11 @@ class TestCharAwareHybrid(unittest.TestCase):
             dst_dict=self.word_dict,
             src_char_dict=self.char_dict,
             dst_char_dict=self.char_dict,
+        )
+
+    def assertTensorEqual(self, x, y):
+        np.testing.assert_almost_equal(
+            x.detach().numpy(), y.detach().numpy(), decimal=6
         )
 
     def test_forward_training(self):
@@ -112,9 +118,9 @@ class TestCharAwareHybrid(unittest.TestCase):
             prev_output_tokens=prev_output_tokens_shuffled,
             prev_output_chars=prev_output_chars_shuffled,
         )[0]
-        assert embed_output[0, 0].equal(embed_output_shuffled[0, 2])
-        assert embed_output[0, 1].equal(embed_output_shuffled[0, 0])
-        assert embed_output[0, 2].equal(embed_output_shuffled[0, 1])
+        self.assertTensorEqual(embed_output[0, 0], embed_output_shuffled[0, 2])
+        self.assertTensorEqual(embed_output[0, 1], embed_output_shuffled[0, 0])
+        self.assertTensorEqual(embed_output[0, 2], embed_output_shuffled[0, 1])
 
         # Making sure the output of the forward function is correct.
         forward_output_shuffled = decoder(
@@ -124,13 +130,19 @@ class TestCharAwareHybrid(unittest.TestCase):
         )
         output_logits_shuffled = forward_output_shuffled[0]
 
-        assert encoder_out[0][:, 0, :].equal(encoder_out_shuffled[0][:, 2, :])
-        assert encoder_out[0][:, 1, :].equal(encoder_out_shuffled[0][:, 0, :])
-        assert encoder_out[0][:, 2, :].equal(encoder_out_shuffled[0][:, 1, :])
+        self.assertTensorEqual(
+            encoder_out[0][:, 0, :], encoder_out_shuffled[0][:, 2, :]
+        )
+        self.assertTensorEqual(
+            encoder_out[0][:, 1, :], encoder_out_shuffled[0][:, 0, :]
+        )
+        self.assertTensorEqual(
+            encoder_out[0][:, 2, :], encoder_out_shuffled[0][:, 1, :]
+        )
 
-        assert output_logits[0].equal(output_logits_shuffled[2])
-        assert output_logits[1].equal(output_logits_shuffled[0])
-        assert output_logits[2].equal(output_logits_shuffled[1])
+        self.assertTensorEqual(output_logits[0], output_logits_shuffled[2])
+        self.assertTensorEqual(output_logits[1], output_logits_shuffled[0])
+        self.assertTensorEqual(output_logits[2], output_logits_shuffled[1])
 
         """
         Now trying in the eval mode.
@@ -148,9 +160,9 @@ class TestCharAwareHybrid(unittest.TestCase):
             prev_output_chars=prev_output_chars_shuffled,
         )
         output_logits_shuffled = forward_output_shuffled[0]
-        assert output_logits[0].equal(output_logits_shuffled[2])
-        assert output_logits[1].equal(output_logits_shuffled[0])
-        assert output_logits[2].equal(output_logits_shuffled[1])
+        self.assertTensorEqual(output_logits[0], output_logits_shuffled[2])
+        self.assertTensorEqual(output_logits[1], output_logits_shuffled[0])
+        self.assertTensorEqual(output_logits[2], output_logits_shuffled[1])
 
     def test_precompute(self):
         """
