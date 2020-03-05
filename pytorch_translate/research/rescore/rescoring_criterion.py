@@ -11,7 +11,7 @@ import math
 
 import torch
 from fairseq import utils
-from fairseq.criterions import FairseqCriterion, register_criterion
+from fairseq.criterions import LegacyFairseqCriterion, register_criterion
 from pytorch_translate import generate, utils as pytorch_translate_utils
 from pytorch_translate.rescoring.model_scorers import SimpleModelScorer
 from pytorch_translate.rescoring.rescorer import (  # noqa
@@ -22,7 +22,7 @@ from pytorch_translate.rescoring.rescorer import (  # noqa
 
 
 @register_criterion("rescoring_criterion")
-class RescoringCriterion(FairseqCriterion):
+class RescoringCriterion(LegacyFairseqCriterion):
     def __init__(self, args, task):
         super().__init__(args, task)
         self.self_rescorer = SimpleModelScorer(args, None, None, task)

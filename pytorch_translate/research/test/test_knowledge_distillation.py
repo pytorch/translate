@@ -43,7 +43,7 @@ class TestKnowledgeDistillation(unittest.TestCase):
         sample["top_k_scores"] = top_k_teacher_probs_normalized
         sample["top_k_indices"] = indices
 
-        kd_criterion = knowledge_distillation_loss.KnowledgeDistillationCriterion(
+        kd_criterion = knowledge_distillation_loss.KnowledgeDistillationCriterion.build_criterion(
             test_args, self.task
         )
         kd_loss = kd_criterion.get_kd_loss(sample, student_lprobs, lprobs)
@@ -51,7 +51,8 @@ class TestKnowledgeDistillation(unittest.TestCase):
         # Calculate kd_loss using full matrix and compare
         topk_mask = torch.zeros(student_lprobs.shape).type_as(student_lprobs)
         topk_probs = topk_mask.scatter(
-                2, indices, top_k_teacher_probs_normalized.float())
+            2, indices, top_k_teacher_probs_normalized.float()
+        )
         topk_probs_flat = topk_probs.view(-1, topk_probs.size(-1))
         kd_loss_2 = -torch.sum(topk_probs_flat * lprobs)
         np.testing.assert_almost_equal(kd_loss.item(), kd_loss_2.item(), decimal=4)
@@ -66,7 +67,9 @@ class TestKnowledgeDistillation(unittest.TestCase):
 
         test_args.kd_weight = 0.5
         test_args.label_smoothing = 0.1
-        criterion = dual_decoder_kd_loss.DualDecoderCriterion(test_args, self.task)
+        criterion = dual_decoder_kd_loss.DualDecoderCriterion.build_criterion(
+            test_args, self.task
+        )
 
         src_tokens = sample["net_input"]["src_tokens"]
         src_lengths = sample["net_input"]["src_lengths"]

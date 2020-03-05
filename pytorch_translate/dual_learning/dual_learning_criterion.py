@@ -4,13 +4,13 @@ import math
 
 import torch
 from fairseq import bleu, utils
-from fairseq.criterions import FairseqCriterion, register_criterion
+from fairseq.criterions import LegacyFairseqCriterion, register_criterion
 from pytorch_translate import beam_decode
 from pytorch_translate.data.weighted_data import WeightedLanguagePairDataset
 
 
 @register_criterion("unsupervised_criterion")
-class UnsupervisedCriterion(FairseqCriterion):
+class UnsupervisedCriterion(LegacyFairseqCriterion):
     """This criterion computes losses from input (monolingual data in
     translation) with two components:
     1. Reconstruction loss:

@@ -83,7 +83,7 @@ class _BasePredictionCriterion(abc.ABC, LabelSmoothedCrossEntropyCriterion):
         assert translation_loss.size() == prediction_loss.size()
         loss = translation_loss + prediction_loss
 
-        if self.args.sentence_avg:
+        if self.sentence_avg:
             sample_size = sample["target"].size(0)
         else:
             sample_size = sample["ntokens"]
@@ -143,10 +143,6 @@ class WordPredictionCriterion(_BasePredictionCriterion):
     """Implements a combined loss from translation and target words prediction.
     """
 
-    def __init__(self, args, task):
-        super().__init__(args, task)
-        self.eps = args.label_smoothing
-
     def predictor_loss_function(self, prediction, target):
         """Loss function that maximizes the confidence of the true positive.
 
@@ -178,9 +174,8 @@ class WARPLossCriterion(_BasePredictionCriterion):
       to search after each update.
     """
 
-    def __init__(self, args, task):
-        super().__init__(args, task)
-        self.eps = args.label_smoothing
+    def __init__(self, task, sentence_avg, label_smoothing):
+        super().__init__(task, sentence_avg, label_smoothing)
         self.rank_weights = 0.0
 
     def set_rank_weights(self, n_labels, rank_weights_type="uniform"):

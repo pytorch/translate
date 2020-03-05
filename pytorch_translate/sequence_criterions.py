@@ -5,7 +5,7 @@ import math
 
 import torch
 from fairseq import bleu, utils
-from fairseq.criterions import FairseqCriterion, register_criterion
+from fairseq.criterions import LegacyFairseqCriterion, register_criterion
 from pytorch_translate import generate
 
 
@@ -14,7 +14,7 @@ from pytorch_translate import generate
 """
 
 
-class BaseSequenceLossCriterion(FairseqCriterion):
+class BaseSequenceLossCriterion(LegacyFairseqCriterion):
     """Base class for criteria with need to run beam search."""
 
     def __init__(self, args, src_dict, dst_dict):

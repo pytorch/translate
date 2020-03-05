@@ -5,12 +5,12 @@ import math
 import torch
 import torch.nn.functional as F
 from fairseq import utils
-from fairseq.criterions import FairseqCriterion, register_criterion
+from fairseq.criterions import LegacyFairseqCriterion, register_criterion
 from pytorch_translate import utils as pytorch_translate_utils
 
 
 @register_criterion("word_knowledge_distillation")
-class KnowledgeDistillationCriterion(FairseqCriterion):
+class KnowledgeDistillationCriterion(LegacyFairseqCriterion):
     def __init__(self, args, task):
         """
         This code is for word-level knowledge distillation. Most of the algorithm

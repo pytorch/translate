@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
 from fairseq import utils
-from fairseq.criterions import FairseqCriterion, register_criterion
+from fairseq.criterions import LegacyFairseqCriterion, register_criterion
 from fairseq.criterions.label_smoothed_cross_entropy import (
     LabelSmoothedCrossEntropyCriterion,
 )
 
 
 @register_criterion("weighted_label_smoothed_cross_entropy")
-class WeightedLabelSmoothedCrossEntropyCriterion(FairseqCriterion):
+class WeightedLabelSmoothedCrossEntropyCriterion(LegacyFairseqCriterion):
     def __init__(self, args, task):
         super().__init__(args, task)
         self.eps = args.label_smoothing

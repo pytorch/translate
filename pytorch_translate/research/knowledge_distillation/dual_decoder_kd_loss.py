@@ -3,11 +3,11 @@
 import math
 
 from fairseq import utils
-from fairseq.criterions import FairseqCriterion, register_criterion
+from fairseq.criterions import LegacyFairseqCriterion, register_criterion
 
 
 @register_criterion("dual_decoder_kd_loss")
-class DualDecoderCriterion(FairseqCriterion):
+class DualDecoderCriterion(LegacyFairseqCriterion):
     def __init__(self, args, task):
         super().__init__(args, task)
         self.eps = args.label_smoothing
