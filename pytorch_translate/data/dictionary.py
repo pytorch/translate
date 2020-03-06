@@ -28,11 +28,11 @@ SPACE_NORMALIZER = re.compile(r"\s+")
 
 
 def default_dictionary_path(save_dir: str, dialect: str) -> str:
-    return os.path.join(save_dir, f"dictionary-{dialect}.txt")
+    return os.path.join(save_dir, f"dict.{dialect}.txt")
 
 
 def default_char_dictionary_path(save_dir: str, dialect: str) -> str:
-    return os.path.join(save_dir, f"char-dictionary-{dialect}.txt")
+    return os.path.join(save_dir, f"char-dict.{dialect}.txt")
 
 
 def tokenize_line(line, embed_bytes=False):
