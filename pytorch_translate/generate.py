@@ -39,6 +39,7 @@ from pytorch_translate.research.multisource import multisource_data, multisource
 from pytorch_translate.tasks.pytorch_translate_multi_task import (
     PyTorchTranslateMultiTask,
 )
+from pytorch_translate.tasks.pytorch_translate_task import PytorchTranslateTask
 
 
 try:
@@ -702,9 +703,17 @@ def generate(args):
     )
     if args.source_binary_file != "":
         assert args.target_binary_file != ""
-        task.load_dataset(
-            args.gen_subset, args.source_binary_file, args.target_binary_file
-        )
+        if isinstance(task, PytorchTranslateTask):
+            task.load_dataset(
+                args.gen_subset,
+                args.source_binary_file,
+                args.target_binary_file,
+                is_npz=args.is_npz,
+            )
+        else:
+            task.load_dataset(
+                args.gen_subset, args.source_binary_file, args.target_binary_file
+            )
     elif pytorch_translate_data.is_multilingual_many_to_one(args):
         task.set_encoder_langs(model_args[0].multiling_encoder_lang)
         task.set_decoder_langs(model_args[0].multiling_decoder_lang)
