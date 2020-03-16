@@ -45,10 +45,10 @@ def get_training_stats(trainer):
     else:
         nll_loss = trainer.get_meter("train_loss").avg
     stats["ppl"] = get_perplexity(nll_loss)
-    stats["wps"] = round(trainer.get_meter("wps").avg)
+    stats["wps"] = round(utils.item(trainer.get_meter("wps").avg))
     stats["ups"] = f"{trainer.get_meter('ups').avg:.1f}"
-    stats["wpb"] = round(trainer.get_meter("wpb").avg)
-    stats["bsz"] = round(trainer.get_meter("bsz").avg)
+    stats["wpb"] = round(utils.item(trainer.get_meter("wpb").avg))
+    stats["bsz"] = round(utils.item(trainer.get_meter("bsz").avg))
     stats["num_updates"] = trainer.get_num_updates()
     stats["lr"] = trainer.get_lr()
     stats["gnorm"] = f"{trainer.get_meter('gnorm').avg:.3f}"
@@ -56,8 +56,8 @@ def get_training_stats(trainer):
     stats["oom"] = trainer.get_meter("oom").avg
     if trainer.get_meter("loss_scale") is not None:
         stats["loss_scale"] = f"{trainer.get_meter('loss_scale').avg:.3f}"
-    stats["wall"] = round(trainer.get_meter("wall").elapsed_time)
-    stats["train_wall"] = round(trainer.get_meter("train_wall").sum)
+    stats["wall"] = round(utils.item(trainer.get_meter("wall").elapsed_time))
+    stats["train_wall"] = round(utils.item(trainer.get_meter("train_wall").sum))
     return stats
 
 
