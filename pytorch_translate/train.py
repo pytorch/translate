@@ -129,10 +129,10 @@ def update_output(
         progress_output: Tuple[int, Dict] = (
             num_updates,
             {
-                "train_ppl": train_ppl,
-                "tune_loss": extra_state["tune_eval"]["loss"],
-                "tune_ppl": extra_state["tune_eval"]["perplexity"],
-                "wps": wps,
+                "train_ppl": utils.item(train_ppl),
+                "tune_loss": utils.item(extra_state["tune_eval"]["loss"]),
+                "tune_ppl": utils.item(extra_state["tune_eval"]["perplexity"]),
+                "wps": utils.item(wps),
                 # translation_samples isn't currently used by the queue reader,
                 # so just pass None for now until we start needing it.
                 "translation_samples": None,
