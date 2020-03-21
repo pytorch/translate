@@ -59,9 +59,11 @@ class PytorchTranslationLevenshteinTask(PytorchTranslateTask):
 
         return cls(args, source_dict, target_dict)
 
-    def train_step(self, sample, model, criterion, optimizer, ignore_grad=False):
+    def train_step(
+        self, sample, model, criterion, optimizer, update_num, ignore_grad=False
+    ):
         return self.trans_lev_task.train_step(
-            sample, model, criterion, optimizer, ignore_grad
+            sample, model, criterion, optimizer, update_num, ignore_grad
         )
 
     def valid_step(self, sample, model, criterion):
