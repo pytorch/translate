@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from typing import Optional
 
 from fairseq.modules import multihead_attention as fair_multihead
 from pytorch_translate.attention import (
@@ -7,6 +8,7 @@ from pytorch_translate.attention import (
     attention_utils,
     register_attention,
 )
+from torch import Tensor
 
 
 @register_attention("multihead")
@@ -65,7 +67,14 @@ class MultiheadAttention(BaseAttention):
         self._fair_attn = fair_multihead.MultiheadAttention(d_model, nheads)
         self.use_src_length_mask = src_length_mask
 
-    def forward(self, decoder_state, source_hids, src_lengths, squeeze=True):
+    def forward(
+        self,
+        decoder_state,
+        source_hids,
+        src_lengths,
+        squeeze: bool = True,
+        max_src_len: Optional[int] = None,
+    ):
         """
         Computes MultiheadAttention with respect to either a vector
         or a tensor
@@ -78,6 +87,9 @@ class MultiheadAttention(BaseAttention):
             squeeze: Whether or not to squeeze on the time dimension.
                 Even if decoder_state.dim() is 2 dimensional an
                 explicit time step dimension will be unsqueezed.
+            max_src_len: Optionally override the max_src_len otherwise
+                inferred from src_lengths. Useful during beam search when we
+                might have already finalized the longest src_sequence
         Outputs:
           [batch_size, max_src_len] if decoder_state.dim() == 2 & squeeze
             or
@@ -99,27 +111,27 @@ class MultiheadAttention(BaseAttention):
         query = query.transpose(0, 1)
         value = key = source_hids
 
-        src_len_mask = None
+        src_len_mask: Optional[Tensor] = None
         if src_lengths is not None and self.use_src_length_mask:
             # [batch_size, 1, seq_len]
             src_len_mask_int = attention_utils.create_src_lengths_mask(
-                batch_size=batch_size, src_lengths=src_lengths
+                batch_size=batch_size, src_lengths=src_lengths, max_src_len=max_src_len
             )
             src_len_mask = src_len_mask_int != 1
-
         attn, attn_weights = self._fair_attn.forward(
             query, key, value, key_padding_mask=src_len_mask, need_weights=True
         )
         # attn.shape = T X bsz X embed_dim
         # attn_weights.shape = bsz X T X src_len
-
-        attn_weights = attn_weights.transpose(0, 2)
+        if attn_weights is not None:
+            attn_weights = attn_weights.transpose(0, 2)
         # attn_weights.shape = src_len X T X bsz
 
         if squeeze:
             attn = attn.squeeze(0)
             # attn.shape = squeeze(T) X bsz X embed_dim
-            attn_weights = attn_weights.squeeze(1)
+            if attn_weights is not None:
+                attn_weights = attn_weights.squeeze(1)
             # attn_weights.shape = src_len X squeeze(T) X bsz
             return attn, attn_weights
         return attn, attn_weights
