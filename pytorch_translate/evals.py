@@ -46,13 +46,16 @@ def get_training_stats(trainer):
         nll_loss = trainer.get_meter("train_loss").avg
     stats["ppl"] = get_perplexity(nll_loss)
     stats["wps"] = round(utils.item(trainer.get_meter("wps").avg))
-    stats["ups"] = f"{trainer.get_meter('ups').avg:.1f}"
+    if trainer.get_meter("ups") is not None:
+        stats["ups"] = f"{trainer.get_meter('ups').avg:.1f}"
     stats["wpb"] = round(utils.item(trainer.get_meter("wpb").avg))
     stats["bsz"] = round(utils.item(trainer.get_meter("bsz").avg))
     stats["num_updates"] = trainer.get_num_updates()
     stats["lr"] = trainer.get_lr()
-    stats["gnorm"] = f"{trainer.get_meter('gnorm').avg:.3f}"
-    stats["clip"] = f"{trainer.get_meter('clip').avg:.0%}"
+    if trainer.get_meter("gnorm") is not None:
+        stats["gnorm"] = f"{trainer.get_meter('gnorm').avg:.3f}"
+    if trainer.get_meter("clip") is not None:
+        stats["clip"] = f"{trainer.get_meter('clip').avg:.0%}"
     stats["oom"] = trainer.get_meter("oom").avg
     if trainer.get_meter("loss_scale") is not None:
         stats["loss_scale"] = f"{trainer.get_meter('loss_scale').avg:.3f}"
