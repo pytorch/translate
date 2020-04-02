@@ -1,25 +1,32 @@
 #!/usr/bin/env python3
 
+from typing import Dict, Optional
+
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torch import Tensor
 
 
-def create_src_lengths_mask(batch_size, src_lengths):
+def create_src_lengths_mask(
+    batch_size: int, src_lengths: Tensor, max_src_len: Optional[int] = None
+):
     """
     Generate boolean mask to prevent attention beyond the end of source
 
     Inputs:
       batch_size : int
       src_lengths : [batch_size] of sentence lengths
+      max_src_len: Optionally override max_src_len for the mask
 
     Outputs:
       [batch_size, max_src_len]
     """
-    max_srclen = src_lengths.max()
-    src_indices = torch.arange(0, max_srclen).unsqueeze(0).type_as(src_lengths)
-    src_indices = src_indices.expand(batch_size, max_srclen)
-    src_lengths = src_lengths.unsqueeze(dim=1).expand(batch_size, max_srclen)
+    if max_src_len is None:
+        max_src_len = int(src_lengths.max())
+    src_indices = torch.arange(0, max_src_len).unsqueeze(0).type_as(src_lengths)
+    src_indices = src_indices.expand(batch_size, max_src_len)
+    src_lengths = src_lengths.unsqueeze(dim=1).expand(batch_size, max_src_len)
     # returns [batch_size, max_seq_len]
     return (src_indices < src_lengths).int().detach()
 

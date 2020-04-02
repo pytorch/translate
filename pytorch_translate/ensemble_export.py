@@ -1834,6 +1834,8 @@ class IterativeRefinementGenerator(nn.Module):
                     encoder_out.encoder_embedding, ~terminated
                 ),
                 encoder_states=None,
+                src_tokens=None,
+                src_lengths=None,
             )
             sent_idxs = script_skip_tensor(sent_idxs, not_terminated)
 
