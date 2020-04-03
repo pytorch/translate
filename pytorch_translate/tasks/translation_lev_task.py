@@ -38,8 +38,8 @@ class PytorchTranslationLevenshteinTask(PytorchTranslateTask):
     def inject_noise(self, target_tokens):
         return self.trans_lev_task.inject_noise(target_tokens)
 
-    def build_generator(self, args):
-        self.trans_lev_task.build_generator(args)
+    def build_generator(self, models, args):
+        self.trans_lev_task.build_generator(models, args)
 
     @classmethod
     def setup_task(cls, args, **kwargs):
