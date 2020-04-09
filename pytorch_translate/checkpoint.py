@@ -84,6 +84,20 @@ def load_to_cpu(path: str) -> Dict[str, Any]:
     return state
 
 
+def load_to_gpu(path: str) -> Dict[str, Any]:
+    """
+    Similar to load_to_cpu, but load model to cuda
+    """
+    with PathManager.open(path, "rb") as f:
+        state = torch.load(
+            f,
+            map_location=(
+                lambda s, _: torch.serialization.default_restore_location(s, "cuda")
+            ),
+        )
+    return state
+
+
 def is_integer_tensor(tensor: torch.Tensor) -> bool:
     return (
         isinstance(tensor, torch.ByteTensor)
