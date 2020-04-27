@@ -38,29 +38,36 @@ def log_end_epoch_stats(trainer, progress, extra_meters):
 
 def get_training_stats(trainer):
     stats = OrderedDict()
-    stats["loss"] = f"{trainer.get_meter('train_loss').avg:.3f}"
+    if trainer.get_meter("train_loss") is not None:
+        stats["loss"] = f"{trainer.get_meter('train_loss').avg:.3f}"
     if trainer.get_meter("train_nll_loss").count > 0:
         nll_loss = trainer.get_meter("train_nll_loss").avg
         stats["nll_loss"] = f"{nll_loss:.3f}"
     else:
-        nll_loss = trainer.get_meter("train_loss").avg
-    stats["ppl"] = get_perplexity(nll_loss)
-    stats["wps"] = round(utils.item(trainer.get_meter("wps").avg))
+        nll_loss = trainer.get_meter("train_nll_loss").avg
+    stats["ppl"] = get_perplexity(nll_loss) if nll_loss is not None else -1.0
+    if trainer.get_meter("wps") is not None:
+        stats["wps"] = round(utils.item(trainer.get_meter("wps").avg))
     if trainer.get_meter("ups") is not None:
         stats["ups"] = f"{trainer.get_meter('ups').avg:.1f}"
-    stats["wpb"] = round(utils.item(trainer.get_meter("wpb").avg))
-    stats["bsz"] = round(utils.item(trainer.get_meter("bsz").avg))
+    if trainer.get_meter("wpb") is not None:
+        stats["wpb"] = round(utils.item(trainer.get_meter("wpb").avg))
+    if trainer.get_meter("bsz") is not None:
+        stats["bsz"] = round(utils.item(trainer.get_meter("bsz").avg))
     stats["num_updates"] = trainer.get_num_updates()
     stats["lr"] = trainer.get_lr()
     if trainer.get_meter("gnorm") is not None:
         stats["gnorm"] = f"{trainer.get_meter('gnorm').avg:.3f}"
     if trainer.get_meter("clip") is not None:
         stats["clip"] = f"{trainer.get_meter('clip').avg:.0%}"
-    stats["oom"] = trainer.get_meter("oom").avg
+    if trainer.get_meter("oom") is not None:
+        stats["oom"] = trainer.get_meter("oom").avg
     if trainer.get_meter("loss_scale") is not None:
         stats["loss_scale"] = f"{trainer.get_meter('loss_scale').avg:.3f}"
-    stats["wall"] = round(utils.item(trainer.get_meter("wall").elapsed_time))
-    stats["train_wall"] = round(utils.item(trainer.get_meter("train_wall").sum))
+    if trainer.get_meter("wall") is not None:
+        stats["wall"] = round(utils.item(trainer.get_meter("wall").elapsed_time))
+    if trainer.get_meter("train_wall") is not None:
+        stats["train_wall"] = round(utils.item(trainer.get_meter("train_wall").sum))
     return stats
 
 
