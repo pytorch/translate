@@ -39,7 +39,9 @@ def log_end_epoch_stats(trainer, progress, extra_meters):
 def get_training_stats(trainer):
     stats = OrderedDict()
     if trainer.get_meter("train_loss") is not None:
-        stats["loss"] = f"{trainer.get_meter('train_loss').avg:.3f}"
+        avg = trainer.get_meter("train_loss").avg
+        if avg is not None:
+            stats["loss"] = f"{avg:.3f}"
     if trainer.get_meter("train_nll_loss").count > 0:
         nll_loss = trainer.get_meter("train_nll_loss").avg
         stats["nll_loss"] = f"{nll_loss:.3f}"
