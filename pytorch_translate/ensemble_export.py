@@ -936,14 +936,14 @@ class BeamSearch(torch.jit.ScriptModule):
             example_encoder_outs = encoder_ens(*enc_inputs)
             self.encoder_ens = FakeEncoderEnsemble()
             self.encoder_ens_char_source = torch.jit.trace(
-                encoder_ens, enc_inputs, _force_outplace=True
+                encoder_ens, enc_inputs, _force_outplace=True, check_trace=False
             )
         else:
             self.is_char_source = False
             enc_inputs = (src_tokens, src_lengths)
             example_encoder_outs = encoder_ens(*enc_inputs)
             self.encoder_ens = torch.jit.trace(
-                encoder_ens, enc_inputs, _force_outplace=True
+                encoder_ens, enc_inputs, _force_outplace=True, check_trace=False
             )
             self.encoder_ens_char_source = FakeCharSourceEncoderEnsemble()
 
@@ -991,6 +991,7 @@ class BeamSearch(torch.jit.ScriptModule):
             decoder_ens_tile,
             (prev_token, prev_scores, ts, *example_encoder_outs),
             _force_outplace=True,
+            check_trace=False,
         )
         self.decoder_ens = torch.jit.trace(
             decoder_ens,
@@ -1001,6 +1002,7 @@ class BeamSearch(torch.jit.ScriptModule):
                 *tiled_states,
             ),
             _force_outplace=True,
+            check_trace=False,
         )
 
         self.input_names = [
