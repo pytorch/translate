@@ -292,6 +292,37 @@ class TestTranslation(unittest.TestCase):
                 )
                 generate_main(data_dir)
 
+    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
+    def test_transformer_fp_16(self):
+        with contextlib.redirect_stdout(StringIO()):
+            with tempfile.TemporaryDirectory("test_transformer") as data_dir:
+                create_dummy_data(data_dir)
+                train_translation_model(
+                    data_dir,
+                    [
+                        "--fp16",
+                        "--arch",
+                        "ptt_transformer",
+                        "--encoder-embed-dim",
+                        "8",
+                        "--encoder-ffn-embed-dim",
+                        "16",
+                        "--encoder-attention-heads",
+                        "4",
+                        "--encoder-layers",
+                        "3",
+                        "--decoder-embed-dim",
+                        "8",
+                        "--decoder-ffn-embed-dim",
+                        "16",
+                        "--decoder-attention-heads",
+                        "4",
+                        "--decoder-layers",
+                        "3",
+                    ],
+                )
+                generate_main(data_dir)
+
     @unittest.skipIf(
         torch.cuda.device_count() < 2, "Test only supports multi-GPU training."
     )
