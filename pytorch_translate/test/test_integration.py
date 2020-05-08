@@ -58,42 +58,6 @@ class TestTranslation(unittest.TestCase):
                 )
                 generate_main(data_dir)
 
-    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
-    def test_rnn_fp16(self):
-        with contextlib.redirect_stdout(StringIO()):
-            with tempfile.TemporaryDirectory("test_rnn_fp16") as data_dir:
-                create_dummy_data(data_dir)
-                train_translation_model(
-                    data_dir,
-                    [
-                        "--fp16",
-                        "--arch",
-                        "rnn",
-                        "--cell-type",
-                        "lstm",
-                        "--sequence-lstm",
-                        "--reverse-source",
-                        "--encoder-bidirectional",
-                        "--encoder-layers",
-                        "2",
-                        "--encoder-embed-dim",
-                        "8",
-                        "--encoder-hidden-dim",
-                        "16",
-                        "--decoder-layers",
-                        "2",
-                        "--decoder-embed-dim",
-                        "8",
-                        "--decoder-hidden-dim",
-                        "16",
-                        "--decoder-out-embed-dim",
-                        "8",
-                        "--attention-type",
-                        "dot",
-                    ],
-                )
-                generate_main(data_dir)
-
     def test_char_rnn(self):
         with contextlib.redirect_stdout(StringIO()):
             with tempfile.TemporaryDirectory("test_char_rnn") as data_dir:
@@ -288,73 +252,6 @@ class TestTranslation(unittest.TestCase):
                         "4",
                         "--decoder-layers",
                         "3",
-                    ],
-                )
-                generate_main(data_dir)
-
-    @unittest.skipIf(torch.cuda.device_count() < 1, "Test only supports GPU training.")
-    def test_transformer_fp_16(self):
-        with contextlib.redirect_stdout(StringIO()):
-            with tempfile.TemporaryDirectory("test_transformer") as data_dir:
-                create_dummy_data(data_dir)
-                train_translation_model(
-                    data_dir,
-                    [
-                        "--fp16",
-                        "--arch",
-                        "ptt_transformer",
-                        "--encoder-embed-dim",
-                        "8",
-                        "--encoder-ffn-embed-dim",
-                        "16",
-                        "--encoder-attention-heads",
-                        "4",
-                        "--encoder-layers",
-                        "3",
-                        "--decoder-embed-dim",
-                        "8",
-                        "--decoder-ffn-embed-dim",
-                        "16",
-                        "--decoder-attention-heads",
-                        "4",
-                        "--decoder-layers",
-                        "3",
-                    ],
-                )
-                generate_main(data_dir)
-
-    @unittest.skipIf(
-        torch.cuda.device_count() < 2, "Test only supports multi-GPU training."
-    )
-    def test_transformer_multigpu(self):
-        with contextlib.redirect_stdout(StringIO()):
-            with tempfile.TemporaryDirectory("test_transformer") as data_dir:
-                create_dummy_data(data_dir)
-                train_translation_model(
-                    data_dir,
-                    [
-                        "--arch",
-                        "ptt_transformer",
-                        "--encoder-embed-dim",
-                        "256",
-                        "--encoder-ffn-embed-dim",
-                        "512",
-                        "--encoder-attention-heads",
-                        "4",
-                        "--encoder-layers",
-                        "3",
-                        "--decoder-embed-dim",
-                        "256",
-                        "--decoder-ffn-embed-dim",
-                        "512",
-                        "--decoder-attention-heads",
-                        "4",
-                        "--decoder-layers",
-                        "3",
-                        "--distributed-world-size",
-                        str(torch.cuda.device_count()),
-                        "--local-num-gpus",
-                        str(torch.cuda.device_count()),
                     ],
                 )
                 generate_main(data_dir)
