@@ -342,7 +342,7 @@ class DecoderBatchedStepEnsemble(nn.Module):
         best_tokens = best_tokens_flat.index_select(dim=0, index=best_indices).view(-1)
 
         # integer division to determine which input produced each successor
-        prev_hypos = best_indices / self.beam_size
+        prev_hypos = best_indices // self.beam_size
 
         attention_weights = average_attn_weights.index_select(dim=0, index=prev_hypos)
 
