@@ -129,7 +129,7 @@ class DecoderBatchedStepEnsemble2BeamWithEOS(DecoderBatchedStepEnsemble):
 
                 # size is (2 * beam_size)
                 eos_mask = cand_tokens.eq(eos_token[0])
-                cand_prev_hypos = cand_indices / double_beam_size
+                cand_prev_hypos = cand_indices // double_beam_size
                 cand_prev_hypos = cand_prev_hypos.type_as(cand_tokens)
 
                 cand_offsets = torch.arange(0, double_beam_size)
