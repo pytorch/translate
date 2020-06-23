@@ -51,7 +51,7 @@ class AttentionAbstract(nn.Module):
                     incremental_clone_id=incremental_clone_id,
                 )
 
-    def _get_input_buffer(self, incremental_state, incremental_clone_id=""):
+    def _get_input_buffer(self, incremental_state, incremental_clone_id: str = ""):
         return (
             utils.get_incremental_state(
                 self, incremental_state, "attn_state" + incremental_clone_id
@@ -59,7 +59,9 @@ class AttentionAbstract(nn.Module):
             or {}
         )
 
-    def _set_input_buffer(self, incremental_state, buffer, incremental_clone_id=""):
+    def _set_input_buffer(
+        self, incremental_state, buffer, incremental_clone_id: str = ""
+    ):
         self.incremental_clone_ids.add(incremental_clone_id)
         utils.set_incremental_state(
             self, incremental_state, "attn_state" + incremental_clone_id, buffer
