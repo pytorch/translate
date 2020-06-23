@@ -735,6 +735,8 @@ def multi_process_train(
         init_fn()
     args.device_id = device_id
     args.distributed_rank = start_rank + device_id
+    if args.distributed_world_size > 1:
+        args.distributed_rank = distributed_utils.distributed_init(args)
 
     if torch.cuda.is_available():
         torch.cuda.set_device(args.device_id)
@@ -742,8 +744,7 @@ def multi_process_train(
     trainer, task, epoch_itr = setup_training(args, trainer_class)
     # Distributed_init does initialization and works as a barrier.
     # Therefore, any expensive data preprocessing should happen before.
-    if args.distributed_world_size > 1:
-        args.distributed_rank = distributed_utils.distributed_init(args)
+
     extra_state, epoch_itr, checkpoint_manager = setup_training_state(
         args=args, trainer=trainer, task=task, epoch_itr=epoch_itr
     )
