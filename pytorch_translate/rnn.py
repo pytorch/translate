@@ -1382,7 +1382,7 @@ class BiLSTM(nn.Module):
         # element [0]: a tensor, the packed data, and
         # element [1]: a list of integers, the batch size for each step
         packed_input = pack_padded_sequence(
-            embeddings, lengths, enforce_sorted=enforce_sorted
+            embeddings, lengths.cpu(), enforce_sorted=enforce_sorted
         )
 
         final_hiddens, final_cells = [], []
