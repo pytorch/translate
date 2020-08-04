@@ -9,7 +9,6 @@ from typing import List, NamedTuple, Optional
 import numpy as np
 import torch
 from fairseq import (
-    bleu,
     data,
     iterative_refinement_generator,
     options,
@@ -19,6 +18,7 @@ from fairseq import (
 )
 from fairseq.meters import StopwatchMeter, TimeMeter
 from fairseq.models import FairseqEncoderDecoderModel, FairseqMultiModel
+from fairseq.scoring import bleu
 from pytorch_translate import hybrid_transformer_rnn  # noqa
 from pytorch_translate import rnn  # noqa
 from pytorch_translate import transformer  # noqa

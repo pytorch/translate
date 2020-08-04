@@ -5,7 +5,7 @@ import pickle
 
 import numpy as np
 import torch
-from fairseq import bleu
+from fairseq.scoring import bleu
 from pytorch_translate import vocab_constants
 from pytorch_translate.data.dictionary import Dictionary
 from pytorch_translate.generate import smoothed_sentence_bleu

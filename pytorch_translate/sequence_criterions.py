@@ -4,8 +4,9 @@ import copy
 import math
 
 import torch
-from fairseq import bleu, utils
+from fairseq import utils
 from fairseq.criterions import LegacyFairseqCriterion, register_criterion
+from fairseq.scoring import bleu
 from pytorch_translate import generate
 
 
