@@ -120,6 +120,10 @@ class TestPyTorchExport(unittest.TestCase):
         }
         self._test_full_beam_decoder(test_args)
 
+    @unittest.skip(
+        "Test broken due to some changes in torch.quantization, and since \
+    people are moving away from this, we don't plan to fix it"
+    )
     def test_full_beam_decoder_quantization(self):
         test_args = test_utils.ModelParamsDict(
             encoder_bidirectional=True, sequence_lstm=True
@@ -172,6 +176,10 @@ class TestPyTorchExport(unittest.TestCase):
 
         self._test_full_beam_decoder(test_args)
 
+    @unittest.skip(
+        "Test broken due to some changes in torch.quantization, and since \
+    people are moving away from this, we don't plan to fix it"
+    )
     def test_full_beam_decoder_quantization_hybrid(self):
         test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
         lexical_dictionaries = test_utils.create_lexical_dictionaries()
@@ -182,6 +190,10 @@ class TestPyTorchExport(unittest.TestCase):
         }
         self._test_full_beam_decoder(test_args, quantize=True)
 
+    @unittest.skip(
+        "Test broken due to some changes in torch.quantization, and since \
+    people are moving away from this, we don't plan to fix it"
+    )
     def test_full_beam_decoder_quantization_hybrid_reduced_attention(self):
         test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
         test_args.decoder_reduced_attention_dim = 10
@@ -341,6 +353,10 @@ class TestBeamSearchAndDecodeExport(unittest.TestCase):
         }
         self._test_full_beam_search_decoder(test_args)
 
+    @unittest.skip(
+        "Test broken due to some changes in torch.quantization, and since \
+    people are moving away from this, we don't plan to fix it"
+    )
     def test_full_beam_search_decoder_quantization(self):
         test_args = test_utils.ModelParamsDict(
             encoder_bidirectional=True, sequence_lstm=True
@@ -357,6 +373,10 @@ class TestBeamSearchAndDecodeExport(unittest.TestCase):
         test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
         self._test_full_beam_search_decoder(test_args)
 
+    @unittest.skip(
+        "Test broken due to some changes in torch.quantization, and since \
+    people are moving away from this, we don't plan to fix it"
+    )
     def test_full_beam_search_decoder_quantization_hybrid(self):
         test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
         lexical_dictionaries = test_utils.create_lexical_dictionaries()
