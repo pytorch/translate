@@ -120,22 +120,6 @@ class TestPyTorchExport(unittest.TestCase):
         }
         self._test_full_beam_decoder(test_args)
 
-    @unittest.skip(
-        "Test broken due to some changes in torch.quantization, and since \
-    people are moving away from this, we don't plan to fix it"
-    )
-    def test_full_beam_decoder_quantization(self):
-        test_args = test_utils.ModelParamsDict(
-            encoder_bidirectional=True, sequence_lstm=True
-        )
-        lexical_dictionaries = test_utils.create_lexical_dictionaries()
-        test_args.vocab_reduction_params = {
-            "lexical_dictionaries": lexical_dictionaries,
-            "num_top_words": 10,
-            "max_translation_candidates_per_word": 1,
-        }
-        self._test_full_beam_decoder(test_args, quantize=True)
-
     def test_full_beam_decoder_char_rnn_vocab_reduction(self):
         test_args = test_utils.ModelParamsDict(
             encoder_bidirectional=True, sequence_lstm=True
@@ -175,35 +159,6 @@ class TestPyTorchExport(unittest.TestCase):
         test_args.char_cnn_num_highway_layers = 2
 
         self._test_full_beam_decoder(test_args)
-
-    @unittest.skip(
-        "Test broken due to some changes in torch.quantization, and since \
-    people are moving away from this, we don't plan to fix it"
-    )
-    def test_full_beam_decoder_quantization_hybrid(self):
-        test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
-        lexical_dictionaries = test_utils.create_lexical_dictionaries()
-        test_args.vocab_reduction_params = {
-            "lexical_dictionaries": lexical_dictionaries,
-            "num_top_words": 10,
-            "max_translation_candidates_per_word": 1,
-        }
-        self._test_full_beam_decoder(test_args, quantize=True)
-
-    @unittest.skip(
-        "Test broken due to some changes in torch.quantization, and since \
-    people are moving away from this, we don't plan to fix it"
-    )
-    def test_full_beam_decoder_quantization_hybrid_reduced_attention(self):
-        test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
-        test_args.decoder_reduced_attention_dim = 10
-        lexical_dictionaries = test_utils.create_lexical_dictionaries()
-        test_args.vocab_reduction_params = {
-            "lexical_dictionaries": lexical_dictionaries,
-            "num_top_words": 10,
-            "max_translation_candidates_per_word": 1,
-        }
-        self._test_full_beam_decoder(test_args, quantize=True)
 
     def test_full_beam_decoder_aan(self):
         test_args = test_utils.ModelParamsDict(arch="transformer")
@@ -353,36 +308,6 @@ class TestBeamSearchAndDecodeExport(unittest.TestCase):
         }
         self._test_full_beam_search_decoder(test_args)
 
-    @unittest.skip(
-        "Test broken due to some changes in torch.quantization, and since \
-    people are moving away from this, we don't plan to fix it"
-    )
-    def test_full_beam_search_decoder_quantization(self):
-        test_args = test_utils.ModelParamsDict(
-            encoder_bidirectional=True, sequence_lstm=True
-        )
-        lexical_dictionaries = test_utils.create_lexical_dictionaries()
-        test_args.vocab_reduction_params = {
-            "lexical_dictionaries": lexical_dictionaries,
-            "num_top_words": 10,
-            "max_translation_candidates_per_word": 1,
-        }
-        self._test_full_beam_search_decoder(test_args, quantize=True)
-
     def test_full_beam_search_decoder_hybrid(self):
         test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
         self._test_full_beam_search_decoder(test_args)
-
-    @unittest.skip(
-        "Test broken due to some changes in torch.quantization, and since \
-    people are moving away from this, we don't plan to fix it"
-    )
-    def test_full_beam_search_decoder_quantization_hybrid(self):
-        test_args = test_utils.ModelParamsDict(arch="hybrid_transformer_rnn")
-        lexical_dictionaries = test_utils.create_lexical_dictionaries()
-        test_args.vocab_reduction_params = {
-            "lexical_dictionaries": lexical_dictionaries,
-            "num_top_words": 10,
-            "max_translation_candidates_per_word": 1,
-        }
-        self._test_full_beam_search_decoder(test_args, quantize=True)
