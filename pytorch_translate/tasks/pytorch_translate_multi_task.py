@@ -28,6 +28,9 @@ class PyTorchTranslateMultiTask(MultilingualTranslationTask):
         num_shards=1,
         shard_id=0,
         num_workers=0,
+        epoch=1,
+        data_buffer_size=0,
+        disable_iterator_cache=False,
     ):
         assert isinstance(dataset, FairseqDataset)
 
