@@ -136,7 +136,7 @@ def eval_tune_loss(args, trainer, task, subset, extra_state):
     itr = task.get_batch_iterator(
         dataset=task.dataset(subset),
         max_tokens=args.max_tokens,
-        max_sentences=args.max_sentences_valid,
+        max_sentences=args.batch_size_valid,
         max_positions=utils.resolve_max_positions(
             task.max_positions(), trainer.get_model().max_positions()
         ),

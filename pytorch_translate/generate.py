@@ -213,7 +213,7 @@ def _generate_score(models, args, task, dataset, modify_target_dict):
     itr = task.get_batch_iterator(
         dataset=dataset,
         max_tokens=args.max_tokens,
-        max_sentences=args.max_sentences,
+        max_sentences=args.batch_size,
         max_positions=utils.resolve_max_positions(
             task.max_positions(), *[model.max_positions() for model in models]
         ),

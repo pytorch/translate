@@ -64,8 +64,8 @@ def add_dataset_args(parser, train=False, gen=False):
         help="maximum number of tokens in a batch",
     )
     group.add_argument(
-        "--max-sentences",
         "--batch-size",
+        "--max-sentences",
         type=int,
         metavar="N",
         help="maximum number of sentences in a batch",

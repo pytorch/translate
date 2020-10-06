@@ -419,14 +419,14 @@ def build_trainer(args, task, model, criterion, trainer_class):
         f"| training on {args.distributed_world_size} total GPUs "
         f"({torch.cuda.device_count()} GPUs locally on this machine).\n"
         f"| max tokens per GPU = {args.max_tokens} and \
-        max sentences per GPU = {args.max_sentences}",
+        max sentences per GPU = {args.batch_size}",
         flush=True,
     )
 
     epoch_itr = task.get_batch_iterator(
         dataset=task.dataset(args.train_subset),
         max_tokens=args.max_tokens,
-        max_sentences=args.max_sentences,
+        max_sentences=args.batch_size,
         max_positions=utils.resolve_max_positions(
             task.max_positions(), model.max_positions()
         ),
