@@ -130,9 +130,13 @@ class TestLoadData(unittest.TestCase):
 
     def test_load_data_multi_path(self):
         num_paths = 4
-        test_args, src_dict, tgt_dict, src_bin_path, tgt_bin_path = self._prepare_data_multi_path(
-            num_paths
-        )
+        (
+            test_args,
+            src_dict,
+            tgt_dict,
+            src_bin_path,
+            tgt_bin_path,
+        ) = self._prepare_data_multi_path(num_paths)
         task = tasks.PytorchTranslateTask(test_args, src_dict, tgt_dict)
         split = "1"
         task.load_dataset(split, src_bin_path, tgt_bin_path)
@@ -141,9 +145,13 @@ class TestLoadData(unittest.TestCase):
 
     def test_load_data_noising(self):
         num_paths = 4
-        test_args, src_dict, tgt_dict, src_bin_path, tgt_bin_path = self._prepare_data_multi_path(
-            num_paths
-        )
+        (
+            test_args,
+            src_dict,
+            tgt_dict,
+            src_bin_path,
+            tgt_bin_path,
+        ) = self._prepare_data_multi_path(num_paths)
         test_args.word_dropout_prob_map = str({"en-fr": {0: 0.1}})
         task = tasks.PytorchTranslateTask(test_args, src_dict, tgt_dict)
         split = "1"
@@ -182,7 +190,10 @@ class TestInMemoryIndexedDataset(unittest.TestCase):
             [101, 101, 103, 103, 105, 105],
             [101, 103, 105, 107],
         ]
-        self.src_txt_numberized, self.trg_txt_numberized = test_utils.create_test_numberized_data_files(
+        (
+            self.src_txt_numberized,
+            self.trg_txt_numberized,
+        ) = test_utils.create_test_numberized_data_files(
             self.src_ref, self.trg_ref, reverse_source=True
         )
         self.num_sentences = 4

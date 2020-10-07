@@ -31,9 +31,13 @@ class TestExportBeamDecode(unittest.TestCase):
         )
         one_beamsize_input = prepare_test_input(beam_size=1)
 
-        beam_tokens, beam_scores, token_weights, beam_prev_indices, num_step = (
-            one_beamsize_input
-        )
+        (
+            beam_tokens,
+            beam_scores,
+            token_weights,
+            beam_prev_indices,
+            num_step,
+        ) = one_beamsize_input
         output = beam_decode(
             beam_tokens, beam_scores, token_weights, beam_prev_indices, num_step
         )
@@ -54,9 +58,13 @@ class TestExportBeamDecode(unittest.TestCase):
         )
         one_beamsize_input = prepare_test_input(beam_size=4)
 
-        beam_tokens, beam_scores, token_weights, beam_prev_indices, num_step = (
-            one_beamsize_input
-        )
+        (
+            beam_tokens,
+            beam_scores,
+            token_weights,
+            beam_prev_indices,
+            num_step,
+        ) = one_beamsize_input
         output = beam_decode(
             beam_tokens, beam_scores, token_weights, beam_prev_indices, num_step
         )

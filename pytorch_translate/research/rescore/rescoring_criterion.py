@@ -113,9 +113,11 @@ class RescoringCriterion(LegacyFairseqCriterion):
         hypo_encoder_inputs, hypo_tokens = self.self_rescorer.prepare_inputs(
             src_tokens, hypos
         )
-        hypo_logprobs, hypo_encoder_outs, forward_logprobs = self.self_rescorer.score_tokens(
-            hypo_encoder_inputs, hypo_tokens
-        )
+        (
+            hypo_logprobs,
+            hypo_encoder_outs,
+            forward_logprobs,
+        ) = self.self_rescorer.score_tokens(hypo_encoder_inputs, hypo_tokens)
         hypo_logprobs /= hypos_len ** self.args.rescore_length_penalty
 
         # 3) Sequence level
@@ -231,31 +233,51 @@ class RescoringCriterion(LegacyFairseqCriterion):
         """load rescoring models"""
         models = {}
         if args.l2r_model_path:
-            l2r_model, _, l2r_task = pytorch_translate_utils.load_diverse_ensemble_for_inference(
+            (
+                l2r_model,
+                _,
+                l2r_task,
+            ) = pytorch_translate_utils.load_diverse_ensemble_for_inference(
                 [args.l2r_model_path]
             )
             models["l2r_model"] = {"model": l2r_model[0], "task": l2r_task}
         #
         if args.r2l_model_path:
-            r2l_model, _, r2l_task = pytorch_translate_utils.load_diverse_ensemble_for_inference(
+            (
+                r2l_model,
+                _,
+                r2l_task,
+            ) = pytorch_translate_utils.load_diverse_ensemble_for_inference(
                 [args.r2l_model_path]
             )
             models["r2l_model"] = {"model": r2l_model[0], "task": r2l_task}
         #
         if args.reverse_model_path:
-            reverse_model, _, reverse_task = pytorch_translate_utils.load_diverse_ensemble_for_inference(
+            (
+                reverse_model,
+                _,
+                reverse_task,
+            ) = pytorch_translate_utils.load_diverse_ensemble_for_inference(
                 [args.reverse_model_path]
             )
             models["reverse_model"] = {"model": reverse_model[0], "task": reverse_task}
         #
         if args.lm_model_path:
-            lm_model, _, lm_task = pytorch_translate_utils.load_diverse_ensemble_for_inference(
+            (
+                lm_model,
+                _,
+                lm_task,
+            ) = pytorch_translate_utils.load_diverse_ensemble_for_inference(
                 [args.lm_model_path]
             )
             models["lm_model"] = {"model": lm_model[0], "task": lm_task}
         #
         if args.cloze_transformer_path:
-            cloze_model, _, cloze_task = pytorch_translate_utils.load_diverse_ensemble_for_inference(
+            (
+                cloze_model,
+                _,
+                cloze_task,
+            ) = pytorch_translate_utils.load_diverse_ensemble_for_inference(
                 [args.cloze_transformer_path]
             )
             models["cloze_model"] = {"model": cloze_model[0], "task": cloze_task}

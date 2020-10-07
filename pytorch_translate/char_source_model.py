@@ -312,9 +312,11 @@ class CharCNNEncoder(FairseqEncoder):
 
         self.unk_only_char_encoding = unk_only_char_encoding
         if self.unk_only_char_encoding:
-            assert char_cnn_output_dim == token_embed_dim, (
-                "char_cnn_output_dim (%d) must equal to token_embed_dim (%d)"
-                % (char_cnn_output_dim, token_embed_dim)
+            assert (
+                char_cnn_output_dim == token_embed_dim
+            ), "char_cnn_output_dim (%d) must equal to token_embed_dim (%d)" % (
+                char_cnn_output_dim,
+                token_embed_dim,
             )
             self.word_dim = token_embed_dim
         else:

@@ -50,9 +50,11 @@ class KnowledgeDistillationCriterion(LegacyFairseqCriterion):
 
         assert indices.shape[0:1] == student_lprobs.shape[0:1]
 
-        kd_loss = -torch.sum(
-            torch.gather(student_lprobs, 2, indices)
-            * top_k_teacher_probs_normalized.float()
+        kd_loss = -(
+            torch.sum(
+                torch.gather(student_lprobs, 2, indices)
+                * top_k_teacher_probs_normalized.float()
+            )
         )
         return kd_loss
 

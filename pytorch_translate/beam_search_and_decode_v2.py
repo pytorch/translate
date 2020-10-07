@@ -478,7 +478,14 @@ class BeamSearchAndDecodeV2(torch.jit.ScriptModule):
         ]
         all_prev_indices = [prev_hypos_indices]
 
-        prev_token, prev_scores, prev_hypos_indices, attn_weights, active_hypos, *states = self.decoder_ens_tile(
+        (
+            prev_token,
+            prev_scores,
+            prev_hypos_indices,
+            attn_weights,
+            active_hypos,
+            *states,
+        ) = self.decoder_ens_tile(
             prev_token,
             prev_scores,
             active_hypos,
@@ -514,7 +521,14 @@ class BeamSearchAndDecodeV2(torch.jit.ScriptModule):
             all_prev_indices = all_prev_indices.append(prev_hypos_indices)
 
         # add eos token as extra step
-        prev_token, prev_scores, prev_hypos_indices, attn_weights, active_hypos, *states = self.decoder_ens(
+        (
+            prev_token,
+            prev_scores,
+            prev_hypos_indices,
+            attn_weights,
+            active_hypos,
+            *states,
+        ) = self.decoder_ens(
             prev_token,
             prev_scores,
             active_hypos,

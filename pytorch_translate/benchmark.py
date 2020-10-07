@@ -124,7 +124,11 @@ def benchmark(args):
     args.source_lang = "src"
     args.target_lang = "tgt"
 
-    models, model_args, task = pytorch_translate_utils.load_diverse_ensemble_for_inference(
+    (
+        models,
+        model_args,
+        task,
+    ) = pytorch_translate_utils.load_diverse_ensemble_for_inference(
         args.path.split(CHECKPOINT_PATHS_DELIMITER)
     )
 
@@ -170,7 +174,12 @@ def benchmark(args):
 
         total_time = 0.0
         for _ in range(args.runs_per_length):
-            scorer, num_sentences, gen_timer, _ = pytorch_translate_generate.generate_score(
+            (
+                scorer,
+                num_sentences,
+                gen_timer,
+                _,
+            ) = pytorch_translate_generate.generate_score(
                 models=models,
                 args=args,
                 task=task,

@@ -154,7 +154,7 @@ class WordPredictionCriterion(_BasePredictionCriterion):
         Returns:
             loss: Loss as a torch.Variable
         """
-        return -prediction.gather(dim=-1, index=target)
+        return -(prediction.gather(dim=-1, index=target))
 
 
 @register_criterion("warp_loss")

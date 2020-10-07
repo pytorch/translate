@@ -54,7 +54,7 @@ class TestKnowledgeDistillation(unittest.TestCase):
             2, indices, top_k_teacher_probs_normalized.float()
         )
         topk_probs_flat = topk_probs.view(-1, topk_probs.size(-1))
-        kd_loss_2 = -torch.sum(topk_probs_flat * lprobs)
+        kd_loss_2 = -(torch.sum(topk_probs_flat * lprobs))
         np.testing.assert_almost_equal(kd_loss.item(), kd_loss_2.item(), decimal=4)
         assert kd_loss >= 0
 

@@ -40,10 +40,7 @@ class PyTorchTranslateMultiTask(MultilingualTranslationTask):
 
         # filter examples that are too large
         indices = data_utils.filter_by_size(
-            indices,
-            dataset,
-            max_positions,
-            raise_exception=(not ignore_invalid_inputs),
+            indices, dataset, max_positions, raise_exception=(not ignore_invalid_inputs)
         )
 
         # create mini-batches with given size constraints

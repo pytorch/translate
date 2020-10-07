@@ -60,7 +60,10 @@ class TestBeamDecode(unittest.TestCase):
             torch.FloatTensor([[0.25, 0.25, 0.25, 0.25], [0.25, 0.25, 0.25, 0.25]]),
             torch.FloatTensor([[0.4, 0.5, 0.1], [0.4, 0.5, 0.1]]),
         ]
-        avg_probs, possible_translation_tokens = beam_decode.SequenceGenerator.gather_probs(
+        (
+            avg_probs,
+            possible_translation_tokens,
+        ) = beam_decode.SequenceGenerator.gather_probs(
             all_translation_tokens=all_translation_tokens, all_probs=all_probs
         )
         avg_probs = avg_probs.detach().cpu().numpy()
@@ -88,7 +91,10 @@ class TestBeamDecode(unittest.TestCase):
             torch.FloatTensor([[0.4, 0.2, 0.1, 0.3], [0.4, 0.2, 0.1, 0.3]]),
         ]
         all_translation_tokens: List[Any] = [None, None]
-        avg_probs, possible_translation_tokens = beam_decode.SequenceGenerator.gather_probs(
+        (
+            avg_probs,
+            possible_translation_tokens,
+        ) = beam_decode.SequenceGenerator.gather_probs(
             all_translation_tokens=all_translation_tokens, all_probs=all_probs
         )
 

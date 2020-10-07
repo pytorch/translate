@@ -688,7 +688,11 @@ def validate_args(args):
 def generate(args):
     pytorch_translate_options.print_args(args)
 
-    models, model_args, task = pytorch_translate_utils.load_diverse_ensemble_for_inference(
+    (
+        models,
+        model_args,
+        task,
+    ) = pytorch_translate_utils.load_diverse_ensemble_for_inference(
         args.path.split(CHECKPOINT_PATHS_DELIMITER)
     )
     args.source_lang = model_args[0].source_lang

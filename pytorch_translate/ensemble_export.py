@@ -1062,7 +1062,13 @@ class BeamSearch(torch.jit.ScriptModule):
         )
         all_prev_indices = prev_hypos_indices.unsqueeze(dim=0)
 
-        prev_token, prev_scores, prev_hypos_indices, attn_weights, *states = self.decoder_ens_tile(
+        (
+            prev_token,
+            prev_scores,
+            prev_hypos_indices,
+            attn_weights,
+            *states,
+        ) = self.decoder_ens_tile(
             prev_token, prev_scores, _to_tensor(0), *enc_states  # noqa
         )
 

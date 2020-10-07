@@ -133,7 +133,7 @@ class BaseSequenceLossCriterion(LegacyFairseqCriterion):
                 prev_output_tokens=prev_output_tokens[f:t],
             )
             lprobs = model.get_normalized_probs(net_output, log_probs=True)
-            nll_loss = -lprobs.gather(dim=-1, index=translations[f:t].unsqueeze(2))
+            nll_loss = -(lprobs.gather(dim=-1, index=translations[f:t].unsqueeze(2)))
             non_pad_mask = translations[f:t].ne(self.padding_idx).float()
             all_losses.append(torch.sum(nll_loss.squeeze(2) * non_pad_mask, dim=1))
         return torch.cat(all_losses).view(bsz, beam_size)

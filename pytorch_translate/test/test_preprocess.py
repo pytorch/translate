@@ -11,9 +11,10 @@ from pytorch_translate.test import utils as test_utils
 
 class TestPreprocess(unittest.TestCase):
     def setUp(self):
-        self.source_text_file, self.target_text_file = (
-            test_utils.create_test_text_files()
-        )
+        (
+            self.source_text_file,
+            self.target_text_file,
+        ) = test_utils.create_test_text_files()
 
     def get_common_data_args_namespace(self):
         args = argparse.Namespace()
