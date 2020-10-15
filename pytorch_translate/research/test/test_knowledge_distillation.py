@@ -43,8 +43,10 @@ class TestKnowledgeDistillation(unittest.TestCase):
         sample["top_k_scores"] = top_k_teacher_probs_normalized
         sample["top_k_indices"] = indices
 
-        kd_criterion = knowledge_distillation_loss.KnowledgeDistillationCriterion.build_criterion(
-            test_args, self.task
+        kd_criterion = (
+            knowledge_distillation_loss.KnowledgeDistillationCriterion.build_criterion(
+                test_args, self.task
+            )
         )
         kd_loss = kd_criterion.get_kd_loss(sample, student_lprobs, lprobs)
 

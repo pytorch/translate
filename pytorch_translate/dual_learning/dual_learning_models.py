@@ -98,7 +98,7 @@ class RNNDualLearningModel(DualLearningModel):
 
     @classmethod
     def build_model(cls, args, task):
-        """ Build both the primal and dual models.
+        """Build both the primal and dual models.
         For simplicity, both models share the same arch, i.e. the same model
         params would be used to initialize both models.
         Support for different models/archs would be added in further iterations.

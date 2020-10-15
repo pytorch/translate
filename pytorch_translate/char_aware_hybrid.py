@@ -116,9 +116,9 @@ class CharAwareHybridModel(char_source_hybrid.CharSourceHybridModel):
 
 class CharAwareHybridRNNDecoder(hybrid_transformer_rnn.HybridRNNDecoder):
     """
-        A decoder that is similar to the HybridRNNDecoder but has a character
-        CNN encoder to get the representation for each generated previous token.
-        The decoder is similar to https://arxiv.org/pdf/1809.02223.pdf.
+    A decoder that is similar to the HybridRNNDecoder but has a character
+    CNN encoder to get the representation for each generated previous token.
+    The decoder is similar to https://arxiv.org/pdf/1809.02223.pdf.
     """
 
     def __init__(

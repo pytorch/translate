@@ -227,7 +227,7 @@ def add_args_rescore(parser):
 
 
 def combine_weighted_scores(scores, weights, src_len, tgt_len, lenpen):
-    """ Combines scores from different models and returns
+    """Combines scores from different models and returns
 
     Args:
         scores: scores for each feature and hypo [num_of_hypos, num_of_features]
@@ -252,8 +252,7 @@ def combine_weighted_scores(scores, weights, src_len, tgt_len, lenpen):
 
 
 def find_top_tokens(args, trans_batch_info, rescorer, pad):
-    """ Rescore translations and combine weights to find top hypo tokens
-    """
+    """Rescore translations and combine weights to find top hypo tokens"""
     len_src_tokens = [len(trans_info["src_tokens"]) for trans_info in trans_batch_info]
     bsz = len(trans_batch_info)
     src_tokens = torch.zeros(bsz, max(len_src_tokens)).fill_(pad).long().cuda()

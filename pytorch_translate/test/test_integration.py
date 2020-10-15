@@ -596,7 +596,7 @@ class TestTranslation(unittest.TestCase):
                 )
 
     def test_word_prediction(self):
-        """ Tests a word prediction model, which will use a learned vocab
+        """Tests a word prediction model, which will use a learned vocab
         reduction via the word prediction model. It uses a custom criterion
         (word_prediction) on top of label_smoothed_cross_entropy so we pass the
         corresponding word_prediction criterion flag in during training.

@@ -668,8 +668,10 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                     dummy_state = torch.zeros(
                         [1, layer.self_attn.num_heads, 0, layer.self_attn.head_dim]
                     )
-                    reshaped_dummy_state = torch.onnx.operators.reshape_from_tensor_shape(
-                        dummy_state, dummy_state_shape
+                    reshaped_dummy_state = (
+                        torch.onnx.operators.reshape_from_tensor_shape(
+                            dummy_state, dummy_state_shape
+                        )
                     )
                     states.append(reshaped_dummy_state)
 

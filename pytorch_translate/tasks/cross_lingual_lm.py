@@ -59,8 +59,7 @@ class PytorchTranslateCrossLingualLMTask(CrossLingualLMTask):
 
     @classmethod
     def setup_task(cls, args, **kwargs):
-        """Setup the task.
-        """
+        """Setup the task."""
         if getattr(args, "raw_text", False):
             args.dataset_impl = "raw"
         elif getattr(args, "lazy_load", False):

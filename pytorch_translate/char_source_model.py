@@ -338,7 +338,7 @@ class CharCNNEncoder(FairseqEncoder):
         self.set_embed_noising_mode(False)
 
     def set_gradient_tracking_mode(self, mode=True):
-        """ This allows AdversarialTrainer to turn on retrain_grad when
+        """This allows AdversarialTrainer to turn on retrain_grad when
         running adversarial example generation model."""
         self.tracker.reset()
         self.track_gradients = mode

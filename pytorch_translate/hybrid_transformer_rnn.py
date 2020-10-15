@@ -281,7 +281,7 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
 
     # Enable dependency injection by subclasses
     def _unpack_encoder_out(self, encoder_out):
-        """ Allow taking encoder_out from different architecture which
+        """Allow taking encoder_out from different architecture which
         may have different formats.
         """
         return encoder_out
@@ -291,7 +291,7 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         return torch.zeros([1, batch_size, self.lstm_units])
 
     def _concat_latent_code(self, x, encoder_out):
-        """ Concat latent code, if available in encoder_out, which is the
+        """Concat latent code, if available in encoder_out, which is the
         case in subclass.
         """
         return x

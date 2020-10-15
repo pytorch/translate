@@ -211,8 +211,7 @@ class RescoringCriterion(LegacyFairseqCriterion):
         }
 
     def combine_score(self, src_tokens, hypos, hypos_len, scores):
-        """ Rescore translations and combine weights to find top hypo tokens
-        """
+        """Rescore translations and combine weights to find top hypo tokens"""
         # Prepare all the weights and call combine weighted scores
         args = self.args
         weights = [

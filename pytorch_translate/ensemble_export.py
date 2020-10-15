@@ -81,8 +81,10 @@ def load_models_from_checkpoints(
                 checkpoint_data["args"], task
             )
         elif architecture == "char_source_transformer":
-            model = char_source_transformer_model.CharSourceTransformerModel.build_model(
-                checkpoint_data["args"], task
+            model = (
+                char_source_transformer_model.CharSourceTransformerModel.build_model(
+                    checkpoint_data["args"], task
+                )
             )
         elif architecture == "rnn_word_pred":
             model = word_prediction_model.RNNWordPredictionModel.build_model(

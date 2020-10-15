@@ -83,7 +83,7 @@ def _batchmatmul(a, b):  # batchmatmul over 4 dim matrix
 
 class MultiheadAttentionTest(unittest.TestCase):
     def _scaled_dot_attn_ref(self, Q, K, V, dims, unseen_mask=False, src_lengths=None):
-        """ Numpy-based reference implementation of scaled dot attention
+        """Numpy-based reference implementation of scaled dot attention
         for testing"""
         QKT = _batchmatmul(
             Q,

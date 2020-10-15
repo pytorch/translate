@@ -201,8 +201,7 @@ class TestModelScorers(unittest.TestCase):
             ), "Encoder inputs are not as expected"
 
     def test_padding(self):
-        """Same sentence should produce the same score with or without padding
-        """
+        """Same sentence should produce the same score with or without padding"""
         eos = self.task.tgt_dict.eos()
 
         src_tokens = torch.tensor([[6, 7, 8]], dtype=torch.long)

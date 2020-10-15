@@ -47,14 +47,14 @@ class ParallelCorporaMapConfig(NamedTuple):
 
 class InMemoryIndexedDataset(data.indexed_dataset.IndexedDataset):
     """analogous to fairseq.data.indexed_dataset.IndexedCachedDataset.
-       Support loading .idx + .bin as fairseq does and also .npz. In self
-       initializer if
-       (1) path is passed in: call the initializer of parent class and loads
-       idx + bin from the path.
-       (2) path is None: Initialize an empty class. Call load(path) to load
-       .npz data.
-       When self.is_npz=True, use the implementation in this class which overrides
-       parent methods. Otherwise use parent functions in fairseq."""
+    Support loading .idx + .bin as fairseq does and also .npz. In self
+    initializer if
+    (1) path is passed in: call the initializer of parent class and loads
+    idx + bin from the path.
+    (2) path is None: Initialize an empty class. Call load(path) to load
+    .npz data.
+    When self.is_npz=True, use the implementation in this class which overrides
+    parent methods. Otherwise use parent functions in fairseq."""
 
     def __init__(self, path=None, fix_lua_indexing=False, read_data=True):
         if path is None:

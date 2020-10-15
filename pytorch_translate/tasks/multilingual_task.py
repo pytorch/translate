@@ -168,11 +168,15 @@ class PyTorchTranslateMultilingualTranslationTask(PyTorchTranslateMultiTask):
 
             data_utils.validate_corpus_exists(corpus=corpus, split=split)
 
-            tgt_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
-                corpus.target.data_file
+            tgt_dataset = (
+                pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
+                    corpus.target.data_file
+                )
             )
-            src_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
-                corpus.source.data_file
+            src_dataset = (
+                pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
+                    corpus.source.data_file
+                )
             )
             datasets[lang_pair] = weighted_data.WeightedLanguagePairDataset(
                 src=src_dataset,

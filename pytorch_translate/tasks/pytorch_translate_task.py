@@ -195,8 +195,10 @@ class PytorchTranslateTask(FairseqTask):
                 corpus.target.data_file
             )
         else:
-            dst_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
-                corpus.target.data_file, is_npz=is_npz
+            dst_dataset = (
+                pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
+                    corpus.target.data_file, is_npz=is_npz
+                )
             )
 
         if getattr(self.args, "reverse_target", None):
@@ -228,8 +230,10 @@ class PytorchTranslateTask(FairseqTask):
                 weights=weights_dataset,
             )
         else:
-            src_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
-                corpus.source.data_file, is_npz=is_npz
+            src_dataset = (
+                pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
+                    corpus.source.data_file, is_npz=is_npz
+                )
             )
             if getattr(self.args, "train_weights_path", None):
                 self.datasets[split] = weighted_data.WeightedLanguagePairDataset(
@@ -290,8 +294,10 @@ class PytorchTranslateTask(FairseqTask):
                     tgt
                 )
             else:
-                tgt_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
-                    tgt, is_npz=is_npz
+                tgt_dataset = (
+                    pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
+                        tgt, is_npz=is_npz
+                    )
                 )
 
             if self.char_source_dict is not None:
@@ -299,8 +305,10 @@ class PytorchTranslateTask(FairseqTask):
                     src
                 )
             else:
-                src_dataset = pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
-                    src, is_npz=is_npz
+                src_dataset = (
+                    pytorch_translate_data.InMemoryIndexedDataset.create_from_file(
+                        src, is_npz=is_npz
+                    )
                 )
             src_sizes = src_dataset.sizes
             if noiser is not None and key in noiser:

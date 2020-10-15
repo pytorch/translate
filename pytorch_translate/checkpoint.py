@@ -149,8 +149,7 @@ def convert_tensor(tensor: torch.Tensor, clone: bool) -> torch.Tensor:
 
 
 class CheckpointManager:
-    """Class to help manage, save, clean up, and average checkpoints.
-    """
+    """Class to help manage, save, clean up, and average checkpoints."""
 
     def __init__(
         self,

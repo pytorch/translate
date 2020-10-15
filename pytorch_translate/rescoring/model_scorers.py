@@ -8,7 +8,7 @@ class SimpleModelScorer(object):
     """ Rescores source and target tokens based on a model"""
 
     def __init__(self, args, model_path=None, model=None, forward_task=None):
-        """ Initialize a rescorer model
+        """Initialize a rescorer model
 
         Args:
           args: model arguments
@@ -65,7 +65,7 @@ class SimpleModelScorer(object):
         return [encoder_out]
 
     def decode(self, args, model, encoder_outs, tgt_tokens):
-        """ Run model decoder on tgt_tokens and encoder_outputs
+        """Run model decoder on tgt_tokens and encoder_outputs
 
         Args:
           args: model arguments
@@ -107,7 +107,7 @@ class SimpleModelScorer(object):
         return logprobs, possible_translation_tokens
 
     def compute_scores(self, tgt_tokens, logprobs, possible_translation_tokens=None):
-        """ logprobs have the log probabilities for each possible token
+        """logprobs have the log probabilities for each possible token
         for each hypothesis. here, we extract the logprobs matching the
         target tokens.
         """
@@ -154,14 +154,14 @@ class SimpleModelScorer(object):
 
     def score_tokens(self, encoder_inputs, hypos):
         """calculate scores for arbitrary hypos given encoder_inputs
-           input:
-               hypos: a tensor of length bsz*beam_size
-           output:
-               hypos_scores: \sum log prob over the entire hypo
-               encoder_outs: hidden vectors from encoder
-                             (e.g., used to stabilize rl training)
-               logprobs: log prob over all time-steps
-                         (e.g., used for word-level rl training)
+        input:
+            hypos: a tensor of length bsz*beam_size
+        output:
+            hypos_scores: \sum log prob over the entire hypo
+            encoder_outs: hidden vectors from encoder
+                          (e.g., used to stabilize rl training)
+            logprobs: log prob over all time-steps
+                      (e.g., used for word-level rl training)
         """
         encoder_outs = self.encode(encoder_inputs)
         logprobs, possible_translation_tokens = self.decode(
@@ -171,9 +171,9 @@ class SimpleModelScorer(object):
         return hypos_scores, encoder_outs, logprobs
 
     def score(self, src_tokens, hypos):
-        """ Rescores hypotheses based on a given model and input tokens.
-            src_tokens: a tensor with size bsz x max_src_len
-            hypos: a list with length of bsz * beam_size
+        """Rescores hypotheses based on a given model and input tokens.
+        src_tokens: a tensor with size bsz x max_src_len
+        hypos: a list with length of bsz * beam_size
         """
         if self.model is None:
             return
