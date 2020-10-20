@@ -6,7 +6,7 @@ import torch
 from fairseq import optim, utils
 from fairseq.criterions import CRITERION_REGISTRY
 from fairseq.data import LanguagePairDataset, RoundRobinZipDatasets
-from fairseq.tasks import FairseqTask, register_task
+from fairseq.tasks import LegacyFairseqTask, register_task
 from pytorch_translate.data import (
     dictionary as pytorch_translate_dictionary,
     utils as data_utils,
@@ -22,7 +22,7 @@ from pytorch_translate.weighted_criterions import (
 
 
 @register_task("dual_learning_task")
-class DualLearningTask(FairseqTask):
+class DualLearningTask(LegacyFairseqTask):
     """A task for training primal model and dual models jointly.
     It takes:
         - unlabelled source (aka source monolingual data for translation task),

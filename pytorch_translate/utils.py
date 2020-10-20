@@ -112,17 +112,26 @@ def load_diverse_ensemble_for_inference(
                     ),
                 )
             )
+
+    def get_cfg(cp, key):
+        if "cfg" in cp:
+            return cp["cfg"][key]
+        else:
+            return cp["args"]
+
     # build ensemble
     ensemble = []
     if task is None:
-        if hasattr(checkpoints_data[0]["args"], "mode"):
-            checkpoints_data[0]["args"].mode = "eval"
-        task = tasks.setup_task(checkpoints_data[0]["args"])
+        cfg = get_cfg(checkpoints_data[0], "task")
+        if hasattr(cfg, "mode"):
+            cfg.mode = "eval"
+        task = tasks.setup_task(cfg)
     for checkpoint_data in checkpoints_data:
-        model = task.build_model(checkpoint_data["args"])
+        cfg = get_cfg(checkpoint_data, "model")
+        model = task.build_model(cfg)
         model.load_state_dict(checkpoint_data["model"])
         ensemble.append(model)
-    args_list = [s["args"] for s in checkpoints_data]
+    args_list = [get_cfg(s, "model") for s in checkpoints_data]
     return ensemble, args_list, task
 
 

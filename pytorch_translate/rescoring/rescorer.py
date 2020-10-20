@@ -319,7 +319,13 @@ def main():
     rescorer = Rescorer(args, forward_task)
     dst_dict = forward_task.tgt_dict
     base_bleu_scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
-    rescoring_bleu_scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
+    rescoring_bleu_scorer = bleu.Scorer(
+        bleu.BleuConfig(
+            pad=dst_dict.pad(),
+            eos=dst_dict.eos(),
+            unk=dst_dict.unk(),
+        )
+    )
 
     with open(args.translation_info_export_path, "rb") as file:
         translation_info_list = pickle.load(file)

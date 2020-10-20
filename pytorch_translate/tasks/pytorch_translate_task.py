@@ -9,7 +9,7 @@ from fairseq import data, options
 from fairseq.data import ConcatDataset, LanguagePairDataset, NoisingDataset
 from fairseq.data.multi_corpus_sampled_dataset import MultiCorpusSampledDataset
 from fairseq.data.noising import UnsupervisedMTNoising
-from fairseq.tasks import FairseqTask, register_task
+from fairseq.tasks import LegacyFairseqTask, register_task
 from pytorch_translate import constants, utils as pytorch_translate_utils
 from pytorch_translate.data import (
     char_data,
@@ -25,7 +25,7 @@ from pytorch_translate.research.multisource import multisource_data
 
 
 @register_task("pytorch_translate")
-class PytorchTranslateTask(FairseqTask):
+class PytorchTranslateTask(LegacyFairseqTask):
     @staticmethod
     def add_args(parser):
         """Add task-specific arguments to the parser."""
@@ -605,7 +605,7 @@ class PytorchTranslateTask(FairseqTask):
 
 
 # We don't @register_task since this is mostly used for unit tests and export
-class DictionaryHolderTask(FairseqTask):
+class DictionaryHolderTask(LegacyFairseqTask):
     """A simplified Task that just holds the dictionaries."""
 
     def __init__(self, src_dict, dst_dict):

@@ -39,7 +39,11 @@ class DummyTask:
 
 def evaluate_weights(scores_info, feature_weights, length_penalty):
     scorer = bleu.Scorer(
-        vocab_constants.PAD_ID, vocab_constants.EOS_ID, vocab_constants.UNK_ID
+        bleu.BleuConfig(
+            pad=vocab_constants.PAD_ID,
+            eos=vocab_constants.EOS_ID,
+            unk=vocab_constants.UNK_ID,
+        )
     )
 
     for example in scores_info:
@@ -69,7 +73,11 @@ def random_search(scores_info_export_path, num_trials, report_oracle_bleu=False)
 
     if report_oracle_bleu:
         oracle_scorer = bleu.Scorer(
-            vocab_constants.PAD_ID, vocab_constants.EOS_ID, vocab_constants.UNK_ID
+            bleu.BleuConfig(
+                pad=vocab_constants.PAD_ID,
+                eos=vocab_constants.EOS_ID,
+                unk=vocab_constants.UNK_ID,
+            )
         )
 
         for example in scores_info:

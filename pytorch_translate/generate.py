@@ -206,9 +206,15 @@ def _generate_score(models, args, task, dataset, modify_target_dict):
     # Generate and compute BLEU score
     dst_dict = task.target_dictionary
     if args.sacrebleu:
-        scorer = bleu.SacrebleuScorer()
+        scorer = bleu.SacrebleuScorer(bleu.SacrebleuConfig())
     else:
-        scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
+        scorer = bleu.Scorer(
+            bleu.BleuConfig(
+                pad=dst_dict.pad(),
+                eos=dst_dict.eos(),
+                unk=dst_dict.unk(),
+            )
+        )
 
     itr = task.get_batch_iterator(
         dataset=dataset,
@@ -226,7 +232,13 @@ def _generate_score(models, args, task, dataset, modify_target_dict):
 
     oracle_scorer = None
     if args.report_oracle_bleu:
-        oracle_scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
+        oracle_scorer = bleu.Scorer(
+            bleu.BleuConfig(
+                pad=dst_dict.pad(),
+                eos=dst_dict.eos(),
+                unk=dst_dict.unk(),
+            )
+        )
 
     rescorer = None
     num_sentences = 0
@@ -348,7 +360,13 @@ def smoothed_sentence_bleu(task, target_tokens, hypo_tokens):
     http://acl2014.org/acl2014/W14-33/pdf/W14-3346.pdf
     """
     dst_dict = task.target_dictionary
-    scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
+    scorer = bleu.Scorer(
+        bleu.BleuConfig(
+            pad=dst_dict.pad(),
+            eos=dst_dict.eos(),
+            unk=dst_dict.unk(),
+        )
+    )
     scorer.add(target_tokens, hypo_tokens)
 
     invcnt = 1

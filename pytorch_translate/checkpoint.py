@@ -417,6 +417,7 @@ class CheckpointManager:
         )
         checkpoint_utils.save_state(
             filename=best_averaged_checkpoint_filename,
+            cfg=None,
             args=args,
             model_state_dict=self._averaged_params,
             criterion=trainer.criterion,

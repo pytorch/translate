@@ -142,7 +142,13 @@ class UnsupervisedCriterion(LegacyFairseqCriterion):
             tgt_hypo = self._maybe_reverse_source(tgt_hypo_processed)
 
             # use bleu score as reward
-            scorer = bleu.Scorer(src_dict.pad(), src_dict.eos(), src_dict.unk())
+            scorer = bleu.Scorer(
+                bleu.BleuConfig(
+                    pad=src_dict.pad(),
+                    eos=src_dict.eos(),
+                    unk=src_dict.unk(),
+                )
+            )
             assert len(src_hypos) == 1
             src_hypo = src_hypos[0]["tokens"][:-1]
             scorer.add(src.int().cpu(), src_hypo.int().cpu())

@@ -21,7 +21,13 @@ class BaseSequenceLossCriterion(LegacyFairseqCriterion):
     def __init__(self, args, src_dict, dst_dict):
         super().__init__(args, src_dict, dst_dict)
         self.translator = None
-        self.scorer = bleu.Scorer(dst_dict.pad(), dst_dict.eos(), dst_dict.unk())
+        self.scorer = bleu.Scorer(
+            bleu.BleuConfig(
+                pad=dst_dict.pad(),
+                eos=dst_dict.eos(),
+                unk=dst_dict.unk(),
+            )
+        )
 
     def get_translator(self, model):
         """Get lazy singleton translator instance."""
