@@ -342,7 +342,7 @@ def _generate_score(models, args, task, dataset, modify_target_dict):
                 for hypo in hypos:
                     print(
                         task.tgt_dict.string(
-                            hypo["tokens"], bpe_symbol=args.remove_bpe
+                            hypo["tokens"], bpe_symbol=args.post_process
                         ),
                         file=out_file,
                     )
@@ -447,9 +447,9 @@ def _iter_translations(
             src_str = dataset.src.get_original_text(sample_id)
             target_str = dataset.tgt.get_original_text(sample_id)
         else:
-            src_str = src_dict.string(src_tokens, args.remove_bpe)
+            src_str = src_dict.string(src_tokens, args.post_process)
             target_str = target_dict.string(
-                target_tokens, args.remove_bpe, escape_unk=True
+                target_tokens, args.post_process, escape_unk=True
             )
 
         if not args.quiet:
@@ -473,7 +473,7 @@ def _iter_translations(
                 else None,
                 align_dict=align_dict,
                 tgt_dict=task.target_dictionary,
-                remove_bpe=args.remove_bpe,
+                remove_bpe=args.post_process,
             )
 
             if not args.quiet:
@@ -493,7 +493,7 @@ def _iter_translations(
                     best_hypo_score = score
 
             if i == 0:
-                if align_dict is not None or args.remove_bpe is not None:
+                if align_dict is not None or args.post_process is not None:
                     # Convert back to tokens for evaluation with unk replacement
                     # and/or without BPE
                     target_tokens = task.target_dictionary.encode_line(
