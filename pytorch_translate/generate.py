@@ -19,9 +19,6 @@ from fairseq import (
 from fairseq.meters import StopwatchMeter, TimeMeter
 from fairseq.models import FairseqEncoderDecoderModel, FairseqMultiModel
 from fairseq.scoring import bleu
-from pytorch_translate import hybrid_transformer_rnn  # noqa
-from pytorch_translate import rnn  # noqa
-from pytorch_translate import transformer  # noqa
 from pytorch_translate import (
     beam_decode,
     char_aware_hybrid,
@@ -31,6 +28,9 @@ from pytorch_translate import (
     options as pytorch_translate_options,
     utils as pytorch_translate_utils,
 )
+from pytorch_translate import hybrid_transformer_rnn  # noqa
+from pytorch_translate import rnn  # noqa
+from pytorch_translate import transformer  # noqa
 from pytorch_translate.constants import CHECKPOINT_PATHS_DELIMITER
 from pytorch_translate.data import data as pytorch_translate_data
 from pytorch_translate.dual_learning.dual_learning_models import DualLearningModel

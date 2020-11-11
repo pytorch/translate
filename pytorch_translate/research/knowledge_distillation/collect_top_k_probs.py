@@ -5,12 +5,12 @@ import torch
 import torch.nn.functional as F
 from fairseq import options, progress_bar, utils
 from pytorch_translate import hybrid_transformer_rnn  # noqa
-from pytorch_translate import rnn  # noqa
-from pytorch_translate import transformer  # noqa
 from pytorch_translate import (
     options as pytorch_translate_options,
     utils as pytorch_translate_utils,
 )
+from pytorch_translate import rnn  # noqa
+from pytorch_translate import transformer  # noqa
 from pytorch_translate.constants import CHECKPOINT_PATHS_DELIMITER
 from pytorch_translate.tasks.pytorch_translate_multi_task import (  # noqa
     PyTorchTranslateMultiTask,

@@ -10,10 +10,8 @@ from pytorch_translate import (
     options as pytorch_translate_options,
     utils as pytorch_translate_utils,
 )
-from pytorch_translate.constants import CHECKPOINT_PATHS_DELIMITER
-
-
 from pytorch_translate import rnn  # noqa; noqa
+from pytorch_translate.constants import CHECKPOINT_PATHS_DELIMITER
 
 
 def get_parser_with_args():

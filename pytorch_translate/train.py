@@ -19,11 +19,6 @@ from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
 from pytorch_translate import char_aware_hybrid  # noqa
 from pytorch_translate import char_source_hybrid  # noqa
-from pytorch_translate import hybrid_transformer_rnn  # noqa
-from pytorch_translate import sequence_criterions  # noqa
-from pytorch_translate import transformer  # noqa
-from pytorch_translate import transformer_aan  # noqa
-from pytorch_translate import weighted_criterions  # noqa
 from pytorch_translate import (
     checkpoint,
     constants,
@@ -32,6 +27,11 @@ from pytorch_translate import (
     options as pytorch_translate_options,
     preprocess,
 )
+from pytorch_translate import hybrid_transformer_rnn  # noqa
+from pytorch_translate import sequence_criterions  # noqa
+from pytorch_translate import transformer  # noqa
+from pytorch_translate import transformer_aan  # noqa
+from pytorch_translate import weighted_criterions  # noqa
 from pytorch_translate.data import dictionary as pytorch_translate_dictionary
 from pytorch_translate.dual_learning import dual_learning_criterion  # noqa
 from pytorch_translate.dual_learning import dual_learning_task  # noqa
@@ -64,15 +64,13 @@ except ImportError:
     pass
 
 
+from pytorch_translate import char_source_model  # noqa; noqa
+from pytorch_translate import char_source_transformer_model  # noqa; noqa
 from pytorch_translate import rnn  # noqa; noqa
 
 # we import semi_supervised here so that the model gets registered in fairseq
 # model registry
 from pytorch_translate import semi_supervised  # noqa; noqa
-
-
-from pytorch_translate import char_source_model  # noqa; noqa
-from pytorch_translate import char_source_transformer_model  # noqa; noqa
 
 
 def get_parser_with_args(default_task="pytorch_translate"):

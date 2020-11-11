@@ -12,12 +12,12 @@ from fairseq.models import (
     register_model_architecture,
 )
 from fairseq.modules import AdaptiveSoftmax
-from pytorch_translate import rnn_cell  # noqa
 from pytorch_translate import (
     attention,
     utils as pytorch_translate_utils,
     vocab_reduction,
 )
+from pytorch_translate import rnn_cell  # noqa
 from pytorch_translate.common_layers import (
     ContextEmbedding,
     DecoderWithOutputProjection,

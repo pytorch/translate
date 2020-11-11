@@ -29,8 +29,8 @@ from torch import Tensor
 
 
 try:
-    from pytorch_translate import latent_var_models  # noqa;
     from fairseq.models import fb_levenshtein_transformer as levenshtein_transformer
+    from pytorch_translate import latent_var_models  # noqa;
 except ImportError:
     pass
 
