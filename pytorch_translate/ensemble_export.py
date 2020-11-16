@@ -14,8 +14,8 @@ import torch.onnx.operators
 from fairseq import tasks, utils
 from fairseq.iterative_refinement_generator import DecoderOut
 from fairseq.models import ARCH_MODEL_REGISTRY
+from fairseq.models.fairseq_encoder import EncoderOut
 from fairseq.models.model_utils import script_skip_tensor
-from fairseq.models.transformer import EncoderOut
 from pytorch_translate.beam_decode import BeamDecode
 from pytorch_translate.checkpoint import load_to_cpu, load_to_gpu
 from pytorch_translate.data import dictionary
