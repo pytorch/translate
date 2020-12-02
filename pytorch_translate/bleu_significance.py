@@ -3,9 +3,19 @@
 import argparse
 from typing import List, NamedTuple, Optional
 
+import pkg_resources
+
 import numpy as np
 import pandas as pd
 import sacrebleu
+
+
+# Versions of SacreBLEU <= 1.4.6 do not have the __version__ attribute
+if hasattr(sacrebleu, '__version__') and \
+    pkg_resources.parse_version(sacrebleu.__version__) > pkg_resources.parse_version('1.4.5'):
+    NGRAM_ORDER = sacrebleu.BLEU.NGRAM_ORDER
+else:
+    NGRAM_ORDER = sacrebleu.NGRAM_ORDER
 
 
 def get_sufficient_stats(
@@ -15,9 +25,9 @@ def get_sufficient_stats(
         f"There are {len(translations)} translated sentences "
         f"but {len(references)} reference sentences"
     )
-    assert sacrebleu.NGRAM_ORDER == 4, (
+    assert NGRAM_ORDER == 4, (
         f"Expected SacreBLEU to be using n-gram order 4 "
-        f"instead of {sacrebleu.NGRAM_ORDER}."
+        f"instead of {NGRAM_ORDER}."
     )
 
     sufficient_stats: List[List[int]] = []
