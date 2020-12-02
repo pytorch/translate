@@ -8,8 +8,11 @@ import pandas as pd
 import sacrebleu
 
 
+DEFAULT_TOKENIZER = 'none'
+
+
 def get_sufficient_stats(
-    translations: List[str], references: List[str]
+    translations: List[str], references: List[str], tokenizer: str = DEFAULT_TOKENIZER
 ) -> pd.DataFrame:
     assert len(translations) == len(references), (
         f"There are {len(translations)} translated sentences "
@@ -26,7 +29,7 @@ def get_sufficient_stats(
             sys_stream=sentence,
             ref_streams=ref,
             lowercase=False,
-            tokenize="none",
+            tokenize=tokenizer,
             use_effective_order=False,
         )
         sufficient_stats.append(
@@ -152,6 +155,7 @@ def paired_bootstrap_resample_from_files(
     new_file: str,
     num_samples: int = 1000,
     sample_size: Optional[int] = None,
+    tokenizer: str = DEFAULT_TOKENIZER
 ) -> PairedBootstrapOutput:
     with open(reference_file, "r") as f:
         references: List[str] = [line for line in f]
@@ -159,13 +163,13 @@ def paired_bootstrap_resample_from_files(
     with open(baseline_file, "r") as f:
         baseline_translations: List[str] = [line for line in f]
     baseline_stats: pd.DataFrame = get_sufficient_stats(
-        translations=baseline_translations, references=references
+        translations=baseline_translations, references=references, tokenizer=tokenizer
     )
 
     with open(new_file, "r") as f:
         new_translations: List[str] = [line for line in f]
     new_stats: pd.DataFrame = get_sufficient_stats(
-        translations=new_translations, references=references
+        translations=new_translations, references=references, tokenizer=tokenizer
     )
 
     return paired_bootstrap_resample(
@@ -178,23 +182,48 @@ def paired_bootstrap_resample_from_files(
 
 def main():
     parser = argparse.ArgumentParser()
+    tokenization_warning = "The sentences should be tokenized (with whitespace separator) " \
+                           f"if the parameter tokenizer is \"{DEFAULT_TOKENIZER}\" (default); " \
+                           "they should be detokenized otherwise.",
     parser.add_argument(
         "--reference-file",
         type=str,
         required=True,
-        help="Text file containing reference tokenized (with whitespace separator) sentences.",
+        help=f"Text file containing reference sentences. {tokenization_warning}",
     )
     parser.add_argument(
         "--baseline-file",
         type=str,
         required=True,
-        help="Text file containing tokenized sentences translated by baseline system.",
+        help=f"Text file containing sentences translated by baseline system. {tokenization_warning}",
     )
     parser.add_argument(
         "--new-file",
         type=str,
         required=True,
-        help="Text file containing tokenized sentences translated by new system.",
+        help=f"Text file containing sentences translated by new system. {tokenization_warning}",
+    )
+    parser.add_argument(
+        "--tokenizer",
+        type=str,
+        required=False,
+        choices=list(sacrebleu.TOKENIZERS.keys()),
+        default=DEFAULT_TOKENIZER,
+        help="Tokenizer to be used when computing SacreBLEU scores."
+             f" Default is \"{DEFAULT_TOKENIZER}\".",
+    )
+    parser.add_argument(
+        "--num-samples",
+        type=int,
+        required=False,
+        default=1000,
+        help="Number of comparisons to be executed.",
+    )
+    parser.add_argument(
+        "--sample-size",
+        type=int,
+        required=False,
+        help="Number of sentences sampled for each comparison.",
     )
     args = parser.parse_args()
 
@@ -202,6 +231,9 @@ def main():
         reference_file=args.reference_file,
         baseline_file=args.baseline_file,
         new_file=args.new_file,
+        num_samples=args.num_samples,
+        sample_size=getattr(args, "sample_size", None),
+        tokenizer=args.tokenizer
     )
 
     print(f"Baseline BLEU: {output.baseline_bleu.score:.2f}")
