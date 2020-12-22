@@ -196,7 +196,7 @@ def average_tensors(tensor_list, norm_fn=None, weights=None):
     stability, and iterates through `tensor_list` in a Python for-loop rather
     than stacking it to a PyTorch tensor.
 
-    Arguments:
+    Args:
         tensor_list (list): Python list of tensors of the same size and same type
         norm_fn (function): If set, apply norm_fn() to elements in `tensor_list`
             before averaging. If list of functions, apply n-th function to
@@ -232,7 +232,7 @@ def load_embedding(embedding, dictionary, pretrained_embed):
     can either be a nn.Embedding layer, in which case the embedding is set
     to the pretrained_embed argument, or a path to an embedding file.
 
-    Arguments:
+    Args:
         embedding (pytorch_translate.common_layers.Embedding):
             Embedding layer whose weights are to be set.
         dictionary (fairseq.data.dictionary.Dictionary): dictionary with the
