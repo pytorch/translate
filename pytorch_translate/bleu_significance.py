@@ -15,9 +15,9 @@ def get_sufficient_stats(
         f"There are {len(translations)} translated sentences "
         f"but {len(references)} reference sentences"
     )
-    assert sacrebleu.NGRAM_ORDER == 4, (
+    assert sacrebleu.metrics.bleu.BLEU.NGRAM_ORDER == 4, (
         f"Expected SacreBLEU to be using n-gram order 4 "
-        f"instead of {sacrebleu.NGRAM_ORDER}."
+        f"instead of {sacrebleu.metrics.bleu.BLEU.NGRAM_ORDER}."
     )
 
     sufficient_stats: List[List[int]] = []
