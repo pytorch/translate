@@ -5,7 +5,7 @@ from collections import OrderedDict, deque
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
 import torch
-from fairseq import checkpoint_utils
+from fairseq import checkpoint_utils, utils as fairseq_utils
 from pytorch_translate import constants
 
 # TODO(T55884145): Replace with
@@ -415,17 +415,15 @@ class CheckpointManager:
             f"| Preparing to save new best averaged checkpoint to "
             f"{best_averaged_checkpoint_filename}."
         )
-        checkpoint_utils.save_state(
+        state_dict = trainer.state_dict()
+        state_dict["args"] = args
+        state_dict["cfg"] = None
+        state_dict["model"] = self._averaged_params
+        state_dict["extra_state"].update(extra_state)
+        state_dict = fairseq_utils.move_to_cpu(state_dict)
+        checkpoint_utils.torch_persistent_save(
+            obj=state_dict,
             filename=best_averaged_checkpoint_filename,
-            cfg=None,
-            args=args,
-            model_state_dict=self._averaged_params,
-            criterion=trainer.criterion,
-            optimizer=trainer.optimizer,
-            lr_scheduler=trainer.lr_scheduler,
-            num_updates=trainer._num_updates,
-            optim_history=trainer._optim_history,
-            extra_state=extra_state,
         )
         self.log_if_verbose(
             f"| Finished saving new best averaged checkpoint to "
