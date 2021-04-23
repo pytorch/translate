@@ -34,7 +34,7 @@ def register_attention(name):
 
 
 # automatically import any Python files in the attention/ directory
-for file in os.listdir(os.path.dirname(__file__)):
+for file in sorted(os.listdir(os.path.dirname(__file__))):
     if file.endswith(".py") and not file.startswith("_"):
         module = file[: file.find(".py")]
         importlib.import_module("pytorch_translate.attention.{}".format(module))
