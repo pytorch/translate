@@ -97,7 +97,7 @@ class Rescorer:
         scores[:, FeatureList.R2L_MODEL_SCORE.value] = r2l_scores[:]
 
     def compute_reverse_model_scores(self, src_tokens, hypos, scores):
-        """computes p(x|y) for each hypothesis. """
+        """computes p(x|y) for each hypothesis."""
         if not self.reverse_model_scorer:
             return
 
@@ -106,7 +106,7 @@ class Rescorer:
         ] = self.reverse_model_scorer.score(src_tokens, hypos)
 
     def compute_lm_scores(self, src_tokens, hypos, scores):
-        """computes p(x|y) for each hypothesis. """
+        """computes p(x|y) for each hypothesis."""
         if not self.lm_scorer:
             return
 

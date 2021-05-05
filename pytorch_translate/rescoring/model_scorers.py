@@ -5,7 +5,7 @@ from pytorch_translate import utils
 
 
 class SimpleModelScorer(object):
-    """ Rescores source and target tokens based on a model"""
+    """Rescores source and target tokens based on a model"""
 
     def __init__(self, args, model_path=None, model=None, forward_task=None):
         """Initialize a rescorer model

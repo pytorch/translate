@@ -287,7 +287,7 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
         return encoder_out
 
     def _init_hidden(self, encoder_out, batch_size):
-        """ Initialize with latent code if available otherwise zeros."""
+        """Initialize with latent code if available otherwise zeros."""
         return torch.zeros([1, batch_size, self.lstm_units])
 
     def _concat_latent_code(self, x, encoder_out):
