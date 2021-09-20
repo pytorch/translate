@@ -18,9 +18,9 @@ https://github.com/pytorch/ossci-job-dsl/blob/master/src/jobs/translate.groovy
 to build/install PyTorch Translate and run tests. `build.sh` should be
 self-sufficient given the repo code, and not require any internet access
 to build and run the tests. (Note that fairseq's
-[setup.py](https://github.com/pytorch/fairseq/blob/master/setup.py#L42)
+[setup.py](https://github.com/pytorch/fairseq/blob/main/setup.py#L42)
 may try to fetch some
-[required packages](https://github.com/pytorch/fairseq/blob/master/requirements.txt).
+[required packages](https://github.com/pytorch/fairseq/blob/main/requirements.txt).
 They're currently already installed in our Docker image
 [requirements](https://github.com/pytorch/translate/blob/master/docker/jenkins/install_prereqs.sh) -
 though that may need to be updated in the future.)
