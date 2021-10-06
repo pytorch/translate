@@ -921,7 +921,7 @@ class BeamSearch(torch.jit.ScriptModule):
         encoder_ens.enable_precompute_reduced_weights = True
 
         if quantize:
-            torch.quantization.quantize_dynamic(
+            torch.ao.quantization.quantize_dynamic(
                 encoder_ens, {torch.nn.Linear}, dtype=torch.qint8, inplace=True
             )
             encoder_ens = torch.jit.quantized.quantize_rnn_cell_modules(encoder_ens)
@@ -959,7 +959,7 @@ class BeamSearch(torch.jit.ScriptModule):
         )
         decoder_ens.enable_precompute_reduced_weights = True
         if quantize:
-            torch.quantization.quantize_dynamic(
+            torch.ao.quantization.quantize_dynamic(
                 decoder_ens, {torch.nn.Linear}, dtype=torch.qint8, inplace=True
             )
             decoder_ens = torch.jit.quantized.quantize_rnn_cell_modules(decoder_ens)
@@ -974,7 +974,7 @@ class BeamSearch(torch.jit.ScriptModule):
         )
         decoder_ens_tile.enable_precompute_reduced_weights = True
         if quantize:
-            torch.quantization.quantize_dynamic(
+            torch.ao.quantization.quantize_dynamic(
                 decoder_ens_tile, {torch.nn.Linear}, dtype=torch.qint8, inplace=True
             )
             decoder_ens_tile = torch.jit.quantized.quantize_rnn_cell_modules(
@@ -1640,7 +1640,7 @@ class IterativeRefinementGenerateAndDecode(torch.jit.ScriptModule):
             self.models, tgt_dict, max_iter=max_iter
         )
         if quantize:
-            generator = torch.quantization.quantize_dynamic(
+            generator = torch.ao.quantization.quantize_dynamic(
                 generator, {torch.nn.Linear}, dtype=torch.qint8, inplace=True
             )
         enc_inputs = (src_tokens, src_lengths)
