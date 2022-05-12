@@ -240,11 +240,11 @@ def combine_weighted_scores(scores, weights, src_len, tgt_len, lenpen):
         weighted_scores: one unified score for each hypothesis [num_of_hypos]
     """
     weighted_scores = scores.clone()
-    weighted_scores[:, FeatureList.L2R_MODEL_SCORE.value] /= tgt_len ** lenpen
-    weighted_scores[:, FeatureList.R2L_MODEL_SCORE.value] /= tgt_len ** lenpen
-    weighted_scores[:, FeatureList.REVERSE_MODEL_SCORE.value] /= src_len ** lenpen
-    weighted_scores[:, FeatureList.LM_SCORE.value] /= tgt_len ** lenpen
-    weighted_scores[:, FeatureList.CLOZE_SCORE.value] /= tgt_len ** lenpen
+    weighted_scores[:, FeatureList.L2R_MODEL_SCORE.value] /= tgt_len**lenpen
+    weighted_scores[:, FeatureList.R2L_MODEL_SCORE.value] /= tgt_len**lenpen
+    weighted_scores[:, FeatureList.REVERSE_MODEL_SCORE.value] /= src_len**lenpen
+    weighted_scores[:, FeatureList.LM_SCORE.value] /= tgt_len**lenpen
+    weighted_scores[:, FeatureList.CLOZE_SCORE.value] /= tgt_len**lenpen
 
     weighted_scores *= torch.tensor(weights)
     # convert [num_of_hypos, num_of_features] to [num_of_hypos] and return

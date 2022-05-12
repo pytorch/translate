@@ -118,7 +118,7 @@ class RescoringCriterion(LegacyFairseqCriterion):
             hypo_encoder_outs,
             forward_logprobs,
         ) = self.self_rescorer.score_tokens(hypo_encoder_inputs, hypo_tokens)
-        hypo_logprobs /= hypos_len ** self.args.rescore_length_penalty
+        hypo_logprobs /= hypos_len**self.args.rescore_length_penalty
 
         # 3) Sequence level
         seq_loss = torch.zeros(1).type_as(hypo_logprobs)

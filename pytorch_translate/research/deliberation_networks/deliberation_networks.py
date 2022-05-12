@@ -295,7 +295,7 @@ class TransformerDecoderPhase2(FairseqIncrementalDecoder):
             self.embed_out = nn.Parameter(
                 torch.Tensor(len(dictionary), self.output_embed_dim)
             )
-            nn.init.normal_(self.embed_out, mean=0, std=self.output_embed_dim ** -0.5)
+            nn.init.normal_(self.embed_out, mean=0, std=self.output_embed_dim**-0.5)
 
         if args.decoder_normalize_before and not getattr(
             args, "no_decoder_final_norm", False

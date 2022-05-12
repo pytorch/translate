@@ -264,7 +264,7 @@ class HybridRNNDecoder(FairseqIncrementalDecoder):
             self.out_embed_dim = self.input_dim
 
         self.embed_out = nn.Parameter(torch.Tensor(len(dst_dict), self.out_embed_dim))
-        nn.init.normal_(self.embed_out, mean=0, std=self.out_embed_dim ** -0.5)
+        nn.init.normal_(self.embed_out, mean=0, std=self.out_embed_dim**-0.5)
 
         self.vocab_reduction_module = None
         if args.vocab_reduction_params:

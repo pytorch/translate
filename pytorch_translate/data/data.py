@@ -18,7 +18,7 @@ from pytorch_translate.data import dictionary as pytorch_translate_dictionary
 MULTILING_DIALECT_ID_OFFSET = 10
 
 # Read bigger arrays from disc instead of memory
-ARRAY_SIZE_LIMIT_FOR_MEMORY = 10 ** 10  # 10GB
+ARRAY_SIZE_LIMIT_FOR_MEMORY = 10**10  # 10GB
 
 
 class CorpusConfig(NamedTuple):

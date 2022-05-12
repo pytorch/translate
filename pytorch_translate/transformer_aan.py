@@ -337,7 +337,7 @@ class TransformerAANDecoder(FairseqIncrementalDecoder):
             )
         elif not self.share_input_output_embed:
             self.embed_out = nn.Parameter(torch.Tensor(len(dst_dict), out_embed_dim))
-            nn.init.normal_(self.embed_out, mean=0, std=out_embed_dim ** -0.5)
+            nn.init.normal_(self.embed_out, mean=0, std=out_embed_dim**-0.5)
         self.register_buffer("version", torch.Tensor([2]))
         self.normalize = args.decoder_normalize_before and final_norm
         if self.normalize:
@@ -773,7 +773,7 @@ class TransformerAANDecoderLayer(nn.Module):
 
 def Embedding(num_embeddings, embedding_dim, padding_idx):
     m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
-    nn.init.normal_(m.weight, mean=0, std=embedding_dim ** -0.5)
+    nn.init.normal_(m.weight, mean=0, std=embedding_dim**-0.5)
     nn.init.constant_(m.weight[padding_idx], 0)
     return m
 
@@ -798,7 +798,7 @@ def PositionalEmbeddingCreator(
         m = LearnedPositionalEmbedding(
             num_embeddings + padding_idx + 1, embedding_dim, padding_idx
         )
-        nn.init.normal_(m.weight, mean=0, std=embedding_dim ** -0.5)
+        nn.init.normal_(m.weight, mean=0, std=embedding_dim**-0.5)
         nn.init.constant_(m.weight[padding_idx], 0)
     else:
         m = SinusoidalPositionalEmbedding(
