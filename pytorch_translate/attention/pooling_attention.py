@@ -2,8 +2,8 @@
 
 import torch
 from pytorch_translate.attention import (
-    BaseAttention,
     attention_utils,
+    BaseAttention,
     register_attention,
 )
 from torch.autograd import Variable

@@ -15,9 +15,9 @@ from fairseq.criterions import LegacyFairseqCriterion, register_criterion
 from pytorch_translate import generate, utils as pytorch_translate_utils
 from pytorch_translate.rescoring.model_scorers import SimpleModelScorer
 from pytorch_translate.rescoring.rescorer import (  # noqa
-    Rescorer,
     add_args as rescore_add_args,
     combine_weighted_scores,
+    Rescorer,
 )
 
 

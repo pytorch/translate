@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from fairseq.data import RoundRobinZipDatasets, iterators
+from fairseq.data import iterators, RoundRobinZipDatasets
 from pytorch_translate.data import weighted_data
 
 

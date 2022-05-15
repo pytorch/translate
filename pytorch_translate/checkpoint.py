@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import os
-from collections import OrderedDict, deque
+from collections import deque, OrderedDict
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
 import torch

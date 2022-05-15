@@ -4,8 +4,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from pytorch_translate.attention import (
-    BaseAttention,
     attention_utils,
+    BaseAttention,
     register_attention,
 )
 from pytorch_translate.common_layers import Linear

@@ -2,7 +2,7 @@
 
 import math
 import time
-from collections import OrderedDict, defaultdict
+from collections import defaultdict, OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
 
 from fairseq import distributed_utils, progress_bar, utils

@@ -3,7 +3,7 @@
 from collections import OrderedDict
 
 from fairseq import models
-from fairseq.data import RoundRobinZipDatasets, noising
+from fairseq.data import noising, RoundRobinZipDatasets
 from fairseq.tasks import register_task
 from pytorch_translate import constants, utils
 from pytorch_translate.data import utils as data_utils, weighted_data

@@ -8,8 +8,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from fairseq import utils
 from fairseq.models import FairseqIncrementalDecoder, transformer as fairseq_transformer
-from pytorch_translate import rnn_cell  # noqa
-from pytorch_translate import utils as pytorch_translate_utils, vocab_reduction
+from pytorch_translate import (  # noqa
+    rnn_cell,
+    utils as pytorch_translate_utils,
+    vocab_reduction,
+)
 from pytorch_translate.research.lexical_choice import lexical_translation
 
 

@@ -4,8 +4,8 @@ from typing import Optional
 
 from fairseq.modules import multihead_attention as fair_multihead
 from pytorch_translate.attention import (
-    BaseAttention,
     attention_utils,
+    BaseAttention,
     register_attention,
 )
 from torch import Tensor

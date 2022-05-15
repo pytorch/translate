@@ -12,12 +12,12 @@ from fairseq.models import (
     register_model_architecture,
 )
 from fairseq.modules import AdaptiveSoftmax
-from pytorch_translate import (
+from pytorch_translate import (  # noqa
     attention,
+    rnn_cell,
     utils as pytorch_translate_utils,
     vocab_reduction,
 )
-from pytorch_translate import rnn_cell  # noqa
 from pytorch_translate.common_layers import (
     ContextEmbedding,
     DecoderWithOutputProjection,
@@ -32,7 +32,7 @@ from pytorch_translate.multilingual import MultilingualDecoder, MultilingualEnco
 from pytorch_translate.ngram import NGramDecoder
 from pytorch_translate.semi_supervised import SemiSupervisedModel
 from pytorch_translate.utils import maybe_cat, maybe_cuda, torch_find
-from torch.nn.utils.rnn import PackedSequence, pack_padded_sequence, pad_packed_sequence
+from torch.nn.utils.rnn import pack_padded_sequence, PackedSequence, pad_packed_sequence
 
 
 def reorder_encoder_output(encoder_out, new_order):

@@ -5,12 +5,12 @@ import random
 import tempfile
 
 from fairseq import options, tasks
-from pytorch_translate import (
+from pytorch_translate import (  # noqa; noqa
     generate as pytorch_translate_generate,
     options as pytorch_translate_options,
+    rnn,
     utils as pytorch_translate_utils,
 )
-from pytorch_translate import rnn  # noqa; noqa
 from pytorch_translate.constants import CHECKPOINT_PATHS_DELIMITER
 
 

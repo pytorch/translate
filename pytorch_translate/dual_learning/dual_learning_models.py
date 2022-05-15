@@ -7,11 +7,11 @@ from fairseq import checkpoint_utils
 from fairseq.models import BaseFairseqModel, register_model
 from pytorch_translate import rnn
 from pytorch_translate.rnn import (
+    base_architecture,
     LSTMSequenceEncoder,
     RNNDecoder,
     RNNEncoder,
     RNNModel,
-    base_architecture,
 )
 from pytorch_translate.tasks.pytorch_translate_task import PytorchTranslateTask
 

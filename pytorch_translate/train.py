@@ -17,24 +17,26 @@ import torch
 from fairseq import data, distributed_utils, options, progress_bar, tasks, utils
 from fairseq.meters import AverageMeter, StopwatchMeter
 from fairseq.trainer import Trainer
-from pytorch_translate import char_aware_hybrid  # noqa
-from pytorch_translate import char_source_hybrid  # noqa
-from pytorch_translate import (
+from pytorch_translate import (  # noqa  # noqa  # noqa  # noqa  # noqa  # noqa  # noqa
+    char_aware_hybrid,
+    char_source_hybrid,
     checkpoint,
     constants,
     evals,
+    hybrid_transformer_rnn,
     multi_model,
     options as pytorch_translate_options,
     preprocess,
+    sequence_criterions,
+    transformer,
+    transformer_aan,
+    weighted_criterions,
 )
-from pytorch_translate import hybrid_transformer_rnn  # noqa
-from pytorch_translate import sequence_criterions  # noqa
-from pytorch_translate import transformer  # noqa
-from pytorch_translate import transformer_aan  # noqa
-from pytorch_translate import weighted_criterions  # noqa
 from pytorch_translate.data import dictionary as pytorch_translate_dictionary
-from pytorch_translate.dual_learning import dual_learning_criterion  # noqa
-from pytorch_translate.dual_learning import dual_learning_task  # noqa
+from pytorch_translate.dual_learning import (  # noqa  # noqa
+    dual_learning_criterion,
+    dual_learning_task,
+)
 
 # TODO(T55884145): Replace with
 # from fvcore.common.file_io import PathManager
@@ -52,25 +54,30 @@ from pytorch_translate.research.rescore import (  # noqa
     cloze_transformer_model,
     rescoring_criterion,
 )
-from pytorch_translate.word_prediction import word_prediction_criterion  # noqa
-from pytorch_translate.word_prediction import word_prediction_model  # noqa
+from pytorch_translate.word_prediction import (  # noqa  # noqa
+    word_prediction_criterion,
+    word_prediction_model,
+)
 
 
 try:
-    from pytorch_translate import latent_var_criterion  # noqa
-    from pytorch_translate import latent_var_models  # noqa
-    from pytorch_translate import latent_var_task  # noqa
+    from pytorch_translate import (  # noqa  # noqa  # noqa
+        latent_var_criterion,
+        latent_var_models,
+        latent_var_task,
+    )
 except ImportError:
     pass
 
 
-from pytorch_translate import char_source_model  # noqa; noqa
-from pytorch_translate import char_source_transformer_model  # noqa; noqa
-from pytorch_translate import rnn  # noqa; noqa
-
 # we import semi_supervised here so that the model gets registered in fairseq
 # model registry
-from pytorch_translate import semi_supervised  # noqa; noqa
+from pytorch_translate import (  # noqa; noqa  # noqa; noqa  # noqa; noqa  # noqa; noqa
+    char_source_model,
+    char_source_transformer_model,
+    rnn,
+    semi_supervised,
+)
 
 
 def get_parser_with_args(default_task="pytorch_translate"):

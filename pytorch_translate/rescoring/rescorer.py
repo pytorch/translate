@@ -6,8 +6,7 @@ from enum import Enum
 
 import torch
 from fairseq.scoring import bleu
-from pytorch_translate import hybrid_transformer_rnn  # noqa
-from pytorch_translate import utils
+from pytorch_translate import hybrid_transformer_rnn, utils  # noqa
 from pytorch_translate.rescoring.model_scorers import (
     LMScorer,
     R2LModelScorer,

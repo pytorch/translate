@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from fairseq import models
-from fairseq.data import FairseqDataset, data_utils
+from fairseq.data import data_utils, FairseqDataset
 from fairseq.models import FairseqMultiModel
 from fairseq.tasks.multilingual_translation import MultilingualTranslationTask
 from pytorch_translate.data import iterators as ptt_iterators

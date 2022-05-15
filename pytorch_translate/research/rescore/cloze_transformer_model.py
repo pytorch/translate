@@ -4,10 +4,10 @@ import torch
 from fairseq import utils
 from fairseq.models import register_model, register_model_architecture
 from pytorch_translate.transformer import (
-    TransformerDecoder,
-    TransformerModel,
     base_architecture,
     build_embedding,
+    TransformerDecoder,
+    TransformerModel,
 )
 
 
