@@ -53,7 +53,7 @@ class MultiheadAttention(BaseAttention):
         *,
         nheads=1,
         unseen_mask=False,
-        src_length_mask=True
+        src_length_mask=True,
     ):
         super().__init__(decoder_hidden_state_dim, context_dim)
         assert decoder_hidden_state_dim == context_dim

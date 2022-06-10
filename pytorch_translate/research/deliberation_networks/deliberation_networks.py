@@ -310,7 +310,7 @@ class TransformerDecoderPhase2(FairseqIncrementalDecoder):
         encoder_out=None,
         decoder_out=None,
         incremental_state=None,
-        **unused
+        **unused,
     ):
         """
         Args:
@@ -340,7 +340,7 @@ class TransformerDecoderPhase2(FairseqIncrementalDecoder):
         encoder_out=None,
         decoder_out=None,
         incremental_state=None,
-        **unused
+        **unused,
     ):
         """
         Similar to *forward* but only return features.
